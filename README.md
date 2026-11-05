@@ -3,15 +3,34 @@
 Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](https://einoow.com/playables/kanto-tactics/) :
 - prochain boss (nom, étage, taux de victoire, taux au premier essai, nombre moyen d'essais) ;
 - les 3 meilleurs trios contre ce boss (au moins 20 combats) ;
-- les conseils d'un guide (shinies, gestion de l'or) pour la tranche d'étages en cours.
+- une **compo cible** choisie pour les 3 prochains combats en partant de ton équipe, et des **conseils lus sur ta partie** : quoi
+  acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, quelle récompense et quelle
+  bénédiction prendre, quand ancrer une forme ;
+- un bouton **Copier la formation** : code `KT1;…` à coller dans le Planificateur du jeu (Planificateur → Coller un code) ;
+- les règles d'or (intérêts, actualisation, shinies) pour la tranche d'étages en cours.
+
+Les conseils apparaissent aussi en **pastilles** sur le jeu : ★ fais-le, ◆ si l'or le permet, ✕ évite. Survoler une pastille (ou la
+sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rien. La même liste figure dans le panneau.
 
 Pages où il s'affiche : les pages d'entrée du jeu, `https://einoow.com/` et `/kanto-tactics`, `/tower`, `/pvp`, `/duo`, `/nuzlocke`
 (avec ou sans `?…`), ainsi que `https://einoow.com/playables/kanto-tactics/…`. Le jeu change de mode sans changer d'adresse : le panneau
-est donc présent dans tous les modes.
+est présent dans tous les modes, les pastilles seulement quand la Tour est affichée.
 
-L'étage est lu dans la sauvegarde Tour du jeu (`localStorage`, clé `kanto-tactics-save-tower`), toutes les 2 s ; sinon on le saisit
-avec − / + ou dans le champ. `Alt+K` replie le panneau ; on le déplace par sa barre de titre, et un double-clic sur cette barre le
-remet en haut à droite.
+La partie est lue dans la sauvegarde Tour du jeu (`localStorage`, clé `kanto-tactics-save-tower`), toutes les 2 s ; sans partie, on
+saisit l'étage avec − / + ou dans le champ. `Alt+K` replie le panneau ; on le déplace par sa barre de titre, et un double-clic sur cette
+barre le remet en haut à droite.
+
+## Comment les conseils sont choisis
+
+- **Compo cible** : parmi les trios d'au moins 20 combats des 3 prochains combats (élites comprises), celui dont la borne basse du taux
+  de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat, avec un bonus pour les Pokémon que tu
+  possèdes déjà. Elle ne change que pour un gain d'au moins 5 points. Le reste du plateau est rempli par les lignées qui renforcent ses
+  types, puis par tes unités.
+- **Économie** : intérêts plafonnés à +3 en Tour, donc palier de 30 pièces (50 avec la voie Fortune complète). On ne dépense que le
+  surplus, sauf en **tout jouer** : combat de l'étage sous 45 % de victoires, ou PV sous 40.
+- **Objets** : recette idéale du porteur et du tank (meilleurs couples Pokémon/objet de la Tour) ; fusion immédiate en tout jouer.
+- **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
+- **Formation** : mêlée devant (tank au centre), distance au fond et espacée, porteur dans le coin choisi (bouton « Porteur »).
 
 ## Installation (Firefox)
 
@@ -21,17 +40,22 @@ remet en haut à droite.
 
 ## Données
 
-Data: Kanto Tactics · [einoow.com](https://einoow.com) — API publique `https://einoow.com/api/meta/kanto/campana.json`, mise à jour
-chaque jour, lue une fois par chargement de page (le cache HTTP du navigateur fait le reste). Les conseils sur les shinies viennent d'un
-guide et ne sont pas vérifiés.
+Data: Kanto Tactics · [einoow.com](https://einoow.com) — API publique `https://einoow.com/api/meta/kanto/` : `campana.json`
+(statistiques de la Tour), `data.json` (lignées, objets, recettes, types, sceaux), `lang.json?lang=fr` (noms des objets, sceaux,
+types). Conformément à ses conditions, chaque source est gardée **une heure** dans le Cache Storage du navigateur, puis revalidée
+(`ETag`) ; en cas d'erreur, la dernière copie sert et le pied du panneau en donne la date.
+
+L'API publique s'arrête aux règles 40 alors que la Tour tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
+le script (seuils d'XP, plafond d'intérêts, voies et noms des bénédictions, coût, types et portée de 24 lignées). Les conseils sur
+les shinies viennent d'un guide et ne sont pas vérifiés.
 
 Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pokémon Company.
 
 ## Développement
 
 ```sh
-node --test test/          # logique : étage, prochain boss, trios, noms, tranches du guide
+node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1
 node scripts/preview.mjs   # pages d'aperçu par état dans build/, puis la commande de rendu imprimée
 ```
 
-Maquette validée : `docs/design/mockups/2026-11-05-panneau-tour.html`.
+Maquettes validées : `docs/design/mockups/2026-11-05-panneau-tour.html`, `docs/design/mockups/2026-11-05-conseils.html`.
