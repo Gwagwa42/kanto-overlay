@@ -86,6 +86,20 @@ test('tranches du guide', () => {
   assert.deepEqual(KT.guideFor(500).shinies, []);
 });
 
+test('en-tête : pages d’entrée du jeu couvertes, autres pages exclues', () => {
+  const header = require('node:fs').readFileSync(require.resolve('../kanto-overlay.user.js'), 'utf8');
+  // Motifs @match : « * » = n'importe quelle suite de caractères, correspondance de l'URL entière.
+  const patterns = [...header.matchAll(/^\/\/ @match\s+(\S+)$/gm)]
+    .map(m => new RegExp(`^${m[1].replace(/[.?+^$()[\]{}|\\/]/g, '\\$&').replace(/\*/g, '.*')}$`));
+  const covered = url => patterns.some(p => p.test(url));
+  for (const url of ['https://einoow.com/', 'https://einoow.com/tower', 'https://einoow.com/tower?ref=x', 'https://einoow.com/pvp',
+    'https://einoow.com/duo', 'https://einoow.com/nuzlocke', 'https://einoow.com/kanto-tactics',
+    'https://einoow.com/playables/kanto-tactics/index.html']) assert.ok(covered(url), url);
+  for (const url of ['https://einoow.com/towers', 'https://einoow.com/devblog', 'https://einoow.com/api/meta/kanto/campana.json',
+    'https://einoow.com/games/autre']) assert.ok(!covered(url), url);
+  assert.match(header, /^\/\/ @noframes$/m);
+});
+
 test('niveaux de taux et formats français', () => {
   assert.equal(KT.rateLevel(70).cls, 'good');
   assert.equal(KT.rateLevel(69.9).cls, 'mid');
