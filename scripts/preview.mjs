@@ -11,19 +11,9 @@ const script = readFileSync(`${root}kanto-overlay.user.js`, 'utf8');
 const torre = require(`${root}test/fixtures/campana.json`).modes.torre;
 const data = require(`${root}test/fixtures/data.json`);
 const lang = require(`${root}test/fixtures/lang.json`);
-const save = require(`${root}test/fixtures/save-tower.json`);
 
-// Étage 57, 38 pièces, niveau 8 (même scénario que la maquette et les tests).
-const S57 = {
-  ...save, round: 1056, gold: 38, level: 8, xp: 35, hp: 62, items: ['hp-up', 'iron', 'calcium'],
-  shop: ['growlithe', 'aerodactyl', 'magmar', 'rattata', 'ekans'], shopShiny: [false, false, false, false, false],
-  units: {
-    a: { id: 'a', line: 'dratini', star: 2 }, b: { id: 'b', line: 'growlithe', star: 1 }, c: { id: 'c', line: 'growlithe', star: 1 },
-    d: { id: 'd', line: 'vulpix', star: 2 }, e: { id: 'e', line: 'rattata', star: 1 },
-  },
-  board: { 29: 'a', 31: 'd' }, bench: ['b', 'c', 'e', null, null, null, null, null, null], anchor: {},
-  tower: { boons: ['nugget'], offer: null },
-};
+// Scénario commun avec les tests et la maquette.
+const S57 = require(`${root}test/fixtures/s57.js`);
 const MODALS = { ...S57, itemReward: ['protein', 'carbos', 'zinc'], tower: { boons: ['nugget'], offer: { ids: ['nugget', 'leftovers', 'flute'] } } };
 
 const STATES = {
@@ -68,12 +58,12 @@ const decor = (s, modal) => `
 <div class="topbar"><div class="rtrack tw"><span class="st-place-l">Étage ${s.round - 999}</span></div></div>
 <div class="bottom">
   <div class="items">${s.items.map((id, i) => `<div class="it-slot" data-islot="${i}">${lang.items[id]?.name ?? id}</div>`).join('')}</div>
-  <div class="bench">${s.bench.map(id => `<div class="slot">${id ? KT.namer(data, lang).line(s.units[id].line) : ''}</div>`).join('')}</div>
+  <div class="bench">${s.bench.map(id => `<div class="slot">${id ? KT.namer(lang).line(s.units[id].line) : ''}</div>`).join('')}</div>
   <div class="shop"><div class="shop-btns"><button class="btn-lvl">Acheter XP</button><button class="btn-roll">Actualiser</button></div>
-  <div class="cards">${s.shop.map(b => (b ? card(KT.namer(data, lang).line(b), KT.lineInfo(data, b).c) : '<div class="cardwrap"></div>')).join('')}</div></div>
+  <div class="cards">${s.shop.map(b => (b ? card(KT.namer(lang).line(b), KT.lineInfo(data, b).c) : '<div class="cardwrap"></div>')).join('')}</div></div>
 </div>
 ${modal ? `<div class="modals"><div class="modal itemreward"><div class="ir-cards">${s.itemReward.map(id => `<button class="ir-card">${lang.items[id].name}</button>`).join('')}</div></div>
-<div class="modal evround tboon"><div class="ev-cards">${['Maxi Pépite', 'Restes', 'Poké Flûte'].map(n => `<button class="ev-card">${n}</button>`).join('')}</div></div></div>` : ''}`;
+<div class="modal evround tboon"><div class="ev-cards">${s.tower.offer.ids.map(id => `<button class="ev-card">${KT.BOONS[id][1]}</button>`).join('')}</div></div></div>` : ''}`;
 
 const STYLE = `body{margin:0;min-height:100vh;background:#2b3a2a;color:#eef1ff;font:14px system-ui}
 .topbar{position:absolute;top:16px;left:50%;translate:-50%;background:#1b2448;padding:4px 16px;border-radius:8px}
@@ -105,7 +95,7 @@ const served = url => api === 'ok' || (api === 'partial' && url !== ${JSON.strin
 window.fetch = url => api === 'pending' ? new Promise(() => {})
   : Promise.resolve(new Response(served(url) ? JSON.stringify(payload[url]) : '', { status: served(url) ? 200 : 429 }));
 ${s.tip ? `setTimeout(() => { const r = [...document.body.children].find(e => e.shadowRoot)?.shadowRoot;
-  r?.append(Object.assign(document.createElement('style'), { textContent: '.kp:nth-child(1) .kp-tip { display: block; }' })); }, 50);` : ''}
+  r?.append(Object.assign(document.createElement('style'), { textContent: '.kp:nth-child(1) { z-index: 1; } .kp:nth-child(1) .kp-tip { display: block; }' })); }, 50);` : ''}
 `;
   const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Aperçu ${name}</title><style>${STYLE}</style></head>
 <body>${s.save ? decor(s.save, s.modal) : '<p style="padding:24px">Jeu (fond simulé) · aucune partie Tour</p>'}

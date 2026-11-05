@@ -10,18 +10,9 @@ const lang = require('./fixtures/lang.json');
 const save = require('./fixtures/save-tower.json');
 const ids = require('./fixtures/ids.json');
 
-const names = KT.namer(data, lang);
-// Étage 57, 38 pièces, niveau 8 : Minidraco 2★ et Goupix 2★ posés, 2 Caninos et 1 Rattata sur le banc.
-const S57 = {
-  ...save, round: 1056, gold: 38, level: 8, xp: 3, hp: 62, items: ['hp-up', 'iron', 'calcium'],
-  shop: ['growlithe', 'aerodactyl', 'magmar', 'rattata', 'ekans'], shopShiny: [false, false, false, false, false],
-  units: {
-    a: { id: 'a', line: 'dratini', star: 2 }, b: { id: 'b', line: 'growlithe', star: 1 }, c: { id: 'c', line: 'growlithe', star: 1 },
-    d: { id: 'd', line: 'vulpix', star: 2 }, e: { id: 'e', line: 'rattata', star: 1 },
-  },
-  board: { 29: 'a', 31: 'd' }, bench: ['b', 'c', 'e', null, null, null, null, null, null], anchor: {},
-  tower: { boons: ['nugget'], offer: { ids: ['nugget', 'leftovers', 'flute'] } },
-};
+const names = KT.namer(lang);
+// Étage 57, 38 pièces, niveau 8 : scénario commun avec la maquette et les pages d'aperçu.
+const S57 = require('./fixtures/s57.js');
 const advise = (s, extra = {}) => KT.advise({ torre, data, lang, save: s, previous: null, side: 'left', ...extra });
 const brief = m => m && `${m.level} ${m.label}`;
 
@@ -39,6 +30,8 @@ test('sauvegarde absente, corrompue ou sans round → null', () => {
   assert.equal(KT.floorFromSave(JSON.stringify({ round: '1057' })), null);
   assert.equal(KT.floorFromSave(JSON.stringify({ floor: 58 })), null);
   assert.equal(KT.parseSave('[1]'), null);
+  assert.equal(KT.parseSave(JSON.stringify({ round: 1057 })), null);
+  assert.equal(KT.floorFromSave(JSON.stringify({ round: 1057, units: 'v10' })), 58);
 });
 
 test('prochain boss : élites ignorées, étage courant inclus', () => {
@@ -96,7 +89,7 @@ test('noms français : lang.json, formes ancrées, personnages, id inconnu', () 
   assert.equal(names.line('inconnu'), 'inconnu');
   assert.equal(names.item('leftovers'), 'Restes');
   assert.equal(names.stage('dratini', 1), 'Draco');
-  assert.equal(KT.namer(null, null).item('leftovers'), 'leftovers');
+  assert.equal(KT.namer(null).item('leftovers'), 'leftovers');
   assert.equal(KT.bossName('zapdos'), 'Électhor');
   assert.equal(KT.bossName('inconnu'), 'inconnu');
 });
@@ -130,10 +123,11 @@ test('tout jouer : combat de l’étage sous 45 %, ou PV sous 40', () => {
   assert.equal(at(1056, 39).allIn, true);
 });
 
-test('compo cible : meilleur trio pondéré, remplissage par types et unités possédées', () => {
+test('compo cible : meilleur trio pondéré, remplissage par les lignées qui renforcent ses types', () => {
   const a = advise(S57);
   assert.deepEqual(a.target.core, ['aerodactyl', 'dratini', 'growlithe']);
-  assert.deepEqual(a.target.fillers, ['vulpix', 'magmar', 'rattata']);
+  assert.deepEqual(a.target.fillers, ['vulpix', 'magmar']);
+  assert.match(a.shop[1].detail, /Ptéra · Minidraco · Caninos : 96,1 % contre Électhor 60 \(51 combats, au moins 86,0 %\)/);
   assert.equal(KT.progress(a.game, 'dratini'), '★★');
   assert.equal(KT.progress(a.game, 'growlithe'), '2/3');
   assert.equal(KT.progress(a.game, 'aerodactyl'), '0/3');
@@ -154,7 +148,7 @@ test('compo cible : inertie de 5 points', () => {
 
 test('boutique : ★ 3ᵉ copie et cœur, ◆ si l’or, ✕ hors compo', () => {
   const a = advise(S57);
-  assert.deepEqual(a.shop.map(brief), ['do Achète', 'do Achète', 'opt Si l’or', 'opt Si l’or', 'no Ignore']);
+  assert.deepEqual(a.shop.map(brief), ['do Achète', 'do Achète', 'opt Si l’or', 'no Ignore', 'no Ignore']);
   assert.match(a.shop[0].why, /3ᵉ copie/);
   assert.match(a.shop[1].why, /cœur/);
   const poor = advise({ ...S57, gold: 31 });
@@ -188,7 +182,8 @@ test('actualiser et XP selon le palier et le tout jouer', () => {
   assert.equal(brief(advise({ ...S57, xp: 92, gold: 42 }).xp), 'do Monte');
   assert.equal(brief(advise({ ...S57, xp: 92 }).xp), 'no Attends');
   assert.equal(advise({ ...S57, level: 9 }).xp, null);
-  assert.equal(brief(advise({ ...S57, round: 1059, level: 9 }).xp), 'do Monte');
+  assert.equal(advise({ ...S57, round: 1059, level: 9 }).xp, null);
+  assert.equal(brief(advise({ ...S57, round: 1059, level: 9, xp: 118 }).xp), 'do Monte');
 });
 
 test('vendre : unité du banc hors compo et sans paire, banc presque plein', () => {
@@ -244,12 +239,18 @@ test('sceaux : économie tôt, combat en tout jouer, risque évité avec peu de 
   assert.deepEqual(choose(['piggy-bank', 'poke-flute'], { round: 1059 }), [null, 'do Prends']);
   assert.deepEqual(choose(['rocket-loan', 'poke-flute'], { hp: 30 }), ['no Évite', 'do Prends']);
   assert.deepEqual(choose(['rocket-loan', 'life-orb'], { hp: 30 }), ['no Évite', 'no Évite']);
+  assert.notEqual(advise({ ...S57, hp: 30, tower: { boons: [], offer: { ids: ['rocket-loan', 'life-orb'] } } }).offer[0].title,
+    advise({ ...S57, hp: 30, tower: { boons: [], offer: { ids: ['rocket-loan', 'life-orb'] } } }).offer[1].title);
+  // Offre mêlée : un sceau de combat en tout jouer passe devant une bénédiction hors voie.
+  assert.deepEqual(choose(['team', 'poke-flute'], { round: 1059 }), [null, 'do Prends']);
 });
 
 test('ancrage : conseillé si la compo vise une forme ancrée non encore choisie', () => {
   const target = { core: ['dratini-a0', 'aerodactyl', 'growlithe'], fillers: [] };
-  const game = KT.readGame(S57);
+  const twins = { ...S57, units: { ...S57.units, a: { id: 'a', line: 'dratini', star: 1 }, f: { id: 'f', line: 'dratini', star: 1 } }, bench: [...S57.bench.slice(0, 3), 'f'] };
+  const game = KT.readGame(twins);
   assert.equal(KT.anchorAdvice(target, game, names)[0].title, 'Ancre Minidraco (fiche du Pokémon)');
+  assert.deepEqual(KT.anchorAdvice(target, KT.readGame(S57), names), []);
   assert.deepEqual(KT.anchorAdvice(target, { ...game, anchor: { dratini: 0 } }, names), []);
   assert.deepEqual(KT.anchorAdvice(target, KT.readGame({ ...S57, units: {}, board: {}, bench: [] }), names), []);
 });
@@ -257,8 +258,61 @@ test('ancrage : conseillé si la compo vise une forme ancrée non encore choisie
 test('formation : code KT1 (rangée 0 = avant, porteur côté choisi)', () => {
   assert.equal(advise(S57).code,
     'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;growlithe:1:3:scope-lens.twisted-spoon.assault-vest;aerodactyl:1:2;'
-    + 'dratini:2:4:choice-band.focus-sash.scope-lens;rattata:1:1;vulpix:2:21;magmar:1:23');
+    + 'dratini:2:4:choice-band.focus-sash.scope-lens;vulpix:2:21;magmar:1:23');
   assert.match(advise(S57, { side: 'right' }).code, /vulpix:2:27;magmar:1:25$/);
+});
+
+// Faux Cache Storage et faux fetch : chaque appel réseau est journalisé, les réponses viennent de `replies`.
+function fakeEnv(replies, now) {
+  const store = new Map();
+  const calls = [];
+  const env = {
+    now,
+    calls,
+    store,
+    caches: { open: async () => ({ match: async url => store.get(url)?.clone(), put: async (url, res) => { store.set(url, res); } }) },
+    fetch: async (url, init) => {
+      calls.push(init?.headers?.['If-None-Match'] ?? null);
+      const r = replies.shift();
+      if (r instanceof Error) throw r;
+      return new Response(r.body ?? null, { status: r.status, headers: r.etag ? { etag: r.etag } : {} });
+    },
+  };
+  return env;
+}
+const URL_T = 'https://einoow.com/api/meta/kanto/lang.json?lang=fr';
+const accept = j => j?.ok === true;
+const hour = 3600 * 1000;
+
+test('loadJson : cache d’une heure, revalidation 304 sans W/, copie gardée si erreur ou format invalide', async () => {
+  const env = fakeEnv([{ status: 200, body: '{"ok":true,"v":1}', etag: 'W/"e1"' }], 0);
+  assert.deepEqual((await KT.loadJson(URL_T, accept, env)).json, { ok: true, v: 1 });
+  env.now = hour - 1;
+  assert.equal((await KT.loadJson(URL_T, accept, env)).stale, false);
+  assert.equal(env.calls.length, 1);
+  env.now = hour;
+  env.fetch = fakeEnv([{ status: 304 }], 0).fetch;
+  const sent = [];
+  const f304 = env.fetch;
+  env.fetch = (url, init) => { sent.push(init.headers['If-None-Match']); return f304(url, init); };
+  const r304 = await KT.loadJson(URL_T, accept, env);
+  assert.deepEqual([sent, r304.json.v, r304.at], [['"e1"'], 1, hour]);
+  env.now = 3 * hour;
+  env.fetch = fakeEnv([{ status: 200, body: '{"autre":1}' }], 0).fetch;
+  const bad = await KT.loadJson(URL_T, accept, env);
+  assert.deepEqual([bad.stale, bad.json.v], [true, 1]);
+  env.fetch = fakeEnv([new TypeError('NetworkError')], 0).fetch;
+  assert.equal((await KT.loadJson(URL_T, accept, env)).stale, true);
+  env.fetch = fakeEnv([{ status: 429 }], 0).fetch;
+  assert.equal((await KT.loadJson(URL_T, accept, env)).stale, true);
+});
+
+test('loadJson : sans copie, erreurs en clair ; cache refusé signalé', async () => {
+  await assert.rejects(KT.loadJson(URL_T, accept, fakeEnv([{ status: 429 }], 0)), /HTTP 429/);
+  await assert.rejects(KT.loadJson(URL_T, accept, fakeEnv([new TypeError('x')], 0)), /réseau/);
+  await assert.rejects(KT.loadJson(URL_T, accept, fakeEnv([{ status: 200, body: '{"autre":1}' }], 0)), /format inattendu/);
+  const blocked = { ...fakeEnv([], 0), caches: { open: async () => { throw new DOMException('insecure', 'SecurityError'); } } };
+  await assert.rejects(KT.loadJson(URL_T, accept, blocked), /navigation privée/);
 });
 
 test('cache : frais moins d’une heure', () => {

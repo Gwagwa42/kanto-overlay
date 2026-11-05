@@ -63,6 +63,10 @@ const KT = (() => {
   const HEAL_BOONS = ['potion', 'hpup', 'leftovers', 'ash'];
   const PATH_ORDER = ['fortune', 'combat', 'endure', 'breed', 'legend'];
   const PATH_NAMES = { fortune: 'Fortune', combat: 'Combat', endure: 'Endurance', breed: 'Élevage', legend: 'Légende' };
+  const PATH_BONUS = {
+    fortune: 'intérêts max +2 : palier 50 pièces au lieu de 30', combat: 'bouclier de 10 % au début de chaque combat',
+    endure: '+20 PV max', breed: '+20 % d’affinité en boutique', legend: 'cadeaux de colosse avec +1★',
+  };
 
   const BOSSES = {
     aerodactyl: 'Ptéra', agatha: 'Agatha', arcanine: 'Arcanin', aves: 'Oiseaux légendaires', blaine: 'Auguste',
@@ -149,7 +153,10 @@ const KT = (() => {
     'Dépenser avant un boss difficile, reconstituer après une victoire facile.',
   ];
 
-  function parseSave(raw) {
+  const isObject = o => o !== null && typeof o === 'object' && !Array.isArray(o);
+
+  // Sauvegarde avec un round numérique (assez pour l'étage), sinon null.
+  function parseRound(raw) {
     if (raw == null) return null;
     let save;
     try {
@@ -158,14 +165,20 @@ const KT = (() => {
       if (e instanceof SyntaxError) return null;
       throw e;
     }
-    return save !== null && typeof save === 'object' && Number.isFinite(save.round) ? save : null;
+    return isObject(save) && Number.isFinite(save.round) ? save : null;
+  }
+
+  // Forme lue par readGame ; sinon autre version de sauvegarde, sans conseils (l'étage reste lu par floorFromSave).
+  function parseSave(raw) {
+    const save = parseRound(raw);
+    return save && isObject(save.units) && isObject(save.board ?? {}) && Array.isArray(save.bench ?? []) ? save : null;
   }
 
   const floorOf = round => Math.max(1, Math.floor(round) - ROUND_BASE + 1);
   const coreKey = core => [...core].sort().join('+');
 
   function floorFromSave(raw) {
-    const save = parseSave(raw);
+    const save = parseRound(raw);
     return save && floorOf(save.round);
   }
 
@@ -185,11 +198,10 @@ const KT = (() => {
       && t.holders.every(h => typeof h?.line === 'string' && typeof h.id === 'string' && [h.n, h.lo].every(Number.isFinite));
   }
 
-  const isObject = o => o !== null && typeof o === 'object' && !Array.isArray(o);
-
   function isGameData(d) {
     return isObject(d?.lines) && isObject(d.items) && Array.isArray(d.recipes) && isObject(d.traits) && isObject(d.seals)
       && Object.values(d.lines).every(l => Number.isFinite(l?.c) && Array.isArray(l.t) && Array.isArray(l.s) && Number.isFinite(l.range))
+      && Object.values(d.traits).every(t => Array.isArray(t?.th))
       && d.recipes.every(r => Array.isArray(r) && r.length === 3);
   }
 
@@ -233,8 +245,8 @@ const KT = (() => {
     return m ? Number(m[1]) : null;
   };
 
-  function namer(data, lang) {
-    // Noms de Pokémon : table locale (lang.json, règles 40, ignore les Pokémon ajoutés en v41).
+  // Pokémon : table LINES (lang.json, règles 40, n'a pas les Pokémon ajoutés en v41) ; objets et sceaux : lang.json.
+  function namer(lang) {
     function line(id) {
       const names = LINES[baseLine(id)];
       if (!names) return id;
@@ -349,19 +361,21 @@ const KT = (() => {
     }
     const chosen = best.core.map(baseLine);
     const pool = [...new Set([...game.units.map(u => baseLine(u.line)), ...game.shop.filter(Boolean)])].filter(b => lineInfo(data, b));
-    // Remplissage jusqu'au niveau : lignées qui apportent un type à la compo, sinon unités déjà possédées.
+    // Remplissage jusqu'au niveau : lignées qui apportent un type à la compo ; les unités possédées départagent.
     const fillers = [];
-    const owned = b => bestStar(game, b) > 0;
     while (chosen.length < game.level) {
       const next = pool
-        .filter(b => !chosen.includes(b) && (traitGain(data, chosen, b) > 0 || owned(b)))
+        .filter(b => !chosen.includes(b) && traitGain(data, chosen, b) > 0)
         .sort((a, b) => traitGain(data, chosen, b) - traitGain(data, chosen, a)
           || bestStar(game, b) - bestStar(game, a) || lineLo(torre, b) - lineLo(torre, a) || a.localeCompare(b))[0];
       if (!next) break;
       chosen.push(next);
       fillers.push(next);
     }
-    return { key: best.key, core: best.core, fillers, stops };
+    // Preuve affichée dans les bulles : le trio sur le combat le plus dur où il a des statistiques.
+    const proof = [...stops].sort((a, b) => b.weight - a.weight)
+      .map(st => ({ st, c: coresByStop.get(st.stop).get(best.key) })).find(x => x.c);
+    return { key: best.key, core: best.core, fillers, stops, proof };
   }
 
   const targetBases = target => (target ? [...target.core.map(baseLine), ...target.fillers] : []);
@@ -371,19 +385,22 @@ const KT = (() => {
     return star >= 2 ? '★'.repeat(star) : `${ones(game, base)}/3`;
   }
 
-  // Marque : { level: 'do' | 'opt' | 'no', label, title, why } ; label = texte de la pastille, vide = conseil du panneau seul.
-  const mark = (level, label, title, why) => ({ level, label, title, why });
+  // Marque : { level: 'do' | 'opt' | 'no', label, title, why, detail } ; label = texte de la pastille, vide = conseil du panneau
+  // seul ; detail = ligne de preuve de la bulle.
+  const mark = (level, label, title, why, detail = '') => ({ level, label, title, why, detail });
 
   function shopMarks(game, target, data, eco, names) {
     const core = target ? target.core.map(baseLine) : [];
     const wanted = targetBases(target);
+    const p = target?.proof;
+    const proof = p ? `${p.c.core.map(names.line).join(' · ')} : ${pct(p.c.win)} contre ${bossName(p.st.boss)} ${p.st.floor} (${p.c.n} combats, au moins ${pct(p.c.lo)})` : '';
     // Or restant après les achats ★ des cartes précédentes (de gauche à droite).
     let budget = game.gold;
-    const buy = (cost, name, why) => {
+    const buy = (cost, name, why, detail) => {
       // Coût inconnu (données de jeu indisponibles) : le conseil ne peut pas vérifier l'or.
-      if (cost !== undefined && cost > budget) return mark('opt', 'Si l’or', `Achète ${name} dès que possible`, `${why} ; il manque de l’or`);
+      if (cost !== undefined && cost > budget) return mark('opt', 'Si l’or', `Achète ${name} dès que possible`, `${why} ; il manque de l’or`, detail);
       budget -= cost ?? 0;
-      return mark('do', 'Achète', `Achète ${name}`, why);
+      return mark('do', 'Achète', `Achète ${name}`, why, detail);
     };
     return game.shop.map((base, i) => {
       if (!base) return null;
@@ -392,8 +409,8 @@ const KT = (() => {
       const inTarget = wanted.includes(base);
       const cost = lineInfo(data, base)?.c;
       const keepsFloor = (cost !== undefined && game.gold - cost >= eco.floor) || eco.allIn;
-      if (triple && (inTarget || !target)) return buy(cost, name, '3ᵉ copie, passe ★★');
-      if (core.includes(base)) return buy(cost, name, 'cœur de la compo cible');
+      if (triple && (inTarget || !target)) return buy(cost, name, core.includes(base) ? '3ᵉ copie, passe ★★ ; cœur de la compo cible' : '3ᵉ copie, passe ★★', core.includes(base) ? proof : '');
+      if (core.includes(base)) return buy(cost, name, 'cœur de la compo cible', proof);
       if (game.shopShiny[i] && inTarget) return buy(cost, `${name} shiny`, '+10 % PV, défenses et dégâts');
       if (!target) return null;
       if ((inTarget || triple) && keepsFloor) {
@@ -421,7 +438,8 @@ const KT = (() => {
     if (game.level >= max) return null;
     const missing = XP_TO_NEXT[game.level] - game.xp;
     const left = game.gold - committed;
-    if (eco.allIn) return left >= XP_COST ? mark('do', 'Monte', 'Achète de l’XP', 'tout jouer : une place de plus') : null;
+    const toLevel = Math.ceil(missing / XP_COST) * XP_COST;
+    if (eco.allIn) return left >= toLevel ? mark('do', 'Monte', 'Achète de l’XP', `tout jouer : niveau ${game.level + 1} pour ${toLevel} pièces`) : null;
     if (missing <= XP_COST && left - XP_COST >= eco.floor) return mark('do', 'Monte', 'Achète de l’XP', `niveau ${game.level + 1} pour ${XP_COST} pièces`);
     return mark('no', 'Attends', 'N’achète pas d’XP', `encore ${missing} XP ; l’XP gratuite arrive à chaque étage`);
   }
@@ -553,10 +571,11 @@ const KT = (() => {
   }
 
   function sealScore(seal, game, eco) {
+    // Même échelle que boonScore (Fortune 90, voie 50–70, autre 10) : une offre peut mêler sceaux et bénédictions.
     if (seal.cat === 'risk') return eco.lowHp ? -1 : 0;
-    if (['eco', 'shop', 'xp'].includes(seal.cat)) return game.floor < 81 && !eco.lowHp && !eco.allIn ? 3 : 1;
-    if (['combat', 'board', 'role'].includes(seal.cat)) return eco.allIn || game.floor >= 81 ? 3 : 2;
-    return 1;
+    if (['eco', 'shop', 'xp'].includes(seal.cat)) return game.floor < 81 && !eco.lowHp && !eco.allIn ? 60 : 20;
+    if (['combat', 'board', 'role'].includes(seal.cat)) return eco.allIn || game.floor >= 81 ? 60 : 40;
+    return 20;
   }
 
   function offerChoiceMarks(data, game, eco, names) {
@@ -576,9 +595,10 @@ const KT = (() => {
         const why = x.seal ? 'sceau le plus utile pour ta situation'
           : game.hp < LOW_HP && HEAL_BOONS.includes(x.id) ? `PV bas (${game.hp})`
             : path ? `voie ${PATH_NAMES[path]} : ${pathCount(game.boons, path) + 1} sur ${PATH_SIZE}` : 'meilleur effet immédiat';
-        return mark('do', 'Prends', `Prends ${x.seal ? names.seal(x.id) : BOONS[x.id][1]}`, why);
+        const detail = !x.seal && path ? `À ${PATH_SIZE} : ${PATH_BONUS[path]}.` : '';
+        return mark('do', 'Prends', `Prends ${x.seal ? names.seal(x.id) : BOONS[x.id][1]}`, why, detail);
       }
-      return x.s < 0 ? mark('no', 'Évite', 'Évite ce sceau', `risqué avec ${game.hp} PV`) : null;
+      return x.s < 0 ? mark('no', 'Évite', `Évite ${names.seal(x.id)}`, `risqué avec ${game.hp} PV`) : null;
     });
     return { marks, unknown };
   }
@@ -588,7 +608,8 @@ const KT = (() => {
     return target.core.flatMap(id => {
       const n = anchorStage(id);
       const base = baseLine(id);
-      if (n === null || game.anchor[base] === n || !unitsOf(game, base).length) return [];
+      // L'ancrage prend effet à la prochaine fusion : conseillé quand elle est imminente (2 copies à 1★).
+      if (n === null || game.anchor[base] === n || ones(game, base) < 2) return [];
       return [mark('do', '', `Ancre ${names.stage(base, n)} (fiche du Pokémon)`, 'forme gagnante de la compo, avant sa prochaine fusion')];
     });
   }
@@ -621,7 +642,7 @@ const KT = (() => {
   }
 
   function advise({ torre, data, lang, save, previous, side }) {
-    const names = namer(data, lang);
+    const names = namer(lang);
     const game = readGame(save);
     const stops = torre ? nextStops(torre.stops, game.floor) : [];
     const eco = economy(game, stops);
@@ -644,14 +665,64 @@ const KT = (() => {
     };
   }
 
+  // Cache Storage d'une heure (conditions de l'API), revalidé par ETag ; une réponse au format inattendu n'écrase jamais la
+  // copie gardée. env = { caches, fetch, now } : globaux du navigateur, injectables pour les tests.
+  async function loadJson(url, accept, env) {
+    let cache;
+    try {
+      cache = await env.caches.open(CACHE_NAME);
+    } catch (e) {
+      // Firefox refuse le Cache Storage en navigation privée ou quand le stockage du site est bloqué.
+      if (e instanceof DOMException) throw new Error('cache du navigateur indisponible : navigation privée ou stockage bloqué');
+      throw e;
+    }
+    const hit = await cache.match(url);
+    const at = Number(hit?.headers.get('x-kt-at'));
+    const keep = async (body, etag) => {
+      await cache.put(url, new Response(body, { headers: { 'content-type': 'application/json', etag: etag ?? '', 'x-kt-at': String(env.now) } }));
+    };
+    if (hit && isFresh(at, env.now)) return { json: await hit.json(), at, stale: false };
+    // L'API ne reconnaît pas la forme faible W/"…" que reçoit le navigateur (réponse compressée) : même étiquette, sans le préfixe.
+    const etag = hit?.headers.get('etag')?.replace(/^W\//, '');
+    const stale = async reason => {
+      if (!hit) throw new Error(reason);
+      return { json: await hit.json(), at, stale: true };
+    };
+    let res;
+    let body;
+    try {
+      res = await env.fetch(url, etag ? { headers: { 'If-None-Match': etag } } : {});
+      body = res.ok ? await res.text() : null;
+    } catch (e) {
+      // fetch et la lecture du corps ne rejettent qu'avec TypeError en cas d'échec réseau.
+      if (e instanceof TypeError) return stale('réseau');
+      throw e;
+    }
+    if (res.status === 304 && hit) {
+      const cached = await hit.text();
+      await keep(cached, etag);
+      return { json: JSON.parse(cached), at: env.now, stale: false };
+    }
+    if (!res.ok) return stale(`HTTP ${res.status}`);
+    let json;
+    try {
+      json = JSON.parse(body);
+    } catch (e) {
+      if (e instanceof SyntaxError) return stale('format inattendu');
+      throw e;
+    }
+    if (!accept(json)) return stale('format inattendu');
+    await keep(body, res.headers.get('etag'));
+    return { json, at: env.now, stale: false };
+  }
+
   const pct = x => `${x.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
   const shortDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
   return {
-    SOURCES, CACHE_NAME, SAVE_KEY, UI_KEY, GUIDE, GOLD_RULES, BOONS, lineInfo,
+    SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
-    baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, economy, targetComp, progress, shopMarks, rerollMark,
-    xpMark, sellMarks, itemMarks, offerMarks, offerChoiceMarks, anchorAdvice, formation, kt1Code, advise, pct, shortDate,
+    baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, targetComp, progress, anchorAdvice, advise, pct, shortDate,
   };
 })();
 
@@ -659,10 +730,11 @@ const CSS = `
 :host { all: initial;
   /* Pastilles : couleurs fixes, posées sur le jeu toujours sombre ; bord sombre + liseré blanc = contraste sur les deux fonds */
   --kp-do-bg:#0072b2; --kp-do-fg:#fff; --kp-opt-bg:#fff; --kp-opt-fg:#141a33; --kp-no-bg:#f0e442; --kp-no-fg:#141a33;
-  --kp-edge:#141a33; --kp-tip-bg:#141a33; --kp-tip-fg:#eef1ff; --kt-font:system-ui,-apple-system,"Segoe UI",sans-serif; }
+  --kp-edge:#141a33; --kp-ring:#fff; --kp-focus:#56b4e9; --kp-tip-bg:#141a33; --kp-tip-fg:#eef1ff; --kp-tip-muted:#aab3d6;
+  --kt-space-1:4px; --kt-space-2:8px; --kt-space-3:12px; --kt-space-4:16px; --kt-font:system-ui,-apple-system,"Segoe UI",sans-serif; }
 .kt { --kt-surface:#fff; --kt-surface-2:#eef1fa; --kt-text:#141a33; --kt-muted:#4a5378; --kt-border:#c9cfe6; --kt-control:#737c9c;
   --kt-focus:#0072b2; --kt-good-bg:#0072b2; --kt-good-fg:#fff; --kt-bad-bg:#f0e442; --kt-bad-fg:#141a33; --kt-mid-bg:#dfe3f2; --kt-mid-fg:#141a33;
-  --kt-space-1:4px; --kt-space-2:8px; --kt-space-3:12px; --kt-space-4:16px; --kt-radius:12px; --kt-font:system-ui,-apple-system,"Segoe UI",sans-serif;
+  --kt-radius:12px;
   position: fixed; z-index: 2147483647; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; box-sizing: border-box;
   background: var(--kt-surface); color: var(--kt-text); border: 1px solid var(--kt-border); border-radius: var(--kt-radius);
   box-shadow: 0 8px 24px rgb(0 0 0 / .35); font: 14px/1.4 var(--kt-font); font-variant-numeric: tabular-nums; }
@@ -716,26 +788,35 @@ const CSS = `
 .kt-copy { flex: 1; height: 32px; border: 0; border-radius: 8px; background: var(--kt-good-bg); color: var(--kt-good-fg); font: 600 14px var(--kt-font); cursor: pointer; }
 .kt-side { height: 32px; padding: 0 var(--kt-space-2); font-size: 12px; }
 .kt-copy:focus-visible { outline: 2px solid var(--kt-focus); outline-offset: 2px; }
-.kt-copied { font-size: 12px; color: var(--kt-muted); overflow-wrap: anywhere; }
-.kt-copied code { font-size: 11px; user-select: all; }
+.kt-copied { padding: 0 var(--kt-space-3) var(--kt-space-2); font-size: 12px; color: var(--kt-muted); overflow-wrap: anywhere; }
+.kt-copied:empty { display: none; }
+.kt-copied code { font-size: 12px; user-select: all; }
+.kt.is-collapsed .kt-copied { display: none; }
 .kp-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
-.kp { position: fixed; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; translate: -50% 0;
+.kp { position: fixed; display: inline-flex; align-items: center; gap: var(--kt-space-1); height: 24px; min-width: 24px; padding: 0 var(--kt-space-2); translate: -50% 0;
   border-radius: 999px; border: 1px solid var(--kp-edge); font: 700 12px/1 var(--kt-font); white-space: nowrap; cursor: help;
-  pointer-events: auto; box-shadow: 0 0 0 1px #ffffff, 0 1px 3px rgb(0 0 0 / .4); }
+  pointer-events: auto; box-shadow: 0 0 0 1px var(--kp-ring), 0 1px 3px rgb(0 0 0 / .4); }
 .kp[hidden] { display: none; }
 /* Cible étroite (case d'objet, banc) : symbole seul, verbe gardé pour les lecteurs d'écran. */
-.kp.is-compact { padding: 0 6px; }
+.kp.is-compact { justify-content: center; padding: 0 var(--kt-space-1); }
 .kp.is-compact .kp-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .kp-do, .kt-sym.kp-do { background: var(--kp-do-bg); color: var(--kp-do-fg); }
 .kp-opt, .kt-sym.kp-opt { background: var(--kp-opt-bg); color: var(--kp-opt-fg); }
 .kp-no, .kt-sym.kp-no { background: var(--kp-no-bg); color: var(--kp-no-fg); }
-.kp:focus-visible { outline: 2px solid #56b4e9; outline-offset: 2px; }
-.kp-tip { display: none; position: absolute; left: 50%; translate: -50% 0; bottom: calc(100% + 8px); width: 240px; padding: 8px 12px;
+.kp:focus-visible { outline: 2px solid var(--kp-focus); outline-offset: 2px; }
+.kp-tip { display: none; position: absolute; left: 50%; translate: -50% 0; bottom: calc(100% + var(--kt-space-2)); width: 240px; padding: var(--kt-space-2) var(--kt-space-3);
   border-radius: 8px; background: var(--kp-tip-bg); color: var(--kp-tip-fg); font: 400 12px/1.4 var(--kt-font); white-space: normal;
   text-align: left; box-shadow: 0 8px 24px rgb(0 0 0 / .45); }
-.kp.is-below .kp-tip { bottom: auto; top: calc(100% + 8px); }
+.kp.is-below .kp-tip { bottom: auto; top: calc(100% + var(--kt-space-2)); }
+/* Près d'un bord, la bulle s'aligne sur la pastille au lieu de se centrer (sinon coupée par la fenêtre). */
+.kp.is-left .kp-tip { left: 0; translate: 0 0; }
+.kp.is-right .kp-tip { left: auto; right: 0; translate: 0 0; }
 .kp:hover .kp-tip, .kp:focus-visible .kp-tip { display: block; }
-.kp-tip strong { display: block; font-size: 14px; margin-bottom: 4px; }
+/* La pastille survolée ou sélectionnée passe devant ses voisines, bulle comprise. */
+.kp:hover, .kp:focus-visible { z-index: 1; }
+.kp.is-dismissed .kp-tip { display: none; }
+.kp-tip strong { display: block; font-size: 14px; margin-bottom: var(--kt-space-1); }
+.kp-tip .m { display: block; margin-top: var(--kt-space-1); color: var(--kp-tip-muted); }
 `;
 
 const SYM = { do: '★', opt: '◆', no: '✕' };
@@ -752,65 +833,17 @@ const TARGETS = {
 };
 const TOWER_HUD = '.topbar .rtrack.tw';
 const COMPACT_BELOW = 64;
-
-async function openCache() {
-  try {
-    return await caches.open(KT.CACHE_NAME);
-  } catch (e) {
-    // Firefox refuse le Cache Storage en navigation privée ou quand le stockage du site est bloqué.
-    if (e instanceof DOMException) throw new Error('cache du navigateur indisponible : navigation privée ou stockage bloqué');
-    throw e;
-  }
-}
-
-async function loadJson(url) {
-  const cache = await openCache();
-  const hit = await cache.match(url);
-  const at = Number(hit?.headers.get('x-kt-at'));
-  const now = Date.now();
-  if (hit && KT.isFresh(at, now)) return { json: await hit.json(), at, stale: false };
-  // L'API ne reconnaît pas la forme faible W/"…" que reçoit le navigateur (réponse compressée) : même étiquette, sans le préfixe.
-  const etag = hit?.headers.get('etag')?.replace(/^W\//, '');
-  const stale = async reason => {
-    if (!hit) throw new Error(reason);
-    return { json: await hit.json(), at, stale: true };
-  };
-  let res;
-  let body;
-  try {
-    res = await fetch(url, etag ? { headers: { 'If-None-Match': etag } } : {});
-    body = res.ok ? await res.text() : null;
-  } catch (e) {
-    // fetch et la lecture du corps ne rejettent qu'avec TypeError en cas d'échec réseau.
-    if (e instanceof TypeError) return stale('réseau');
-    throw e;
-  }
-  if (res.status === 304 && hit) {
-    const cached = await hit.text();
-    await cache.put(url, new Response(cached, { headers: { 'content-type': 'application/json', etag: etag ?? '', 'x-kt-at': String(now) } }));
-    return { json: JSON.parse(cached), at: now, stale: false };
-  }
-  if (!res.ok) return stale(`HTTP ${res.status}`);
-  let json;
-  try {
-    json = JSON.parse(body);
-  } catch (e) {
-    if (e instanceof SyntaxError) return stale('format inattendu');
-    throw e;
-  }
-  await cache.put(url, new Response(body, { headers: { 'content-type': 'application/json', etag: res.headers.get('etag') ?? '', 'x-kt-at': String(now) } }));
-  return { json, at: now, stale: false };
-}
+// Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
+const TIP_HALF = 120;
 
 function mount() {
   const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
   const ui = { x: null, y: 16, collapsed: false, guide: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
-  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, error: null, stale: null, advice: null, copied: null };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, advice: null, copied: null };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${CSS}</style>
-<div class="kp-layer"></div>
 <div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
   <div class="kt-bar">
     <span class="kt-title">Étage</span>
@@ -821,8 +854,10 @@ function mount() {
     <button class="kt-btn" data-act="toggle"></button>
   </div>
   <div class="kt-body"></div>
+  <p class="kt-copied" role="status"></p>
   <div class="kt-foot"></div>
-</div>`;
+</div>
+<div class="kp-layer"></div>`;
   document.body.append(host);
   const panel = root.querySelector('.kt');
   const layer = root.querySelector('.kp-layer');
@@ -831,6 +866,7 @@ function mount() {
   const foot = root.querySelector('.kt-foot');
   const toggle = root.querySelector('[data-act="toggle"]');
   const src = root.querySelector('.kt-src');
+  const status = root.querySelector('.kt-copied');
 
   const saveUi = () => localStorage.setItem(KT.UI_KEY, JSON.stringify(ui));
 
@@ -880,15 +916,11 @@ function mount() {
     const t = a.target;
     const stops = t.stops.map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
     const chip = (id, core) => `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, KT.baseLine(id))}</span></li>`;
-    const copied = state.copied === null ? ''
-      : state.copied.ok ? 'Code copié : colle-le dans Planificateur → Coller un code.'
-        : `Copie refusée par le navigateur : sélectionne le code et copie-le.<br><code>${esc(a.code)}</code>`;
     return `<div class="kt-plan"><p class="kt-label">Compo cible · ${esc(stops)}</p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${ecoHtml(a)}${todoHtml(a)}
 <div class="kt-actions"><button class="kt-copy" data-act="copy">Copier la formation</button>
-<button class="kt-btn kt-side" data-act="side" aria-label="Côté du porteur dans la formation">Porteur : ${ui.side === 'left' ? 'gauche' : 'droite'}</button></div>
-<p class="kt-copied" role="status">${copied}</p></div>`;
+<button class="kt-btn kt-side" data-act="side" aria-label="Côté du porteur dans la formation">Porteur : ${ui.side === 'left' ? 'gauche' : 'droite'}</button></div></div>`;
   }
 
   function bossHtml() {
@@ -899,7 +931,7 @@ ${ecoHtml(a)}${todoHtml(a)}
     }
     const dist = stop.floor - state.floor;
     const lvl = KT.rateLevel(stop.win);
-    const names = KT.namer(state.data, state.lang);
+    const names = KT.namer(state.lang);
     const cores = KT.topCores(state.torre.cores, stop.stop);
     const coresHtml = cores.length
       ? `<ol class="kt-cores">${cores.map(c => {
@@ -915,8 +947,11 @@ ${state.advice ? planHtml(state.advice) : ''}
   }
 
   function contentHtml() {
+    const effect = state.failed.some(k => k !== 'lang')
+      ? 'Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées.'
+      : 'Les objets et les sceaux sont nommés par leur identifiant.';
     const alert = state.error
-      ? `<p class="kt-msg" role="alert"><strong>Données indisponibles (${esc(state.error)})</strong>Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées. Recharge la page dans une heure.</p>`
+      ? `<p class="kt-msg" role="alert"><strong>Données indisponibles (${esc(state.error)})</strong>${effect} Recharge la page dans une heure.</p>`
       : '';
     if (state.error && !state.torre) {
       const more = state.floor ? '' : '<p class="kt-msg">Saisis l’étage pour afficher les règles d’or.</p>';
@@ -929,6 +964,7 @@ ${state.advice ? planHtml(state.advice) : ''}
 
   // Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien).
   let lastHtml = null;
+  let lastCopied = '';
   let lastPins = null;
   let pins = [];
   function paint() {
@@ -953,7 +989,8 @@ ${state.advice ? planHtml(state.advice) : ''}
         pin.setAttribute('role', 'note');
         const tipId = `kp-tip-${n++}`;
         pin.setAttribute('aria-describedby', tipId);
-        pin.innerHTML = `${SYM[m.level]} <span class="kp-text">${esc(m.label)}</span><span class="kp-tip" id="${tipId}" role="tooltip"><strong>${esc(m.title)}</strong>${esc(m.why)}</span>`;
+        pin.innerHTML = `${SYM[m.level]} <span class="kp-text">${esc(m.label)}</span><span class="kp-tip" id="${tipId}" role="tooltip"><strong>${esc(m.title)}</strong>${esc(m.why)}${m.detail ? `<span class="m">${esc(m.detail)}</span>` : ''}</span>`;
+        for (const type of ['mouseleave', 'blur']) pin.addEventListener(type, () => pin.classList.remove('is-dismissed'));
         layer.append(pin);
         pins.push({ pin, t, i });
       });
@@ -977,6 +1014,9 @@ ${state.advice ? planHtml(state.advice) : ''}
       pin.style.top = `${Math.max(0, r.top - 12)}px`;
       pin.classList.toggle('is-below', r.top < window.innerHeight / 2);
       pin.classList.toggle('is-compact', r.width < COMPACT_BELOW);
+      const x = r.left + r.width / 2;
+      pin.classList.toggle('is-left', x < TIP_HALF);
+      pin.classList.toggle('is-right', x > window.innerWidth - TIP_HALF);
     }
   }
 
@@ -1019,6 +1059,13 @@ ${state.advice ? planHtml(state.advice) : ''}
     if (state.torre) {
       const cached = state.stale ? ` · copie du ${esc(new Date(state.stale).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))}` : '';
       foot.innerHTML = `Du ${esc(KT.shortDate(state.torre.from))} au ${esc(KT.shortDate(state.torre.to))}${cached} · Data: <a href="https://einoow.com" target="_blank" rel="noopener">Kanto Tactics · einoow.com</a>`;
+    }
+    const copied = state.copied === null ? ''
+      : state.copied.ok ? 'Code copié : colle-le dans Planificateur → Coller un code.'
+        : `Copie refusée par le navigateur : sélectionne le code et copie-le.<br><code>${esc(state.advice?.code ?? '')}</code>`;
+    if (copied !== lastCopied) {
+      status.innerHTML = copied;
+      lastCopied = copied;
     }
     place();
     paint();
@@ -1090,6 +1137,10 @@ ${state.advice ? planHtml(state.advice) : ''}
     saveUi();
   }, true);
   window.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      for (const pin of layer.querySelectorAll('.kp:hover, .kp:focus')) pin.classList.add('is-dismissed');
+      return;
+    }
     if (!e.altKey || e.code !== 'KeyK') return;
     e.preventDefault();
     ui.collapsed = !ui.collapsed;
@@ -1136,23 +1187,22 @@ ${state.advice ? planHtml(state.advice) : ''}
 
   // Sources indépendantes : sans data.json ou lang.json, le prochain boss et les trios restent affichés.
   const sources = [
-    ['torre', 'campana.json', KT.SOURCES.torre, j => j?.modes?.torre, KT.isTowerData],
-    ['data', 'data.json', KT.SOURCES.data, j => j, KT.isGameData],
-    ['lang', 'lang.json', KT.SOURCES.lang, j => j, KT.isLang],
+    ['torre', 'campana.json', KT.SOURCES.torre, j => KT.isTowerData(j?.modes?.torre), j => j.modes.torre],
+    ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j],
+    ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j],
   ];
-  Promise.allSettled(sources.map(([, , url, pick, ok]) => loadJson(url).then(r => {
-    if (!ok(pick(r.json))) throw new Error('format inattendu');
-    return { ...r, value: pick(r.json) };
-  }))).then(results => {
+  const env = { caches, fetch: (...a) => fetch(...a), now: Date.now() };
+  Promise.allSettled(sources.map(([, , url, accept]) => KT.loadJson(url, accept, env))).then(results => {
     const errors = [];
     const stale = [];
     results.forEach((r, i) => {
-      const [key, file] = sources[i];
+      const [key, file, , , pick] = sources[i];
       if (r.status === 'rejected') {
+        state.failed.push(key);
         errors.push(`${file} : ${r.reason.message}`);
         return;
       }
-      state[key] = r.value.value;
+      state[key] = pick(r.value.json);
       if (r.value.stale) stale.push(r.value.at);
     });
     state.error = errors.length ? errors.join(' ; ') : null;
