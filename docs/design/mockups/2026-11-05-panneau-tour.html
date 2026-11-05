@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maquette — panneau Tour Kanto Tactics</title>
+<!--
+Brief (5 lignes)
+- Utilisateur : Mathieu, en partie Tour sur Firefox desktop ; il lit le panneau d'un coup d'œil entre deux combats.
+- Densité : compacte (320 px de large), un point focal : le prochain boss et son meilleur trio.
+- Ton : outil discret posé sur le jeu, sans décor ; vocabulaire du jeu en français.
+- Palette : fond du jeu (#141a33) ; taux en Okabe-Ito (bleu = favorable, jaune = difficile) toujours avec symbole ▲/▼ et pourcentage.
+- Typographie : system-ui, chiffres tabulaires ; trois tailles (12, 14, 18 px).
+-->
+<style>
+  :root {
+    /* Tokens du panneau (repris tels quels dans kanto-overlay.user.js) */
+    --kt-surface: #ffffff;
+    --kt-surface-2: #eef1fa;
+    --kt-text: #141a33;
+    --kt-muted: #4a5378;
+    --kt-border: #c9cfe6;    /* séparateurs décoratifs */
+    --kt-control: #737c9c;   /* bord des boutons et du champ, 3:1 */
+    --kt-focus: #0072b2;
+    --kt-good-bg: #0072b2;   /* Okabe-Ito bleu */
+    --kt-good-fg: #ffffff;
+    --kt-bad-bg: #f0e442;    /* Okabe-Ito jaune */
+    --kt-bad-fg: #141a33;
+    --kt-mid-bg: #dfe3f2;
+    --kt-mid-fg: #141a33;
+    --kt-space-1: 4px;
+    --kt-space-2: 8px;
+    --kt-space-3: 12px;
+    --kt-space-4: 16px;
+    --kt-radius: 12px;
+    --kt-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --page-bg: #dfe6f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --kt-surface: #141a33;
+      --kt-surface-2: #1e2647;
+      --kt-text: #eef1ff;
+      --kt-muted: #aab3d6;
+      --kt-border: #33406e;
+      --kt-control: #7a86b8;
+      --kt-focus: #56b4e9;
+      --kt-good-bg: #56b4e9; /* Okabe-Ito bleu ciel */
+      --kt-good-fg: #141a33;
+      --kt-mid-bg: #2c3660;
+      --kt-mid-fg: #eef1ff;
+      --page-bg: #0b0f1f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--page-bg); font-family: var(--kt-font); color: var(--kt-text); }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .note { font-size: 14px; color: var(--kt-muted); margin: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, 320px); gap: 24px; align-items: start; }
+  .state > h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--kt-muted); margin: 0 0 8px; }
+
+  /* ---- Panneau ---- */
+  .kt { width: 320px; background: var(--kt-surface); color: var(--kt-text); border: 1px solid var(--kt-border);
+        border-radius: var(--kt-radius); box-shadow: 0 8px 24px rgb(0 0 0 / .35); font: 14px/1.4 var(--kt-font);
+        font-variant-numeric: tabular-nums; overflow: hidden; }
+  .kt-bar { display: flex; align-items: center; gap: var(--kt-space-2); padding: var(--kt-space-2) var(--kt-space-3);
+            background: var(--kt-surface-2); cursor: move; }
+  .kt-title { font-weight: 600; flex: 1; white-space: nowrap; }
+  .kt-src { font-size: 12px; color: var(--kt-muted); width: 44px; text-align: center; }
+  .kt-btn { min-width: 28px; height: 28px; border: 1px solid var(--kt-control); border-radius: 8px; background: var(--kt-surface);
+            color: var(--kt-text); font: inherit; cursor: pointer; }
+  .kt-btn:focus-visible, .kt-floor:focus-visible, .kt a:focus-visible, .kt summary:focus-visible { outline: 2px solid var(--kt-focus); outline-offset: 2px; }
+  .kt-floor { width: 56px; height: 28px; border: 1px solid var(--kt-control); border-radius: 8px; background: var(--kt-surface);
+              color: var(--kt-text); font: inherit; text-align: center; }
+  .kt-floor.is-empty { border-color: var(--kt-focus); border-width: 2px; }
+  .kt-body { padding: var(--kt-space-3); display: grid; gap: var(--kt-space-3); }
+  .kt-label { font-size: 12px; color: var(--kt-muted); margin: 0; }
+  .kt-boss { font-size: 18px; font-weight: 700; margin: 0; }
+  .kt-boss small { font-size: 14px; font-weight: 400; color: var(--kt-muted); }
+  .kt-stats { display: flex; flex-wrap: wrap; gap: var(--kt-space-2); align-items: center; font-size: 12px; color: var(--kt-muted); margin: 0; }
+  .kt-rate { display: inline-block; padding: 2px var(--kt-space-2); border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .kt-rate.good { background: var(--kt-good-bg); color: var(--kt-good-fg); }
+  .kt-rate.bad { background: var(--kt-bad-bg); color: var(--kt-bad-fg); }
+  .kt-rate.mid { background: var(--kt-mid-bg); color: var(--kt-mid-fg); }
+  .kt-cores { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--kt-space-1); }
+  .kt-cores li { display: grid; grid-template-columns: 1fr auto; gap: 0 var(--kt-space-2); padding: var(--kt-space-2);
+                 background: var(--kt-surface-2); border-radius: 8px; }
+  .kt-cores .n { grid-column: 1; font-size: 12px; color: var(--kt-muted); }
+  .kt-cores .kt-rate { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+  .kt-guide { border-top: 1px solid var(--kt-border); padding-top: var(--kt-space-2); }
+  .kt-guide summary { font-weight: 600; cursor: pointer; min-height: 24px; }
+  .kt-guide p, .kt-guide ul { margin: var(--kt-space-1) 0 0; font-size: 12px; }
+  .kt-guide ul { padding-left: var(--kt-space-4); }
+  .kt-msg { margin: 0; padding: var(--kt-space-2) var(--kt-space-3); border-radius: 8px; background: var(--kt-surface-2); }
+  .kt-msg strong { display: block; }
+  .kt-foot { padding: var(--kt-space-2) var(--kt-space-3); font-size: 12px; color: var(--kt-muted); border-top: 1px solid var(--kt-border); }
+  .kt-foot a { color: inherit; white-space: nowrap; }
+  .kt.is-collapsed .kt-body, .kt.is-collapsed .kt-foot { display: none; }
+</style>
+</head>
+<body>
+<h1>Panneau Tour — six états</h1>
+<p class="note">Données réelles de l'API (V41, du 31 octobre au 4 novembre 2026). Panneau en haut à droite du jeu, déplaçable par sa barre, repliable avec ▾ ou Alt+K.</p>
+
+<div class="grid">
+
+  <section class="state">
+    <h2>1. Nominal (étage détecté)</h2>
+    <div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
+      <div class="kt-bar">
+        <span class="kt-title">Tour · étage</span>
+        <button class="kt-btn" aria-label="Étage précédent">−</button>
+        <input class="kt-floor" value="58" inputmode="numeric" aria-label="Étage courant">
+        <button class="kt-btn" aria-label="Étage suivant">+</button>
+        <span class="kt-src" title="Lu dans la sauvegarde du jeu">auto</span>
+        <button class="kt-btn" aria-label="Replier le panneau" aria-expanded="true">▾</button>
+      </div>
+      <div class="kt-body">
+        <div>
+          <p class="kt-label">Prochain boss</p>
+          <p class="kt-boss">Électhor <small>· étage 60, dans 2</small></p>
+          <p class="kt-stats"><span class="kt-rate mid">● 40,8 % victoires</span> 1er essai 44,4 % · 2,45 essais</p>
+        </div>
+        <div>
+          <p class="kt-label">Meilleurs trios (≥ 20 combats)</p>
+          <ol class="kt-cores">
+            <li><span>Ptéra · Minidraco · Caninos</span><span class="kt-rate good">▲ 96,1 %</span><span class="n">51 combats</span></li>
+            <li><span>Minidraco · Caninos · Magmar</span><span class="kt-rate good">▲ 96,0 %</span><span class="n">25 combats</span></li>
+            <li><span>Kabuto · Kokiyas · Stari</span><span class="kt-rate good">▲ 83,3 %</span><span class="n">30 combats</span></li>
+          </ol>
+        </div>
+        <details class="kt-guide" open>
+          <summary>Conseils du guide · étages 41–80</summary>
+          <p>Shinies à saisir : Minidraco, Ptéra, Nidorino, Amonita. Priorité à ceux qui complètent l'équipe (conseil non vérifié, effet sans doute cosmétique).</p>
+          <ul>
+            <li>Intérêts : +1 pièce par tranche de 10, +5 au plus → garder 50 pièces si l'équipe tient.</li>
+            <li>Actualisation à 2 pièces : ne pas en enchaîner pour un shiny.</li>
+            <li>Dépenser avant un boss difficile, reconstituer après une victoire facile.</li>
+          </ul>
+        </details>
+      </div>
+      <div class="kt-foot">Du 31 oct. au 4 nov. · Data: <a href="#">Kanto Tactics · einoow.com</a></div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>2. Boss difficile (étage 200)</h2>
+    <div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
+      <div class="kt-bar">
+        <span class="kt-title">Tour · étage</span>
+        <button class="kt-btn" aria-label="Étage précédent">−</button>
+        <input class="kt-floor" value="196" inputmode="numeric" aria-label="Étage courant">
+        <button class="kt-btn" aria-label="Étage suivant">+</button>
+        <span class="kt-src">auto</span>
+        <button class="kt-btn" aria-label="Replier le panneau" aria-expanded="true">▾</button>
+      </div>
+      <div class="kt-body">
+        <div>
+          <p class="kt-label">Prochain boss</p>
+          <p class="kt-boss">Mewtwo <small>· étage 200, dans 4</small></p>
+          <p class="kt-stats"><span class="kt-rate bad">▼ 21,2 % victoires</span> 1er essai 16,2 % · 4,72 essais</p>
+        </div>
+        <div>
+          <p class="kt-label">Meilleurs trios (≥ 20 combats)</p>
+          <ol class="kt-cores">
+            <li><span>Leveinard · Métamorph · Minidraco</span><span class="kt-rate bad">▼ 38,5 %</span><span class="n">26 combats</span></li>
+            <li><span>Ptéra · Miaouss de Giovanni · Smogo de Koga</span><span class="kt-rate bad">▼ 38,1 %</span><span class="n">21 combats</span></li>
+            <li><span>Ptéra · Leveinard · Métamorph</span><span class="kt-rate bad">▼ 37,5 %</span><span class="n">32 combats</span></li>
+          </ol>
+        </div>
+        <details class="kt-guide">
+          <summary>Conseils du guide · étages 161–200</summary>
+        </details>
+      </div>
+      <div class="kt-foot">Du 31 oct. au 4 nov. · Data: <a href="#">Kanto Tactics · einoow.com</a></div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>3. Sauvegarde introuvable (saisie)</h2>
+    <div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
+      <div class="kt-bar">
+        <span class="kt-title">Tour · étage</span>
+        <button class="kt-btn" aria-label="Étage précédent">−</button>
+        <input class="kt-floor is-empty" value="" placeholder="?" inputmode="numeric" aria-label="Étage courant">
+        <button class="kt-btn" aria-label="Étage suivant">+</button>
+        <span class="kt-src">manuel</span>
+        <button class="kt-btn" aria-label="Replier le panneau" aria-expanded="true">▾</button>
+      </div>
+      <div class="kt-body">
+        <p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Lance une partie Tour, ou saisis l'étage dans le champ ci-dessus.</p>
+      </div>
+      <div class="kt-foot">Du 31 oct. au 4 nov. · Data: <a href="#">Kanto Tactics · einoow.com</a></div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>4. Chargement</h2>
+    <div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
+      <div class="kt-bar">
+        <span class="kt-title">Tour · étage</span>
+        <button class="kt-btn" aria-label="Étage précédent">−</button>
+        <input class="kt-floor" value="58" inputmode="numeric" aria-label="Étage courant">
+        <button class="kt-btn" aria-label="Étage suivant">+</button>
+        <span class="kt-src">auto</span>
+        <button class="kt-btn" aria-label="Replier le panneau" aria-expanded="true">▾</button>
+      </div>
+      <div class="kt-body">
+        <p class="kt-msg" role="status">Chargement des statistiques de la Tour…</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>5. Erreur réseau ou API</h2>
+    <div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
+      <div class="kt-bar">
+        <span class="kt-title">Tour · étage</span>
+        <button class="kt-btn" aria-label="Étage précédent">−</button>
+        <input class="kt-floor" value="58" inputmode="numeric" aria-label="Étage courant">
+        <button class="kt-btn" aria-label="Étage suivant">+</button>
+        <span class="kt-src">auto</span>
+        <button class="kt-btn" aria-label="Replier le panneau" aria-expanded="true">▾</button>
+      </div>
+      <div class="kt-body">
+        <p class="kt-msg" role="alert"><strong>Données indisponibles (HTTP 429)</strong>Réessaie en rechargeant la page dans quelques minutes. Les conseils du guide restent affichés ci-dessous.</p>
+        <details class="kt-guide">
+          <summary>Conseils du guide · étages 41–80</summary>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>6. Aucune donnée · replié</h2>
+    <div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics" style="margin-bottom:16px">
+      <div class="kt-bar">
+        <span class="kt-title">Tour · étage</span>
+        <button class="kt-btn" aria-label="Étage précédent">−</button>
+        <input class="kt-floor" value="1000" inputmode="numeric" aria-label="Étage courant">
+        <button class="kt-btn" aria-label="Étage suivant">+</button>
+        <span class="kt-src">auto</span>
+        <button class="kt-btn" aria-label="Replier le panneau" aria-expanded="true">▾</button>
+      </div>
+      <div class="kt-body">
+        <p class="kt-msg"><strong>Aucune donnée au-delà de l'étage 999</strong>Les statistiques publiques s'arrêtent là.</p>
+      </div>
+    </div>
+    <div class="kt is-collapsed" role="complementary" aria-label="Aide Tour Kanto Tactics">
+      <div class="kt-bar">
+        <span class="kt-title">Tour · étage</span>
+        <button class="kt-btn" aria-label="Étage précédent">−</button>
+        <input class="kt-floor" value="58" inputmode="numeric" aria-label="Étage courant">
+        <button class="kt-btn" aria-label="Étage suivant">+</button>
+        <span class="kt-src">auto</span>
+        <button class="kt-btn" aria-label="Déplier le panneau" aria-expanded="false">▸</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
