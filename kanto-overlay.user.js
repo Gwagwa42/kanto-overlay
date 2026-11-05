@@ -98,10 +98,11 @@ const KT = (() => {
 
   // Forme minimale de .modes.torre dont dépend le panneau ; sinon le format de l'API a changé.
   function isTowerData(t) {
-    return Array.isArray(t?.stops) && t.stops.length > 0 && Array.isArray(t.cores)
+    return Array.isArray(t?.stops) && Array.isArray(t.cores)
       && typeof t.from === 'string' && typeof t.to === 'string'
-      && t.stops.every(s => typeof s.stop === 'string' && [s.win, s.first, s.tries].every(Number.isFinite))
-      && t.cores.every(c => typeof c.stop === 'string' && Array.isArray(c.core) && Number.isFinite(c.n) && Number.isFinite(c.win));
+      && t.stops.every(s => typeof s?.stop === 'string' && /^\d+:\w+$/.test(s.stop) && [s.win, s.first, s.tries].every(Number.isFinite))
+      && t.stops.some(s => !s.stop.endsWith(':elite'))
+      && t.cores.every(c => typeof c?.stop === 'string' && Array.isArray(c.core) && Number.isFinite(c.n) && Number.isFinite(c.win));
   }
 
   function lastBossFloor(stops) {
@@ -170,9 +171,9 @@ const CSS = `
     --kt-focus:#56b4e9; --kt-good-bg:#56b4e9; --kt-good-fg:#141a33; --kt-mid-bg:#2c3660; --kt-mid-fg:#eef1ff; }
 }
 .kt * { box-sizing: border-box; }
-.kt-bar { display: flex; align-items: center; gap: var(--kt-space-2); padding: var(--kt-space-2) var(--kt-space-3); background: var(--kt-surface-2); cursor: move; touch-action: none; }
+.kt-bar { display: flex; align-items: center; gap: var(--kt-space-2); padding: var(--kt-space-2) var(--kt-space-3); background: var(--kt-surface-2); cursor: move; touch-action: none; user-select: none; }
 .kt-title { font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kt-src { font-size: 12px; color: var(--kt-muted); }
+.kt-src { font-size: 12px; color: var(--kt-muted); min-width: 6.5ch; text-align: center; }
 .kt-btn { min-width: 28px; height: 28px; border: 1px solid var(--kt-control); border-radius: 8px; background: var(--kt-surface); color: var(--kt-text); font: inherit; cursor: pointer; }
 .kt-floor { width: 56px; height: 28px; border: 1px solid var(--kt-control); border-radius: 8px; background: var(--kt-surface); color: var(--kt-text); font: inherit; text-align: center; }
 .kt-floor.is-empty { border-color: var(--kt-focus); border-width: 2px; }
@@ -236,6 +237,7 @@ function mount() {
   function place() {
     panel.style.top = `${Math.max(0, Math.min(ui.y, window.innerHeight - 40))}px`;
     if (ui.x === null) {
+      panel.style.left = '';
       panel.style.right = '16px';
       return;
     }
@@ -331,8 +333,13 @@ function mount() {
     }
   });
   input.addEventListener('change', () => setManual(Number.parseInt(input.value, 10)));
-  // Le Shadow DOM ne fait que recibler les événements : sans cet arrêt, le jeu recevrait les chiffres tapés.
-  for (const type of ['keydown', 'keyup', 'keypress']) input.addEventListener(type, e => e.stopPropagation());
+  // Le Shadow DOM ne fait que recibler les événements : sans cet arrêt, les écouteurs du jeu en remontée recevraient
+  // les chiffres tapés. Alt+K passe, pour replier le panneau depuis le champ.
+  for (const type of ['keydown', 'keyup', 'keypress']) {
+    input.addEventListener(type, e => {
+      if (!(e.altKey && e.code === 'KeyK')) e.stopPropagation();
+    });
+  }
   root.addEventListener('toggle', e => {
     if (!e.target.matches('.kt-guide') || ui.guide === e.target.open) return;
     ui.guide = e.target.open;
@@ -387,7 +394,8 @@ function mount() {
     .then(r => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json().catch(e => {
-        throw e instanceof SyntaxError ? new Error('format inattendu') : e;
+        if (e instanceof SyntaxError) throw new Error('format inattendu');
+        throw e instanceof TypeError ? new Error('réseau') : e;
       });
     }, e => {
       // fetch ne rejette qu'avec TypeError en cas d'échec réseau.

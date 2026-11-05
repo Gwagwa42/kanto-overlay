@@ -41,6 +41,12 @@ test('forme des données de la Tour', () => {
   assert.equal(KT.isTowerData({ ...torre, from: undefined }), false);
   assert.equal(KT.isTowerData({ ...torre, stops: [{ stop: '5:brock', win: 50, first: 40 }] }), false);
   assert.equal(KT.isTowerData({ ...torre, cores: [{ stop: '5:brock', core: 'abra', n: 30, win: 90 }] }), false);
+  const ok = { stop: '5:brock', win: 50, first: 40, tries: 2 };
+  assert.equal(KT.isTowerData({ ...torre, stops: [ok, null] }), false);
+  assert.equal(KT.isTowerData({ ...torre, cores: [null] }), false);
+  assert.equal(KT.isTowerData({ ...torre, stops: [ok, { ...ok, stop: 'brock' }] }), false);
+  assert.equal(KT.isTowerData({ ...torre, stops: [{ ...ok, stop: '9:elite' }] }), false);
+  assert.equal(KT.isTowerData({ ...torre, stops: [ok, { ...ok, stop: '200:mewtwo2' }] }), true);
 });
 
 test('trios : au moins 20 combats, triés par victoires puis combats, 3 au plus', () => {
