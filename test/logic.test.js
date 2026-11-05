@@ -65,6 +65,10 @@ test('forme des données : Tour, données de jeu, langue', () => {
   assert.equal(KT.isTowerData({ ...torre, cores: [{ stop: '5:brock', core: ['abra'], n: 30, win: 90 }] }), false);
   assert.equal(KT.isTowerData({ ...torre, holders: [{ line: 'abra', id: 'leftovers', n: 30 }] }), false);
   assert.equal(KT.isTowerData({ ...torre, stops: [{ stop: '9:elite', win: 50, first: 40, tries: 2 }] }), false);
+  const ok = { stop: '5:brock', win: 50, first: 40, tries: 2 };
+  assert.equal(KT.isTowerData({ ...torre, stops: [ok, null] }), false);
+  assert.equal(KT.isTowerData({ ...torre, stops: [ok, { ...ok, stop: 'brock' }] }), false);
+  assert.equal(KT.isTowerData({ ...torre, cores: [null] }), false);
   assert.equal(KT.isGameData(data), true);
   assert.equal(KT.isGameData({ ...data, recipes: [['a', 'b']] }), false);
   assert.equal(KT.isGameData({ ...data, lines: { abra: { c: 1 } } }), false);
@@ -121,6 +125,7 @@ test('tout jouer : combat de l’étage sous 45 %, ou PV sous 40', () => {
   assert.equal(at(1056, 62).allIn, false);
   assert.equal(at(1056, 62).nextWall.floor, 60);
   assert.equal(at(1056, 62).spend, 8);
+  assert.equal(at(1059, 62).spend, 38);
   assert.equal(at(1059, 62).allIn, true);
   assert.equal(at(1056, 39).allIn, true);
 });
@@ -156,6 +161,13 @@ test('boutique : ★ 3ᵉ copie et cœur, ◆ si l’or, ✕ hors compo', () => 
   assert.equal(brief(poor.shop[2]), 'no Ignore');
   const shiny = advise({ ...S57, shopShiny: [false, false, true, false, false] });
   assert.equal(brief(shiny.shop[2]), 'do Achète');
+});
+
+test('boutique : ★ seulement si l’or suffit, de gauche à droite ; le reste ne compte pas dans l’or engagé', () => {
+  const a = advise({ ...S57, gold: 5 });
+  assert.deepEqual(a.shop.slice(0, 2).map(brief), ['do Achète', 'opt Si l’or']);
+  assert.match(a.shop[1].why, /il manque de l’or/);
+  assert.equal(advise({ ...S57, gold: 5, round: 1059 }).reroll, null);
 });
 
 test('boutique sans statistiques : seules les 3ᵉ copies sont marquées', () => {
@@ -202,6 +214,8 @@ test('objets : recette idéale, sinon garder ; fusion immédiate en tout jouer',
   assert.equal(a.bag[1].title, a.bag[2].title);
   const allIn = advise({ ...S57, round: 1059 });
   assert.deepEqual(allIn.bag.map(brief), ['do → Minidraco', 'do → Caninos', 'do → Caninos']);
+  const impossible = advise({ ...S57, round: 1059, items: ['iron'] });
+  assert.notEqual(impossible.bag[0].level, 'do');
   const magnet = advise({ ...S57, level: 4, items: ['magnet'], units: { ...S57.units, e: { id: 'e', line: 'ekans', star: 1, items: ['leftovers'] } } });
   assert.equal(brief(magnet.bag[0]), 'do Retire de Abo');
 });
@@ -229,6 +243,7 @@ test('sceaux : économie tôt, combat en tout jouer, risque évité avec peu de 
   assert.deepEqual(choose(['piggy-bank', 'poke-flute']), ['do Prends', null]);
   assert.deepEqual(choose(['piggy-bank', 'poke-flute'], { round: 1059 }), [null, 'do Prends']);
   assert.deepEqual(choose(['rocket-loan', 'poke-flute'], { hp: 30 }), ['no Évite', 'do Prends']);
+  assert.deepEqual(choose(['rocket-loan', 'life-orb'], { hp: 30 }), ['no Évite', 'no Évite']);
 });
 
 test('ancrage : conseillé si la compo vise une forme ancrée non encore choisie', () => {

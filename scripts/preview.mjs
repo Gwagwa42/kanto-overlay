@@ -31,6 +31,8 @@ const STATES = {
   modales: { save: MODALS, api: 'ok', modal: true },
   'boss-difficile': { save: { ...S57, round: 1195 }, api: 'ok' },
   'sans-sauvegarde': { save: null, api: 'ok' },
+  'sans-donnee': { save: { ...S57, round: 1998 }, api: 'ok' },
+  'donnees-partielles': { save: S57, api: 'partial' },
   chargement: { save: S57, api: 'pending' },
   erreur: { save: S57, api: 'error' },
 };
@@ -57,7 +59,7 @@ function slim(s) {
       ...data, lines: Object.fromEntries([...lines].filter(b => data.lines[b]).map(b => [b, data.lines[b]])),
       seals: {},
     },
-    lang: { items: lang.items, seals: {}, types: lang.types },
+    lang: { items: lang.items, seals: {} },
   };
 }
 
@@ -98,8 +100,10 @@ Object.defineProperty(window, 'caches', { configurable: true, value: { open: asy
   match: async url => cacheStore.get(url)?.clone(), put: async (url, res) => { cacheStore.set(url, res); } }) } });
 const api = ${JSON.stringify(s.api)};
 const payload = ${JSON.stringify(payload)};
+// partial : seule data.json échoue (429).
+const served = url => api === 'ok' || (api === 'partial' && url !== ${JSON.stringify(KT.SOURCES.data)});
 window.fetch = url => api === 'pending' ? new Promise(() => {})
-  : Promise.resolve(new Response(api === 'ok' ? JSON.stringify(payload[url]) : '', { status: api === 'ok' ? 200 : 429 }));
+  : Promise.resolve(new Response(served(url) ? JSON.stringify(payload[url]) : '', { status: served(url) ? 200 : 429 }));
 ${s.tip ? `setTimeout(() => { const r = [...document.body.children].find(e => e.shadowRoot)?.shadowRoot;
   r?.append(Object.assign(document.createElement('style'), { textContent: '.kp:nth-child(1) .kp-tip { display: block; }' })); }, 50);` : ''}
 `;

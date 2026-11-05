@@ -161,9 +161,12 @@ const KT = (() => {
     return save !== null && typeof save === 'object' && Number.isFinite(save.round) ? save : null;
   }
 
+  const floorOf = round => Math.max(1, Math.floor(round) - ROUND_BASE + 1);
+  const coreKey = core => [...core].sort().join('+');
+
   function floorFromSave(raw) {
     const save = parseSave(raw);
-    return save && Math.max(1, Math.floor(save.round) - ROUND_BASE + 1);
+    return save && floorOf(save.round);
   }
 
   function parseStop(stop) {
@@ -190,7 +193,7 @@ const KT = (() => {
       && d.recipes.every(r => Array.isArray(r) && r.length === 3);
   }
 
-  const isLang = l => isObject(l?.items) && isObject(l.seals) && isObject(l.types);
+  const isLang = l => isObject(l?.items) && isObject(l.seals);
 
   const isFresh = (at, now) => Number.isFinite(at) && now - at >= 0 && now - at < CACHE_MAX_AGE;
 
@@ -244,7 +247,6 @@ const KT = (() => {
       stage: (base, n) => LINES[base]?.[n] ?? base,
       item: id => lang?.items[id]?.name ?? id,
       seal: id => lang?.seals[id]?.name ?? id,
-      type: id => lang?.types[id] ?? id,
     };
   }
 
@@ -271,7 +273,7 @@ const KT = (() => {
       ...(save.bench ?? []).map((id, slot) => ({ id, slot })).filter(p => p.id)];
     const units = placed.map(p => ({ ...save.units[p.id], ...p })).filter(u => typeof u.line === 'string');
     return {
-      floor: Math.max(1, Math.floor(save.round) - ROUND_BASE + 1),
+      floor: floorOf(save.round),
       gold: save.gold, level: save.level, xp: save.xp, hp: save.hp,
       units,
       bench: save.bench ?? [],
@@ -300,7 +302,7 @@ const KT = (() => {
     const floor = goldFloor(game.boons);
     const allIn = game.hp < LOW_HP || (here !== undefined && here.win < HARD_WIN);
     const nextWall = stops.find(s => s.win < HARD_WIN) ?? null;
-    return { gold: game.gold, floor, spend: Math.max(0, game.gold - floor), allIn, lowHp: game.hp < LOW_HP, nextWall };
+    return { gold: game.gold, floor, spend: allIn ? game.gold : Math.max(0, game.gold - floor), allIn, lowHp: game.hp < LOW_HP, nextWall };
   }
 
   function lineLo(torre, id) {
@@ -309,7 +311,7 @@ const KT = (() => {
 
   function coreScore(core, stops, coresByStop, game) {
     const total = stops.reduce((s, st) => s + st.weight, 0);
-    const key = [...core].sort().join('+');
+    const key = coreKey(core);
     const stat = stops.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop)?.get(key)?.lo ?? 0), 0) / total;
     const owned = core.reduce((s, id) => {
       const star = bestStar(game, baseLine(id));
@@ -336,7 +338,7 @@ const KT = (() => {
     if (!stops.length) return null;
     const coresByStop = new Map(stops.map(st => [st.stop, new Map(torre.cores
       .filter(c => c.stop === st.stop && c.n >= MIN_FIGHTS)
-      .map(c => [[...c.core].sort().join('+'), c]))]));
+      .map(c => [coreKey(c.core), c]))]));
     const candidates = new Map();
     for (const m of coresByStop.values()) for (const [key, c] of m) candidates.set(key, c.core);
     if (!candidates.size) return null;
@@ -369,12 +371,20 @@ const KT = (() => {
     return star >= 2 ? '★'.repeat(star) : `${ones(game, base)}/3`;
   }
 
-  // Marque : { level: 'do' | 'opt' | 'no', label, title, why, lines[] } ; label = texte de la pastille.
-  const mark = (level, label, title, why, lines = []) => ({ level, label, title, why, lines });
+  // Marque : { level: 'do' | 'opt' | 'no', label, title, why } ; label = texte de la pastille, vide = conseil du panneau seul.
+  const mark = (level, label, title, why) => ({ level, label, title, why });
 
   function shopMarks(game, target, data, eco, names) {
     const core = target ? target.core.map(baseLine) : [];
     const wanted = targetBases(target);
+    // Or restant après les achats ★ des cartes précédentes (de gauche à droite).
+    let budget = game.gold;
+    const buy = (cost, name, why) => {
+      // Coût inconnu (données de jeu indisponibles) : le conseil ne peut pas vérifier l'or.
+      if (cost !== undefined && cost > budget) return mark('opt', 'Si l’or', `Achète ${name} dès que possible`, `${why} ; il manque de l’or`);
+      budget -= cost ?? 0;
+      return mark('do', 'Achète', `Achète ${name}`, why);
+    };
     return game.shop.map((base, i) => {
       if (!base) return null;
       const name = names.line(base);
@@ -382,9 +392,9 @@ const KT = (() => {
       const inTarget = wanted.includes(base);
       const cost = lineInfo(data, base)?.c;
       const keepsFloor = (cost !== undefined && game.gold - cost >= eco.floor) || eco.allIn;
-      if (triple && (inTarget || !target)) return mark('do', 'Achète', `Achète ${name}`, '3ᵉ copie, passe ★★');
-      if (core.includes(base)) return mark('do', 'Achète', `Achète ${name}`, 'cœur de la compo cible');
-      if (game.shopShiny[i] && inTarget) return mark('do', 'Achète', `Achète ${name} shiny`, '+10 % PV, défenses et dégâts');
+      if (triple && (inTarget || !target)) return buy(cost, name, '3ᵉ copie, passe ★★');
+      if (core.includes(base)) return buy(cost, name, 'cœur de la compo cible');
+      if (game.shopShiny[i] && inTarget) return buy(cost, `${name} shiny`, '+10 % PV, défenses et dégâts');
       if (!target) return null;
       if ((inTarget || triple) && keepsFloor) {
         return mark('opt', 'Si l’or', `${name} si l’or reste ≥ ${eco.floor}`, triple ? '3ᵉ copie hors compo' : 'renforce le plateau de la compo');
@@ -490,7 +500,7 @@ const KT = (() => {
           if (a !== id && b !== id) continue;
           const partner = a === id ? b : a;
           const ready = on.includes(partner) || bagCount(partner) >= (partner === id ? 2 : 1);
-          if (ready || eco.allIn) {
+          if (ready) {
             marks[i] = mark('do', `→ ${who}`, `${names.item(a)} + ${names.item(b)} → ${who}`, `${names.item(full)}, meilleur objet de sa lignée en Tour`);
             return;
           }
@@ -561,7 +571,7 @@ const KT = (() => {
     const best = Math.max(...scored.filter(Boolean).map(x => x.s));
     const marks = scored.map(x => {
       if (!x) return null;
-      if (x.s === best && scored.find(y => y?.s === best) === x) {
+      if (best > 0 && x.s === best && scored.find(y => y?.s === best) === x) {
         const path = boonPath(x.id);
         const why = x.seal ? 'sceau le plus utile pour ta situation'
           : game.hp < LOW_HP && HEAL_BOONS.includes(x.id) ? `PV bas (${game.hp})`
@@ -595,9 +605,8 @@ const KT = (() => {
     const tank = roleBase('tank');
     const units = ids.map(id => {
       const base = baseLine(id);
-      const owned = unitsOf(game, base);
       const h = holders.find(x => baseLine(x.unit.line) === base);
-      return { line: id, base, star: Math.max(1, bestStar(game, base)), items: h ? h.ideal : [], ranged: (lineInfo(data, base)?.range ?? 1) > 1, owned: owned.length > 0 };
+      return { line: id, base, star: Math.max(1, bestStar(game, base)), items: h ? h.ideal : [], ranged: (lineInfo(data, base)?.range ?? 1) > 1 };
     });
     const front = units.filter(u => !u.ranged).sort((a, b) => Number(b.base === tank) - Number(a.base === tank));
     const back = units.filter(u => u.ranged).sort((a, b) => Number(b.base === carry) - Number(a.base === carry));
@@ -744,8 +753,18 @@ const TARGETS = {
 const TOWER_HUD = '.topbar .rtrack.tw';
 const COMPACT_BELOW = 64;
 
+async function openCache() {
+  try {
+    return await caches.open(KT.CACHE_NAME);
+  } catch (e) {
+    // Firefox refuse le Cache Storage en navigation privée ou quand le stockage du site est bloqué.
+    if (e instanceof DOMException) throw new Error('cache du navigateur indisponible : navigation privée ou stockage bloqué');
+    throw e;
+  }
+}
+
 async function loadJson(url) {
-  const cache = await caches.open(KT.CACHE_NAME);
+  const cache = await openCache();
   const hit = await cache.match(url);
   const at = Number(hit?.headers.get('x-kt-at'));
   const now = Date.now();
@@ -757,20 +776,21 @@ async function loadJson(url) {
     return { json: await hit.json(), at, stale: true };
   };
   let res;
+  let body;
   try {
     res = await fetch(url, etag ? { headers: { 'If-None-Match': etag } } : {});
+    body = res.ok ? await res.text() : null;
   } catch (e) {
-    // fetch ne rejette qu'avec TypeError en cas d'échec réseau.
+    // fetch et la lecture du corps ne rejettent qu'avec TypeError en cas d'échec réseau.
     if (e instanceof TypeError) return stale('réseau');
     throw e;
   }
   if (res.status === 304 && hit) {
-    const body = await hit.text();
-    await cache.put(url, new Response(body, { headers: { 'content-type': 'application/json', etag: etag ?? '', 'x-kt-at': String(now) } }));
-    return { json: JSON.parse(body), at: now, stale: false };
+    const cached = await hit.text();
+    await cache.put(url, new Response(cached, { headers: { 'content-type': 'application/json', etag: etag ?? '', 'x-kt-at': String(now) } }));
+    return { json: JSON.parse(cached), at: now, stale: false };
   }
   if (!res.ok) return stale(`HTTP ${res.status}`);
-  const body = await res.text();
   let json;
   try {
     json = JSON.parse(body);
@@ -785,7 +805,7 @@ async function loadJson(url) {
 function mount() {
   const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
   const ui = { x: null, y: 16, collapsed: false, guide: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
-  const state = { floor: null, source: 'manuel', lastRaw: undefined, save: null, torre: null, data: null, lang: null, error: null, stale: null, advice: null, copied: null };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, error: null, stale: null, advice: null, copied: null };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
@@ -895,22 +915,32 @@ ${state.advice ? planHtml(state.advice) : ''}
   }
 
   function contentHtml() {
-    if (state.error) {
-      const more = state.floor ? '' : ' Saisis l’étage pour afficher les règles d’or.';
-      const plan = state.advice ? planHtml(state.advice) : '';
-      return `<p class="kt-msg" role="alert"><strong>Données indisponibles (${esc(state.error)})</strong>Sans statistiques, pas de compo cible : seuls l’économie et les évolutions sont conseillées. Recharge la page dans une heure.${more}</p>${plan}${state.floor ? guideHtml(state.floor) : ''}`;
+    const alert = state.error
+      ? `<p class="kt-msg" role="alert"><strong>Données indisponibles (${esc(state.error)})</strong>Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées. Recharge la page dans une heure.</p>`
+      : '';
+    if (state.error && !state.torre) {
+      const more = state.floor ? '' : '<p class="kt-msg">Saisis l’étage pour afficher les règles d’or.</p>';
+      return `${alert}${state.advice ? planHtml(state.advice) : ''}${more}${state.floor ? guideHtml(state.floor) : ''}`;
     }
     if (!state.torre) return '<p class="kt-msg" role="status">Chargement des statistiques de la Tour…</p>';
-    if (!state.floor) return '<p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p>';
-    return `${bossHtml()}${guideHtml(state.floor)}`;
+    if (!state.floor) return `${alert}<p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p>`;
+    return `${alert}${bossHtml()}${guideHtml(state.floor)}`;
   }
 
   // Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien).
+  let lastHtml = null;
+  let lastPins = null;
   let pins = [];
   function paint() {
+    const a = state.advice;
+    const sig = JSON.stringify(a && Object.keys(TARGETS).map(g => a[g]));
+    if (sig === lastPins) {
+      position();
+      return;
+    }
+    lastPins = sig;
     layer.replaceChildren();
     pins = [];
-    const a = state.advice;
     if (!a) return;
     let n = 0;
     for (const [group, t] of Object.entries(TARGETS)) {
@@ -934,8 +964,10 @@ ${state.advice ? planHtml(state.advice) : ''}
   function position() {
     const tower = document.querySelector(TOWER_HUD) !== null;
     const modal = document.querySelector('.modal') !== null;
+    const found = new Map();
     for (const { pin, t, i } of pins) {
-      const all = [...document.querySelectorAll(t.sel)];
+      if (!found.has(t.sel)) found.set(t.sel, [...document.querySelectorAll(t.sel)]);
+      const all = found.get(t.sel);
       const el = t.by ? all.find(e => t.by(e, i)) : all[i];
       const r = el?.getBoundingClientRect();
       const show = tower && t.modal === modal && r !== undefined && r.width > 0 && r.height > 0;
@@ -957,9 +989,11 @@ ${state.advice ? planHtml(state.advice) : ''}
   };
 
   function compute() {
+    const code = state.advice?.code;
     state.advice = state.save && (state.torre || state.error)
       ? KT.advise({ torre: state.torre, data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side })
       : null;
+    if (state.advice?.code !== code) state.copied = null;
     const key = state.advice?.target?.key ?? ui.target;
     if (key !== ui.target) {
       ui.target = key;
@@ -975,7 +1009,12 @@ ${state.advice ? planHtml(state.advice) : ''}
     src.textContent = state.source;
     if (root.activeElement !== input) input.value = state.floor ?? '';
     input.classList.toggle('is-empty', !state.floor);
-    body.innerHTML = contentHtml();
+    // Réécrire seulement ce qui change : un focus ou une bulle ouverte survit aux réécritures de la sauvegarde.
+    const html = contentHtml();
+    if (html !== lastHtml) {
+      body.innerHTML = html;
+      lastHtml = html;
+    }
     foot.hidden = !state.torre;
     if (state.torre) {
       const cached = state.stale ? ` · copie du ${esc(new Date(state.stale).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))}` : '';
@@ -996,12 +1035,17 @@ ${state.advice ? planHtml(state.advice) : ''}
     if (raw === state.lastRaw) return;
     state.lastRaw = raw;
     state.save = KT.parseSave(raw);
-    if (state.save) {
-      state.floor = KT.floorFromSave(raw);
-      state.source = 'auto';
-    } else if (state.source === 'auto') {
-      state.floor = null;
-      state.source = 'manuel';
+    // L'étage saisi à la main tient jusqu'à ce que la sauvegarde change d'étage.
+    const f = KT.floorFromSave(raw);
+    if (f !== state.lastAuto) {
+      state.lastAuto = f;
+      if (f !== null) {
+        state.floor = f;
+        state.source = 'auto';
+      } else if (state.source === 'auto') {
+        state.floor = null;
+        state.source = 'manuel';
+      }
     }
     compute();
     render();
@@ -1090,25 +1134,32 @@ ${state.advice ? planHtml(state.advice) : ''}
   pollSave();
   setInterval(pollSave, 2000);
 
-  const check = (ok, json) => {
-    if (!ok) throw new Error('format inattendu');
-    return json;
-  };
-  Promise.all([KT.SOURCES.torre, KT.SOURCES.data, KT.SOURCES.lang].map(loadJson))
-    .then(([torre, data, lang]) => {
-      state.torre = check(KT.isTowerData(torre.json?.modes?.torre), torre.json.modes.torre);
-      state.data = check(KT.isGameData(data.json), data.json);
-      state.lang = check(KT.isLang(lang.json), lang.json);
-      const stale = [torre, data, lang].filter(r => r.stale).map(r => r.at);
-      state.stale = stale.length ? Math.min(...stale) : null;
-      compute();
-      render();
-    })
-    .catch(err => {
-      state.error = err.message;
-      compute();
-      render();
+  // Sources indépendantes : sans data.json ou lang.json, le prochain boss et les trios restent affichés.
+  const sources = [
+    ['torre', 'campana.json', KT.SOURCES.torre, j => j?.modes?.torre, KT.isTowerData],
+    ['data', 'data.json', KT.SOURCES.data, j => j, KT.isGameData],
+    ['lang', 'lang.json', KT.SOURCES.lang, j => j, KT.isLang],
+  ];
+  Promise.allSettled(sources.map(([, , url, pick, ok]) => loadJson(url).then(r => {
+    if (!ok(pick(r.json))) throw new Error('format inattendu');
+    return { ...r, value: pick(r.json) };
+  }))).then(results => {
+    const errors = [];
+    const stale = [];
+    results.forEach((r, i) => {
+      const [key, file] = sources[i];
+      if (r.status === 'rejected') {
+        errors.push(`${file} : ${r.reason.message}`);
+        return;
+      }
+      state[key] = r.value.value;
+      if (r.value.stale) stale.push(r.value.at);
     });
+    state.error = errors.length ? errors.join(' ; ') : null;
+    state.stale = stale.length ? Math.min(...stale) : null;
+    compute();
+    render();
+  });
 }
 
 if (typeof module !== 'undefined') module.exports = KT;
