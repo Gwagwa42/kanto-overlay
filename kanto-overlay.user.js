@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      1.0.0
+// @version      1.0.1
 // @description  Prochain boss, meilleurs trios et conseils pour la Tour de combat de Kanto Tactics (données publiques einoow.com).
 // @match        https://einoow.com/playables/kanto-tactics/*
+// @match        https://einoow.com/tower*
 // @grant        none
 // @inject-into  content
 // @run-at       document-idle
