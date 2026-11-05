@@ -7,7 +7,7 @@ Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](ht
 
 Pages où il s'affiche : les pages d'entrée du jeu, `https://einoow.com/` et `/kanto-tactics`, `/tower`, `/pvp`, `/duo`, `/nuzlocke`
 (avec ou sans `?…`), ainsi que `https://einoow.com/playables/kanto-tactics/…`. Le jeu change de mode sans changer d'adresse : le panneau
-est donc présent dans tous les modes ; `Alt+K` le replie.
+est donc présent dans tous les modes.
 
 L'étage est lu dans la sauvegarde Tour du jeu (`localStorage`, clé `kanto-tactics-save-tower`), toutes les 2 s ; sinon on le saisit
 avec − / + ou dans le champ. `Alt+K` replie le panneau ; on le déplace par sa barre de titre, et un double-clic sur cette barre le

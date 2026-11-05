@@ -89,12 +89,14 @@ test('tranches du guide', () => {
 test('en-tête : pages d’entrée du jeu couvertes, autres pages exclues', () => {
   const header = require('node:fs').readFileSync(require.resolve('../kanto-overlay.user.js'), 'utf8');
   // Motifs @match : « * » = n'importe quelle suite de caractères, correspondance de l'URL entière.
-  const patterns = [...header.matchAll(/^\/\/ @match\s+(\S+)$/gm)]
+  const patterns = [...header.matchAll(/^\/\/\s*@match\s+(\S+)\s*$/gm)]
     .map(m => new RegExp(`^${m[1].replace(/[.?+^$()[\]{}|\\/]/g, '\\$&').replace(/\*/g, '.*')}$`));
+  assert.equal(patterns.length, 13);
   const covered = url => patterns.some(p => p.test(url));
-  for (const url of ['https://einoow.com/', 'https://einoow.com/tower', 'https://einoow.com/tower?ref=x', 'https://einoow.com/pvp',
-    'https://einoow.com/duo', 'https://einoow.com/nuzlocke', 'https://einoow.com/kanto-tactics',
-    'https://einoow.com/playables/kanto-tactics/index.html']) assert.ok(covered(url), url);
+  for (const page of ['', 'kanto-tactics', 'tower', 'pvp', 'duo', 'nuzlocke']) {
+    for (const query of ['', '?ref=x']) assert.ok(covered(`https://einoow.com/${page}${query}`), `/${page}${query}`);
+  }
+  assert.ok(covered('https://einoow.com/playables/kanto-tactics/index.html'));
   for (const url of ['https://einoow.com/towers', 'https://einoow.com/devblog', 'https://einoow.com/api/meta/kanto/campana.json',
     'https://einoow.com/games/autre']) assert.ok(!covered(url), url);
   assert.match(header, /^\/\/ @noframes$/m);
