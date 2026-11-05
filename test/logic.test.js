@@ -148,7 +148,10 @@ test('compo cible : inertie de 5 points', () => {
 
 test('boutique : ★ 3ᵉ copie et cœur, ◆ si l’or, ✕ hors compo', () => {
   const a = advise(S57);
-  assert.deepEqual(a.shop.map(brief), ['do Achète', 'do Achète', 'opt Si l’or', 'no Ignore', 'no Ignore']);
+  // Caninos et Ptéra (★, 8 pièces) laissent 30 : Magmar (3) ferait passer sous le palier.
+  assert.deepEqual(a.shop.map(brief), ['do Achète', 'do Achète', 'no Ignore', 'no Ignore', 'no Ignore']);
+  assert.match(a.shop[2].why, /garde 30 pièces/);
+  assert.equal(brief(advise({ ...S57, gold: 41 }).shop[2]), 'opt Si l’or');
   assert.match(a.shop[0].why, /3ᵉ copie/);
   assert.match(a.shop[1].why, /cœur/);
   const poor = advise({ ...S57, gold: 31 });
@@ -162,6 +165,16 @@ test('boutique : ★ seulement si l’or suffit, de gauche à droite ; le reste 
   assert.deepEqual(a.shop.slice(0, 2).map(brief), ['do Achète', 'opt Si l’or']);
   assert.match(a.shop[1].why, /il manque de l’or/);
   assert.equal(advise({ ...S57, gold: 5, round: 1059 }).reroll, null);
+});
+
+test('vendre faute d’or pour un ★, et XP avant actualiser', () => {
+  // 3 pièces : Caninos (4, 3ᵉ copie) et Ptéra (4, cœur) passent en ◆ faute d'or, Rattata hors compo est à vendre.
+  const poor = advise({ ...S57, gold: 3 });
+  assert.deepEqual(poor.shop.slice(0, 2).map(brief), ['opt Si l’or', 'opt Si l’or']);
+  assert.deepEqual([brief(poor.bench[2]), poor.bench[2].why], ['no Vends', 'il manque de l’or pour un achat conseillé']);
+  // 42 pièces, 4 XP manquants : ★ (8) puis XP (4) laissent 30 ; actualiser passerait sous le palier.
+  const lvl = advise({ ...S57, gold: 42, xp: 92 });
+  assert.deepEqual([brief(lvl.xp), brief(lvl.reroll)], ['do Monte', 'no Garde l’or']);
 });
 
 test('boutique sans statistiques : seules les 3ᵉ copies sont marquées', () => {
@@ -227,6 +240,9 @@ test('bénédictions : PV bas, puis Fortune jusqu’à 3, puis voie la plus avan
   assert.deepEqual(choose(['nugget'], ['nugget', 'leftovers', 'flute'], 30), [null, 'do Prends', null]);
   assert.deepEqual(choose(['nugget', 'fbag', 'coincase', 'ash'], ['nugget', 'leftovers', 'flute']), [null, 'do Prends', null]);
   assert.deepEqual(choose(['nugget', 'fbag', 'coincase'], ['egg', 'flute', 'team']), [null, 'do Prends', null]);
+  // Voie déjà complète : plus de « 4 sur 3 ».
+  const full = advise({ ...S57, tower: { boons: ['flute', 'vitamins', 'item'], offer: { ids: ['flute', 'amulet', 'team'] } } }).offer[0];
+  assert.deepEqual([full.why, full.detail], ['meilleur effet immédiat', '']);
   assert.equal(advise({ ...S57, tower: { boons: [], offer: { ids: ['nugget'] } } }).offer[0].title, 'Prends Maxi Pépite');
   const unknown = advise({ ...S57, tower: { boons: [], offer: { ids: ['nouvelle', 'flute'] } } });
   assert.deepEqual(unknown.unknownOffer, ['nouvelle']);
@@ -239,8 +255,11 @@ test('sceaux : économie tôt, combat en tout jouer, risque évité avec peu de 
   assert.deepEqual(choose(['piggy-bank', 'poke-flute'], { round: 1059 }), [null, 'do Prends']);
   assert.deepEqual(choose(['rocket-loan', 'poke-flute'], { hp: 30 }), ['no Évite', 'do Prends']);
   assert.deepEqual(choose(['rocket-loan', 'life-orb'], { hp: 30 }), ['no Évite', 'no Évite']);
-  assert.notEqual(advise({ ...S57, hp: 30, tower: { boons: [], offer: { ids: ['rocket-loan', 'life-orb'] } } }).offer[0].title,
-    advise({ ...S57, hp: 30, tower: { boons: [], offer: { ids: ['rocket-loan', 'life-orb'] } } }).offer[1].title);
+  const risky = advise({ ...S57, hp: 30, tower: { boons: [], offer: { ids: ['rocket-loan', 'life-orb'] } } }).offer;
+  assert.notEqual(risky[0].title, risky[1].title);
+  // Sans data.json, un sceau n'est pas présenté comme une bénédiction inconnue.
+  const noData = KT.advise({ torre, data: null, lang, save: { ...S57, tower: { boons: [], offer: { ids: ['piggy-bank', 'flute'] } } }, previous: null, side: 'left' });
+  assert.deepEqual([noData.unknownOffer, noData.offer.map(brief)], [[], [null, 'do Prends']]);
   // Offre mêlée : un sceau de combat en tout jouer passe devant une bénédiction hors voie.
   assert.deepEqual(choose(['team', 'poke-flute'], { round: 1059 }), [null, 'do Prends']);
 });
@@ -251,6 +270,8 @@ test('ancrage : conseillé si la compo vise une forme ancrée non encore choisie
   const game = KT.readGame(twins);
   assert.equal(KT.anchorAdvice(target, game, names)[0].title, 'Ancre Minidraco (fiche du Pokémon)');
   assert.deepEqual(KT.anchorAdvice(target, KT.readGame(S57), names), []);
+  const pair2 = { ...S57, units: { ...S57.units, f: { id: 'f', line: 'dratini', star: 2 } }, bench: [...S57.bench.slice(0, 3), 'f'] };
+  assert.equal(KT.anchorAdvice(target, KT.readGame(pair2), names).length, 1);
   assert.deepEqual(KT.anchorAdvice(target, { ...game, anchor: { dratini: 0 } }, names), []);
   assert.deepEqual(KT.anchorAdvice(target, KT.readGame({ ...S57, units: {}, board: {}, bench: [] }), names), []);
 });
@@ -262,20 +283,22 @@ test('formation : code KT1 (rangée 0 = avant, porteur côté choisi)', () => {
   assert.match(advise(S57, { side: 'right' }).code, /vulpix:2:27;magmar:1:25$/);
 });
 
-// Faux Cache Storage et faux fetch : chaque appel réseau est journalisé, les réponses viennent de `replies`.
-function fakeEnv(replies, now) {
+// Faux Cache Storage et faux fetch : la file `replies` donne les réponses (Error = rejet de fetch, textError = rejet de la
+// lecture du corps) ; `sent` garde l'en-tête If-None-Match de chaque requête.
+function fakeEnv(now) {
   const store = new Map();
-  const calls = [];
   const env = {
     now,
-    calls,
-    store,
+    replies: [],
+    sent: [],
     caches: { open: async () => ({ match: async url => store.get(url)?.clone(), put: async (url, res) => { store.set(url, res); } }) },
     fetch: async (url, init) => {
-      calls.push(init?.headers?.['If-None-Match'] ?? null);
-      const r = replies.shift();
+      env.sent.push(init?.headers?.['If-None-Match'] ?? null);
+      const r = env.replies.shift();
       if (r instanceof Error) throw r;
-      return new Response(r.body ?? null, { status: r.status, headers: r.etag ? { etag: r.etag } : {} });
+      const res = new Response(r.body ?? null, { status: r.status, headers: r.etag ? { etag: r.etag } : {} });
+      if (r.textError) res.text = async () => { throw r.textError; };
+      return res;
     },
   };
   return env;
@@ -284,35 +307,57 @@ const URL_T = 'https://einoow.com/api/meta/kanto/lang.json?lang=fr';
 const accept = j => j?.ok === true;
 const hour = 3600 * 1000;
 
-test('loadJson : cache d’une heure, revalidation 304 sans W/, copie gardée si erreur ou format invalide', async () => {
-  const env = fakeEnv([{ status: 200, body: '{"ok":true,"v":1}', etag: 'W/"e1"' }], 0);
+test('loadJson : cache d’une heure, revalidation 304 sans W/', async () => {
+  const env = fakeEnv(0);
+  env.replies.push({ status: 200, body: '{"ok":true,"v":1}', etag: 'W/"e1"' });
   assert.deepEqual((await KT.loadJson(URL_T, accept, env)).json, { ok: true, v: 1 });
   env.now = hour - 1;
   assert.equal((await KT.loadJson(URL_T, accept, env)).stale, false);
-  assert.equal(env.calls.length, 1);
+  assert.equal(env.sent.length, 1);
   env.now = hour;
-  env.fetch = fakeEnv([{ status: 304 }], 0).fetch;
-  const sent = [];
-  const f304 = env.fetch;
-  env.fetch = (url, init) => { sent.push(init.headers['If-None-Match']); return f304(url, init); };
-  const r304 = await KT.loadJson(URL_T, accept, env);
-  assert.deepEqual([sent, r304.json.v, r304.at], [['"e1"'], 1, hour]);
-  env.now = 3 * hour;
-  env.fetch = fakeEnv([{ status: 200, body: '{"autre":1}' }], 0).fetch;
-  const bad = await KT.loadJson(URL_T, accept, env);
-  assert.deepEqual([bad.stale, bad.json.v], [true, 1]);
-  env.fetch = fakeEnv([new TypeError('NetworkError')], 0).fetch;
-  assert.equal((await KT.loadJson(URL_T, accept, env)).stale, true);
-  env.fetch = fakeEnv([{ status: 429 }], 0).fetch;
-  assert.equal((await KT.loadJson(URL_T, accept, env)).stale, true);
+  env.replies.push({ status: 304 });
+  const r = await KT.loadJson(URL_T, accept, env);
+  assert.deepEqual([env.sent[1], r.json.v, r.at, r.stale], ['"e1"', 1, hour, false]);
 });
 
-test('loadJson : sans copie, erreurs en clair ; cache refusé signalé', async () => {
-  await assert.rejects(KT.loadJson(URL_T, accept, fakeEnv([{ status: 429 }], 0)), /HTTP 429/);
-  await assert.rejects(KT.loadJson(URL_T, accept, fakeEnv([new TypeError('x')], 0)), /réseau/);
-  await assert.rejects(KT.loadJson(URL_T, accept, fakeEnv([{ status: 200, body: '{"autre":1}' }], 0)), /format inattendu/);
-  const blocked = { ...fakeEnv([], 0), caches: { open: async () => { throw new DOMException('insecure', 'SecurityError'); } } };
+test('loadJson : copie gardée si erreur, format invalide ou corps coupé ; une tentative par heure', async () => {
+  for (const reply of [{ status: 429 }, new TypeError('NetworkError'), { status: 200, body: '{"autre":1}' },
+    { status: 200, body: '{"ok":true}', textError: new TypeError('coupé') }]) {
+    const env = fakeEnv(0);
+    env.replies.push({ status: 200, body: '{"ok":true,"v":1}' });
+    await KT.loadJson(URL_T, accept, env);
+    env.now = 2 * hour;
+    env.replies.push(reply);
+    const r = await KT.loadJson(URL_T, accept, env);
+    assert.deepEqual([r.stale, r.json.v], [true, 1]);
+    env.now = 2 * hour + 1;
+    const again = await KT.loadJson(URL_T, accept, env);
+    assert.deepEqual([env.sent.length, again.stale], [2, true]);
+  }
+});
+
+test('loadJson : copie d’un autre format ignorée, écriture en cache refusée signalée', async () => {
+  const env = fakeEnv(0);
+  env.replies.push({ status: 200, body: '{"ok":true,"v":1}' });
+  await KT.loadJson(URL_T, accept, env);
+  const strict = j => j?.v === 2;
+  env.replies.push({ status: 200, body: '{"ok":true,"v":2}' });
+  assert.equal((await KT.loadJson(URL_T, strict, env)).json.v, 2);
+  const full = fakeEnv(0);
+  full.caches = { open: async () => ({ match: async () => undefined, put: async () => { throw new DOMException('quota', 'QuotaExceededError'); } }) };
+  full.replies.push({ status: 200, body: '{"ok":true}' });
+  assert.equal((await KT.loadJson(URL_T, accept, full)).uncached, true);
+});
+
+test('loadJson : sans copie, erreurs en clair ; cache absent ou refusé signalé', async () => {
+  for (const [reply, msg] of [[{ status: 429 }, /HTTP 429/], [new TypeError('x'), /réseau/], [{ status: 200, body: '{"autre":1}' }, /format inattendu/]]) {
+    const env = fakeEnv(0);
+    env.replies.push(reply);
+    await assert.rejects(KT.loadJson(URL_T, accept, env), msg);
+  }
+  const blocked = { ...fakeEnv(0), caches: { open: async () => { throw new DOMException('insecure', 'SecurityError'); } } };
   await assert.rejects(KT.loadJson(URL_T, accept, blocked), /navigation privée/);
+  await assert.rejects(KT.loadJson(URL_T, accept, { ...fakeEnv(0), caches: undefined }), /navigation privée/);
 });
 
 test('cache : frais moins d’une heure', () => {

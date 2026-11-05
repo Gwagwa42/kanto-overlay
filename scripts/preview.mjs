@@ -31,7 +31,7 @@ const STATES = {
 function slim(s) {
   const stops = torre.stops.filter(x => {
     const f = Number(x.stop.split(':')[0]);
-    return (f >= 55 && f <= 64) || (!x.stop.endsWith(':elite') && f <= 200);
+    return (f >= 55 && f <= 64) || (f >= 196 && f <= 200);
   });
   const next = KT.nextStops(torre.stops, 57).map(x => x.stop);
   const cores = [...next.flatMap(st => torre.cores.filter(c => c.stop === st && c.n >= 20).sort((a, b) => b.lo - a.lo).slice(0, 6)),

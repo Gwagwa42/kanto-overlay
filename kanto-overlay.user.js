@@ -389,35 +389,53 @@ const KT = (() => {
   // seul ; detail = ligne de preuve de la bulle.
   const mark = (level, label, title, why, detail = '') => ({ level, label, title, why, detail });
 
-  function shopMarks(game, target, data, eco, names) {
+  // Marques de la boutique et or restant. Priorités : ★ (de gauche à droite), puis l'or réservé par reserve(or restant)
+  // (l'XP conseillée), puis les ◆. short : un ★ a été rétrogradé faute d'or (déclenche « Vends »).
+  function shopMarks(game, target, data, eco, names, reserve) {
     const core = target ? target.core.map(baseLine) : [];
     const wanted = targetBases(target);
     const p = target?.proof;
     const proof = p ? `${p.c.core.map(names.line).join(' · ')} : ${pct(p.c.win)} contre ${bossName(p.st.boss)} ${p.st.floor} (${p.c.n} combats, au moins ${pct(p.c.lo)})` : '';
-    // Or restant après les achats ★ des cartes précédentes (de gauche à droite).
-    let budget = game.gold;
-    const buy = (cost, name, why, detail) => {
+    let left = game.gold;
+    let short = false;
+    const buy = (cost, name, why, detail = '') => {
       // Coût inconnu (données de jeu indisponibles) : le conseil ne peut pas vérifier l'or.
-      if (cost !== undefined && cost > budget) return mark('opt', 'Si l’or', `Achète ${name} dès que possible`, `${why} ; il manque de l’or`, detail);
-      budget -= cost ?? 0;
+      if (cost !== undefined && cost > left) {
+        short = true;
+        return mark('opt', 'Si l’or', `Achète ${name} dès que possible`, `${why} ; il manque de l’or`, detail);
+      }
+      left -= cost ?? 0;
       return mark('do', 'Achète', `Achète ${name}`, why, detail);
     };
-    return game.shop.map((base, i) => {
-      if (!base) return null;
-      const name = names.line(base);
-      const triple = ones(game, base) === 2;
-      const inTarget = wanted.includes(base);
-      const cost = lineInfo(data, base)?.c;
-      const keepsFloor = (cost !== undefined && game.gold - cost >= eco.floor) || eco.allIn;
-      if (triple && (inTarget || !target)) return buy(cost, name, core.includes(base) ? '3ᵉ copie, passe ★★ ; cœur de la compo cible' : '3ᵉ copie, passe ★★', core.includes(base) ? proof : '');
-      if (core.includes(base)) return buy(cost, name, 'cœur de la compo cible', proof);
-      if (game.shopShiny[i] && inTarget) return buy(cost, `${name} shiny`, '+10 % PV, défenses et dégâts');
-      if (!target) return null;
-      if ((inTarget || triple) && keepsFloor) {
-        return mark('opt', 'Si l’or', `${name} si l’or reste ≥ ${eco.floor}`, triple ? '3ᵉ copie hors compo' : 'renforce le plateau de la compo');
-      }
-      return mark('no', 'Ignore', `Ignore ${name}`, inTarget ? `garde ${eco.floor} pièces pour les intérêts` : 'hors compo cible');
+    const cards = game.shop.map((base, i) => base && {
+      base, name: names.line(base), cost: lineInfo(data, base)?.c, triple: ones(game, base) === 2,
+      inTarget: wanted.includes(base), inCore: core.includes(base), shiny: game.shopShiny[i],
     });
+    const marks = cards.map(c => {
+      if (!c) return null;
+      if (c.triple && (c.inTarget || !target)) {
+        return buy(c.cost, c.name, c.inCore ? '3ᵉ copie, passe ★★ ; cœur de la compo cible' : '3ᵉ copie, passe ★★', c.inCore ? proof : '');
+      }
+      if (c.inCore) return buy(c.cost, c.name, 'cœur de la compo cible', proof);
+      if (c.shiny && c.inTarget) return buy(c.cost, `${c.name} shiny`, '+10 % PV, défenses et dégâts');
+      return undefined;
+    });
+    left -= reserve(left);
+    cards.forEach((c, i) => {
+      if (!c || marks[i] !== undefined) return;
+      if (!target) {
+        marks[i] = null;
+        return;
+      }
+      const fits = c.cost !== undefined && (eco.allIn ? c.cost <= left : left - c.cost >= eco.floor);
+      if ((c.inTarget || c.triple) && fits) {
+        left -= c.cost;
+        marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, c.triple ? '3ᵉ copie hors compo' : 'renforce le plateau de la compo');
+        return;
+      }
+      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `garde ${eco.floor} pièces pour les intérêts` : 'hors compo cible');
+    });
+    return { marks, left, short };
   }
 
   function targetIncomplete(game, target) {
@@ -425,31 +443,34 @@ const KT = (() => {
   }
 
   // committed : or des achats ★ déjà conseillés dans la boutique, à retirer avant d'actualiser ou de monter.
-  function rerollMark(game, target, eco, committed) {
+  function rerollMark(game, target, eco, left) {
     if (!target || !targetIncomplete(game, target)) return null;
-    const left = game.gold - committed;
     if (eco.allIn) return left >= REROLL_COST ? mark('do', 'Actualise', 'Actualise', 'tout jouer : chercher les copies de la compo') : null;
     if (left - REROLL_COST >= eco.floor) return mark('do', 'Actualise', 'Actualise', `surplus au-dessus de ${eco.floor} pièces après les achats`);
     return mark('no', 'Garde l’or', 'N’actualise pas', `tu passerais sous ${eco.floor} pièces`);
   }
 
-  function xpMark(game, eco, committed) {
+  // Renvoie la marque et l'or qu'elle engage.
+  function xpMark(game, eco, left) {
     const max = game.floor >= 60 ? 10 : 9;
-    if (game.level >= max) return null;
+    if (game.level >= max) return { mark: null, cost: 0 };
     const missing = XP_TO_NEXT[game.level] - game.xp;
-    const left = game.gold - committed;
     const toLevel = Math.ceil(missing / XP_COST) * XP_COST;
-    if (eco.allIn) return left >= toLevel ? mark('do', 'Monte', 'Achète de l’XP', `tout jouer : niveau ${game.level + 1} pour ${toLevel} pièces`) : null;
-    if (missing <= XP_COST && left - XP_COST >= eco.floor) return mark('do', 'Monte', 'Achète de l’XP', `niveau ${game.level + 1} pour ${XP_COST} pièces`);
-    return mark('no', 'Attends', 'N’achète pas d’XP', `encore ${missing} XP ; l’XP gratuite arrive à chaque étage`);
+    if (eco.allIn) {
+      return left >= toLevel
+        ? { mark: mark('do', 'Monte', 'Achète de l’XP', `tout jouer : niveau ${game.level + 1} pour ${toLevel} pièces`), cost: toLevel }
+        : { mark: null, cost: 0 };
+    }
+    if (missing <= XP_COST && left - XP_COST >= eco.floor) {
+      return { mark: mark('do', 'Monte', 'Achète de l’XP', `niveau ${game.level + 1} pour ${XP_COST} pièces`), cost: XP_COST };
+    }
+    return { mark: mark('no', 'Attends', 'N’achète pas d’XP', `encore ${missing} XP ; l’XP gratuite arrive à chaque étage`), cost: 0 };
   }
 
-  function sellMarks(game, target, data, names, shop) {
+  function sellMarks(game, target, names, short) {
     if (!target) return game.bench.map(() => null);
     const wanted = targetBases(target);
     const free = game.bench.filter(id => !id).length;
-    const wantedCost = Math.min(Infinity, ...shop.map((m, i) => (m?.level === 'do' ? lineInfo(data, game.shop[i])?.c ?? Infinity : Infinity)));
-    const short = game.gold < wantedCost && wantedCost !== Infinity;
     return game.bench.map(id => {
       const u = id && game.units.find(x => x.id === id);
       if (!u) return null;
@@ -584,7 +605,8 @@ const KT = (() => {
       if (Object.hasOwn(BOONS, id)) return { id, s: boonScore(id, game) };
       const seal = data?.seals[id];
       if (seal) return { id, s: sealScore(seal, game, eco), seal: true };
-      unknown.push(id);
+      // Sans data.json, un sceau n'est pas « inconnu » : seules ses données manquent.
+      if (data) unknown.push(id);
       return null;
     });
     const best = Math.max(...scored.filter(Boolean).map(x => x.s));
@@ -592,10 +614,11 @@ const KT = (() => {
       if (!x) return null;
       if (best > 0 && x.s === best && scored.find(y => y?.s === best) === x) {
         const path = boonPath(x.id);
+        const open = path !== null && pathCount(game.boons, path) < PATH_SIZE;
         const why = x.seal ? 'sceau le plus utile pour ta situation'
           : game.hp < LOW_HP && HEAL_BOONS.includes(x.id) ? `PV bas (${game.hp})`
-            : path ? `voie ${PATH_NAMES[path]} : ${pathCount(game.boons, path) + 1} sur ${PATH_SIZE}` : 'meilleur effet immédiat';
-        const detail = !x.seal && path ? `À ${PATH_SIZE} : ${PATH_BONUS[path]}.` : '';
+            : open ? `voie ${PATH_NAMES[path]} : ${pathCount(game.boons, path) + 1} sur ${PATH_SIZE}` : 'meilleur effet immédiat';
+        const detail = !x.seal && open ? `À ${PATH_SIZE} : ${PATH_BONUS[path]}.` : '';
         return mark('do', 'Prends', `Prends ${x.seal ? names.seal(x.id) : BOONS[x.id][1]}`, why, detail);
       }
       return x.s < 0 ? mark('no', 'Évite', `Évite ${names.seal(x.id)}`, `risqué avec ${game.hp} PV`) : null;
@@ -608,8 +631,10 @@ const KT = (() => {
     return target.core.flatMap(id => {
       const n = anchorStage(id);
       const base = baseLine(id);
-      // L'ancrage prend effet à la prochaine fusion : conseillé quand elle est imminente (2 copies à 1★).
-      if (n === null || game.anchor[base] === n || ones(game, base) < 2) return [];
+      // L'ancrage prend effet à la prochaine fusion : conseillé quand elle est imminente (2 copies au même ★).
+      const own = unitsOf(game, base);
+      const imminent = own.some(u => own.filter(v => v.star === u.star).length >= 2);
+      if (n === null || game.anchor[base] === n || !imminent) return [];
       return [mark('do', '', `Ancre ${names.stage(base, n)} (fiche du Pokémon)`, 'forme gagnante de la compo, avant sa prochaine fusion')];
     });
   }
@@ -647,15 +672,18 @@ const KT = (() => {
     const stops = torre ? nextStops(torre.stops, game.floor) : [];
     const eco = economy(game, stops);
     const target = torre && data ? targetComp(torre, data, game, previous) : null;
-    const shop = shopMarks(game, target, data, eco, names);
-    const committed = shop.reduce((sum, m, i) => sum + (m?.level === 'do' ? lineInfo(data, game.shop[i])?.c ?? 0 : 0), 0);
+    let xp;
+    const shop = shopMarks(game, target, data, eco, names, left => {
+      xp = xpMark(game, eco, left);
+      return xp.cost;
+    });
     const choice = offerChoiceMarks(data, game, eco, names);
     return {
       game, eco, target, names,
-      shop,
-      reroll: rerollMark(game, target, eco, committed),
-      xp: xpMark(game, eco, committed),
-      bench: sellMarks(game, target, data, names, shop),
+      shop: shop.marks,
+      reroll: rerollMark(game, target, eco, shop.left),
+      xp: xp.mark,
+      bench: sellMarks(game, target, names, shop.short),
       bag: itemMarks(torre, data, game, target, eco, names),
       reward: offerMarks(torre, data, game, target, names),
       offer: choice.marks,
@@ -668,6 +696,7 @@ const KT = (() => {
   // Cache Storage d'une heure (conditions de l'API), revalidé par ETag ; une réponse au format inattendu n'écrase jamais la
   // copie gardée. env = { caches, fetch, now } : globaux du navigateur, injectables pour les tests.
   async function loadJson(url, accept, env) {
+    if (!env.caches) throw new Error('cache du navigateur indisponible : navigation privée ou stockage bloqué');
     let cache;
     try {
       cache = await env.caches.open(CACHE_NAME);
@@ -676,17 +705,34 @@ const KT = (() => {
       if (e instanceof DOMException) throw new Error('cache du navigateur indisponible : navigation privée ou stockage bloqué');
       throw e;
     }
-    const hit = await cache.match(url);
+    const found = await cache.match(url);
+    // Une copie d'un autre format (version précédente du script) compte comme absente.
+    const hitJson = found ? await found.clone().json().catch(e => {
+      if (e instanceof SyntaxError) return null;
+      throw e;
+    }) : null;
+    const hit = hitJson !== null && accept(hitJson) ? found : null;
     const at = Number(hit?.headers.get('x-kt-at'));
-    const keep = async (body, etag) => {
-      await cache.put(url, new Response(body, { headers: { 'content-type': 'application/json', etag: etag ?? '', 'x-kt-at': String(env.now) } }));
+    // x-kt-at date la copie ; x-kt-try date la dernière tentative ratée (une requête par heure, même en échec).
+    const keep = async (body, etag, fetchedAt, triedAt = '') => {
+      try {
+        await cache.put(url, new Response(body, { headers: { 'content-type': 'application/json', etag: etag ?? '', 'x-kt-at': String(fetchedAt), 'x-kt-try': String(triedAt) } }));
+        return true;
+      } catch (e) {
+        // Quota dépassé ou stockage refusé : la réponse reste valable, seule la mise en cache échoue.
+        if (e instanceof DOMException) return false;
+        throw e;
+      }
     };
-    if (hit && isFresh(at, env.now)) return { json: await hit.json(), at, stale: false };
+    if (hit && (isFresh(at, env.now) || isFresh(Number(hit.headers.get('x-kt-try') || NaN), env.now))) {
+      return { json: hitJson, at, stale: !isFresh(at, env.now) };
+    }
     // L'API ne reconnaît pas la forme faible W/"…" que reçoit le navigateur (réponse compressée) : même étiquette, sans le préfixe.
     const etag = hit?.headers.get('etag')?.replace(/^W\//, '');
     const stale = async reason => {
       if (!hit) throw new Error(reason);
-      return { json: await hit.json(), at, stale: true };
+      await keep(JSON.stringify(hitJson), hit.headers.get('etag'), at, env.now);
+      return { json: hitJson, at, stale: true };
     };
     let res;
     let body;
@@ -699,9 +745,8 @@ const KT = (() => {
       throw e;
     }
     if (res.status === 304 && hit) {
-      const cached = await hit.text();
-      await keep(cached, etag);
-      return { json: JSON.parse(cached), at: env.now, stale: false };
+      const cached = await keep(JSON.stringify(hitJson), etag, env.now);
+      return { json: hitJson, at: env.now, stale: false, uncached: !cached };
     }
     if (!res.ok) return stale(`HTTP ${res.status}`);
     let json;
@@ -712,8 +757,8 @@ const KT = (() => {
       throw e;
     }
     if (!accept(json)) return stale('format inattendu');
-    await keep(body, res.headers.get('etag'));
-    return { json, at: env.now, stale: false };
+    const cached = await keep(body, res.headers.get('etag'), env.now);
+    return { json, at: env.now, stale: false, uncached: !cached };
   }
 
   const pct = x => `${x.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
@@ -789,7 +834,9 @@ const CSS = `
 .kt-side { height: 32px; padding: 0 var(--kt-space-2); font-size: 12px; }
 .kt-copy:focus-visible { outline: 2px solid var(--kt-focus); outline-offset: 2px; }
 .kt-copied { padding: 0 var(--kt-space-3) var(--kt-space-2); font-size: 12px; color: var(--kt-muted); overflow-wrap: anywhere; }
-.kt-copied:empty { display: none; }
+.kt-copied:empty, .kt-alert:empty { display: none; }
+.kt-alert { padding: var(--kt-space-3) var(--kt-space-3) 0; }
+.kt.is-collapsed .kt-alert { display: none; }
 .kt-copied code { font-size: 12px; user-select: all; }
 .kt.is-collapsed .kt-copied { display: none; }
 .kp-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
@@ -839,7 +886,7 @@ const TIP_HALF = 120;
 function mount() {
   const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
   const ui = { x: null, y: 16, collapsed: false, guide: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
-  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, advice: null, copied: null };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
@@ -853,6 +900,7 @@ function mount() {
     <span class="kt-src"></span>
     <button class="kt-btn" data-act="toggle"></button>
   </div>
+  <div class="kt-alert" role="alert"></div>
   <div class="kt-body"></div>
   <p class="kt-copied" role="status"></p>
   <div class="kt-foot"></div>
@@ -867,6 +915,7 @@ function mount() {
   const toggle = root.querySelector('[data-act="toggle"]');
   const src = root.querySelector('.kt-src');
   const status = root.querySelector('.kt-copied');
+  const alertBox = root.querySelector('.kt-alert');
 
   const saveUi = () => localStorage.setItem(KT.UI_KEY, JSON.stringify(ui));
 
@@ -942,29 +991,33 @@ ${ecoHtml(a)}${todoHtml(a)}
     return `<div><p class="kt-label">Prochain boss</p>
 <p class="kt-boss">${esc(KT.bossName(stop.boss))} <small>· étage ${stop.floor}, ${dist ? `dans ${dist}` : 'en cours'}</small></p>
 <p class="kt-stats"><span class="kt-rate ${lvl.cls}">${lvl.sym} ${KT.pct(stop.win)} victoires</span> 1er essai ${KT.pct(stop.first)} · ${stop.tries.toLocaleString('fr-FR')} essais</p></div>
-${state.advice ? planHtml(state.advice) : ''}
+${state.advice ? planHtml(state.advice) : ''}${state.save && !onSaveFloor() ? `<p class="kt-msg">Conseils de partie masqués : ta partie est à l’étage ${KT.floorFromSave(state.lastRaw)}.</p>` : ''}
 <div><p class="kt-label">Meilleurs trios (≥ 20 combats)</p>${coresHtml}</div>`;
   }
 
-  function contentHtml() {
+  function alertHtml() {
+    if (!state.error) return '';
     const effect = state.failed.some(k => k !== 'lang')
       ? 'Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées.'
       : 'Les objets et les sceaux sont nommés par leur identifiant.';
-    const alert = state.error
-      ? `<p class="kt-msg" role="alert"><strong>Données indisponibles (${esc(state.error)})</strong>${effect} Recharge la page dans une heure.</p>`
-      : '';
+    return `<p class="kt-msg"><strong>Données indisponibles (${esc(state.error)})</strong>${effect} Recharge la page dans une heure.</p>`;
+  }
+
+  function contentHtml() {
     if (state.error && !state.torre) {
       const more = state.floor ? '' : '<p class="kt-msg">Saisis l’étage pour afficher les règles d’or.</p>';
-      return `${alert}${state.advice ? planHtml(state.advice) : ''}${more}${state.floor ? guideHtml(state.floor) : ''}`;
+      return `${state.advice ? planHtml(state.advice) : ''}${more}${state.floor ? guideHtml(state.floor) : ''}`;
     }
     if (!state.torre) return '<p class="kt-msg" role="status">Chargement des statistiques de la Tour…</p>';
-    if (!state.floor) return `${alert}<p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p>`;
-    return `${alert}${bossHtml()}${guideHtml(state.floor)}`;
+    if (!state.floor) return '<p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p>';
+    return `${bossHtml()}${guideHtml(state.floor)}`;
   }
 
   // Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien).
   let lastHtml = null;
   let lastCopied = '';
+  let lastAlert = '';
+  let lastFoot = '';
   let lastPins = null;
   let pins = [];
   function paint() {
@@ -990,7 +1043,8 @@ ${state.advice ? planHtml(state.advice) : ''}
         const tipId = `kp-tip-${n++}`;
         pin.setAttribute('aria-describedby', tipId);
         pin.innerHTML = `${SYM[m.level]} <span class="kp-text">${esc(m.label)}</span><span class="kp-tip" id="${tipId}" role="tooltip"><strong>${esc(m.title)}</strong>${esc(m.why)}${m.detail ? `<span class="m">${esc(m.detail)}</span>` : ''}</span>`;
-        for (const type of ['mouseleave', 'blur']) pin.addEventListener(type, () => pin.classList.remove('is-dismissed'));
+        pin.addEventListener('mouseleave', () => pin.matches(':focus') || pin.classList.remove('is-dismissed'));
+        pin.addEventListener('blur', () => pin.matches(':hover') || pin.classList.remove('is-dismissed'));
         layer.append(pin);
         pins.push({ pin, t, i });
       });
@@ -1028,9 +1082,12 @@ ${state.advice ? planHtml(state.advice) : ''}
     });
   };
 
+  // Conseils de partie seulement à l'étage de la sauvegarde : un étage saisi à la main ne sert qu'au prochain boss.
+  const onSaveFloor = () => state.save !== null && state.floor === KT.floorFromSave(state.lastRaw);
+
   function compute() {
     const code = state.advice?.code;
-    state.advice = state.save && (state.torre || state.error)
+    state.advice = state.save && onSaveFloor() && (state.torre || state.error)
       ? KT.advise({ torre: state.torre, data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side })
       : null;
     if (state.advice?.code !== code) state.copied = null;
@@ -1055,10 +1112,20 @@ ${state.advice ? planHtml(state.advice) : ''}
       body.innerHTML = html;
       lastHtml = html;
     }
+    const alert = alertHtml();
+    if (alert !== lastAlert) {
+      alertBox.innerHTML = alert;
+      lastAlert = alert;
+    }
     foot.hidden = !state.torre;
     if (state.torre) {
       const cached = state.stale ? ` · copie du ${esc(new Date(state.stale).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))}` : '';
-      foot.innerHTML = `Du ${esc(KT.shortDate(state.torre.from))} au ${esc(KT.shortDate(state.torre.to))}${cached} · Data: <a href="https://einoow.com" target="_blank" rel="noopener">Kanto Tactics · einoow.com</a>`;
+      const uncached = state.uncached ? ' · non gardé en cache' : '';
+      const footer = `Du ${esc(KT.shortDate(state.torre.from))} au ${esc(KT.shortDate(state.torre.to))}${cached}${uncached} · Data: <a href="https://einoow.com" target="_blank" rel="noopener">Kanto Tactics · einoow.com</a>`;
+      if (footer !== lastFoot) {
+        foot.innerHTML = footer;
+        lastFoot = footer;
+      }
     }
     const copied = state.copied === null ? ''
       : state.copied.ok ? 'Code copié : colle-le dans Planificateur → Coller un code.'
@@ -1074,6 +1141,7 @@ ${state.advice ? planHtml(state.advice) : ''}
   function setManual(floor) {
     state.floor = Number.isInteger(floor) && floor >= 1 ? floor : null;
     state.source = 'manuel';
+    compute();
     render();
   }
 
@@ -1115,8 +1183,11 @@ ${state.advice ? planHtml(state.advice) : ''}
     }
     if (act === 'copy' && state.advice?.code) {
       navigator.clipboard.writeText(state.advice.code).then(() => {
+        // Vider puis réécrire : un lecteur d'écran n'annonce pas un statut dont le texte ne change pas.
+        status.textContent = '';
+        lastCopied = '';
         state.copied = { ok: true };
-        render();
+        requestAnimationFrame(render);
       }, () => {
         state.copied = { ok: false };
         render();
@@ -1136,9 +1207,15 @@ ${state.advice ? planHtml(state.advice) : ''}
     ui.guide = e.target.open;
     saveUi();
   }, true);
+  // Échap ferme la bulle (WCAG 1.4.13) ; sur une pastille sélectionnée, la touche ne remonte pas au jeu (modales).
+  layer.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || !e.target.closest('.kp')) return;
+    e.target.closest('.kp').classList.add('is-dismissed');
+    e.stopPropagation();
+  });
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      for (const pin of layer.querySelectorAll('.kp:hover, .kp:focus')) pin.classList.add('is-dismissed');
+      for (const pin of layer.querySelectorAll('.kp:hover')) pin.classList.add('is-dismissed');
       return;
     }
     if (!e.altKey || e.code !== 'KeyK') return;
@@ -1191,7 +1268,7 @@ ${state.advice ? planHtml(state.advice) : ''}
     ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j],
     ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j],
   ];
-  const env = { caches, fetch: (...a) => fetch(...a), now: Date.now() };
+  const env = { caches: globalThis.caches, fetch: (...a) => fetch(...a), now: Date.now() };
   Promise.allSettled(sources.map(([, , url, accept]) => KT.loadJson(url, accept, env))).then(results => {
     const errors = [];
     const stale = [];
@@ -1204,10 +1281,15 @@ ${state.advice ? planHtml(state.advice) : ''}
       }
       state[key] = pick(r.value.json);
       if (r.value.stale) stale.push(r.value.at);
+      if (r.value.uncached) state.uncached = true;
     });
     state.error = errors.length ? errors.join(' ; ') : null;
     state.stale = stale.length ? Math.min(...stale) : null;
     compute();
+    render();
+  }).catch(err => {
+    // Erreur de traitement (pas de chargement) : affichée plutôt que de laisser « Chargement… » indéfiniment.
+    state.error = `traitement : ${err.message}`;
     render();
   });
 }
