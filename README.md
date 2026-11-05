@@ -6,7 +6,8 @@ Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](ht
 - les conseils d'un guide (shinies, gestion de l'or) pour la tranche d'étages en cours.
 
 L'étage est lu dans la sauvegarde Tour du jeu (`localStorage`, clé `kanto-tactics-save-tower`), toutes les 2 s ; sinon on le saisit
-avec − / + ou dans le champ. `Alt+K` replie le panneau ; on le déplace par sa barre de titre.
+avec − / + ou dans le champ. `Alt+K` replie le panneau ; on le déplace par sa barre de titre, et un double-clic sur cette barre le
+remet en haut à droite.
 
 ## Installation (Firefox)
 

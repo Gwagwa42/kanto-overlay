@@ -26,9 +26,21 @@ test('prochain boss : élites ignorées, étage courant inclus', () => {
   assert.equal(KT.nextBossStop(torre.stops, 59).stop, '60:zapdos');
   assert.equal(KT.nextBossStop(torre.stops, 60).stop, '60:zapdos');
   assert.equal(KT.nextBossStop(torre.stops, 200).stop, '200:mewtwo2');
+  assert.equal(KT.nextBossStop(torre.stops, 995).stop, '995:giovanni');
+  assert.equal(KT.nextBossStop(torre.stops, 996), null);
   assert.equal(KT.nextBossStop(torre.stops, 1000), null);
+  assert.equal(KT.lastBossFloor(torre.stops), 995);
   const s = KT.nextBossStop(torre.stops, 58);
   assert.deepEqual([s.floor, s.boss], [60, 'zapdos']);
+});
+
+test('forme des données de la Tour', () => {
+  assert.equal(KT.isTowerData(torre), true);
+  assert.equal(KT.isTowerData(undefined), false);
+  assert.equal(KT.isTowerData({ ...torre, stops: [] }), false);
+  assert.equal(KT.isTowerData({ ...torre, from: undefined }), false);
+  assert.equal(KT.isTowerData({ ...torre, stops: [{ stop: '5:brock', win: 50, first: 40 }] }), false);
+  assert.equal(KT.isTowerData({ ...torre, cores: [{ stop: '5:brock', core: 'abra', n: 30, win: 90 }] }), false);
 });
 
 test('trios : au moins 20 combats, triés par victoires puis combats, 3 au plus', () => {
@@ -48,7 +60,7 @@ test('noms français des lignes, formes ancrées et id inconnu', () => {
   assert.equal(KT.lineName('dratini'), 'Minidraco');
   assert.equal(KT.lineName('dratini-a0'), 'Minidraco ⚓');
   assert.equal(KT.lineName('nidoran-a1'), 'Nidorino ⚓');
-  assert.equal(KT.lineName('aerodactyl-a1'), 'Ptéra ⚓');
+  assert.equal(KT.lineName('aerodactyl-a1'), 'aerodactyl-a1');
   assert.equal(KT.lineName('giovanni'), 'Miaouss de Giovanni');
   assert.equal(KT.lineName('inconnu'), 'inconnu');
   assert.equal(KT.bossName('zapdos'), 'Électhor');

@@ -19,11 +19,15 @@ const STATES = {
 };
 
 // Seuls les boss et les trios affichés restent dans la page (taille d'URL data: limitée).
-const stops = torre.stops.filter(s => !s.stop.endsWith(':elite'));
+const stops = torre.stops.filter(s => {
+  const floor = Number(s.stop.split(':')[0]);
+  return !s.stop.endsWith(':elite') && (floor <= 200 || floor >= 990);
+});
 const cores = [...new Set(torre.cores.map(c => c.stop))].flatMap(stop => KT.topCores(torre.cores, stop));
 const data = { from: torre.from, to: torre.to, stops, cores };
 
 mkdirSync(`${root}build`, { recursive: true });
+const pages = {};
 for (const [name, s] of Object.entries(STATES)) {
   const save = s.round === null ? null : JSON.stringify({ round: s.round });
   const stub = `
@@ -40,7 +44,17 @@ window.fetch = () => api === 'pending' ? new Promise(() => {})
 <body><p>Jeu (fond simulé) · état « ${name} »</p>
 <script>${stub}</script>
 <script>${script}</script></body></html>`;
+  pages[name] = html;
   const out = `${root}build/preview-${name}.html`;
   writeFileSync(out, html);
   console.log(`bash ~/.claude/skills/ui-design/scripts/render-html.sh ${out}`);
 }
+
+// Largeur étroite : Chrome headless met la page en page sur ~500 px au minimum, d'où des iframes de 412 px.
+const attr = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+const frames = ['nominal', 'erreur']
+  .map(n => `<iframe title="${n}" width="412" height="860" srcdoc="${attr(pages[n])}"></iframe>`).join('');
+const narrow = `${root}build/preview-etroit.html`;
+writeFileSync(narrow, `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Aperçu étroit</title>
+<style>body{margin:0;padding:16px;display:flex;gap:16px;background:#888}iframe{border:0}</style></head><body>${frames}</body></html>`);
+console.log(`bash ~/.claude/skills/ui-design/scripts/render-html.sh ${narrow} --sizes 1440x900`);

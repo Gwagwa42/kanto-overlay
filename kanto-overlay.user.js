@@ -96,6 +96,18 @@ const KT = (() => {
     return { floor: Number(floor), boss };
   }
 
+  // Forme minimale de .modes.torre dont dépend le panneau ; sinon le format de l'API a changé.
+  function isTowerData(t) {
+    return Array.isArray(t?.stops) && t.stops.length > 0 && Array.isArray(t.cores)
+      && typeof t.from === 'string' && typeof t.to === 'string'
+      && t.stops.every(s => typeof s.stop === 'string' && [s.win, s.first, s.tries].every(Number.isFinite))
+      && t.cores.every(c => typeof c.stop === 'string' && Array.isArray(c.core) && Number.isFinite(c.n) && Number.isFinite(c.win));
+  }
+
+  function lastBossFloor(stops) {
+    return Math.max(...stops.map(s => parseStop(s.stop)).filter(p => p.boss !== 'elite').map(p => p.floor));
+  }
+
   function nextBossStop(stops, floor) {
     let best = null;
     for (const s of stops) {
@@ -117,7 +129,9 @@ const KT = (() => {
     const m = /^(.+)-a(\d+)$/.exec(id);
     const names = LINES[m ? m[1] : id];
     if (!names) return id;
-    return m ? `${names[Math.min(Number(m[2]), names.length - 1)]} ⚓` : names[0];
+    if (!m) return names[0];
+    const stage = names[Number(m[2])];
+    return stage ? `${stage} ⚓` : id;
   }
 
   const bossName = id => BOSSES[id] ?? id;
@@ -140,7 +154,7 @@ const KT = (() => {
   const pct = x => `${x.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
   const shortDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
-  return { API, SAVE_KEY, UI_KEY, GUIDE, GOLD_RULES, floorFromSave, nextBossStop, topCores, lineName, bossName, guideFor, rateLevel, pct, shortDate };
+  return { API, SAVE_KEY, UI_KEY, GUIDE, GOLD_RULES, floorFromSave, isTowerData, lastBossFloor, nextBossStop, topCores, lineName, bossName, guideFor, rateLevel, pct, shortDate };
 })();
 
 const CSS = `
@@ -157,8 +171,8 @@ const CSS = `
 }
 .kt * { box-sizing: border-box; }
 .kt-bar { display: flex; align-items: center; gap: var(--kt-space-2); padding: var(--kt-space-2) var(--kt-space-3); background: var(--kt-surface-2); cursor: move; touch-action: none; }
-.kt-title { font-weight: 600; flex: 1; white-space: nowrap; }
-.kt-src { font-size: 12px; color: var(--kt-muted); width: 44px; text-align: center; }
+.kt-title { font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kt-src { font-size: 12px; color: var(--kt-muted); }
 .kt-btn { min-width: 28px; height: 28px; border: 1px solid var(--kt-control); border-radius: 8px; background: var(--kt-surface); color: var(--kt-text); font: inherit; cursor: pointer; }
 .kt-floor { width: 56px; height: 28px; border: 1px solid var(--kt-control); border-radius: 8px; background: var(--kt-surface); color: var(--kt-text); font: inherit; text-align: center; }
 .kt-floor.is-empty { border-color: var(--kt-focus); border-width: 2px; }
@@ -191,14 +205,14 @@ const CSS = `
 function mount() {
   const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
   const ui = { x: null, y: 16, collapsed: false, guide: true, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
-  const state = { floor: null, source: 'manuel', lastAuto: null, data: null, error: null };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, data: null, error: null };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${CSS}</style>
 <div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
   <div class="kt-bar">
-    <span class="kt-title">Tour · étage</span>
+    <span class="kt-title">Étage</span>
     <button class="kt-btn" data-act="dec" aria-label="Étage précédent">−</button>
     <input class="kt-floor" inputmode="numeric" aria-label="Étage courant" placeholder="?">
     <button class="kt-btn" data-act="inc" aria-label="Étage suivant">+</button>
@@ -241,15 +255,16 @@ function mount() {
 
   function contentHtml() {
     if (state.error) {
-      const guide = state.floor ? guideHtml(state.floor) : '';
-      return `<p class="kt-msg" role="alert"><strong>Données indisponibles (${esc(state.error)})</strong>Réessaie en rechargeant la page dans quelques minutes. Les conseils du guide restent affichés ci-dessous.</p>${guide}`;
+      const more = state.floor
+        ? 'Les conseils du guide restent affichés ci-dessous.'
+        : 'Saisis l’étage pour afficher les conseils du guide.';
+      return `<p class="kt-msg" role="alert"><strong>Données indisponibles (${esc(state.error)})</strong>Réessaie en rechargeant la page dans quelques minutes. ${more}</p>${state.floor ? guideHtml(state.floor) : ''}`;
     }
     if (!state.data) return '<p class="kt-msg" role="status">Chargement des statistiques de la Tour…</p>';
     if (!state.floor) return '<p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Lance une partie Tour, ou saisis l’étage dans le champ ci-dessus.</p>';
     const stop = KT.nextBossStop(state.data.stops, state.floor);
     if (!stop) {
-      const last = Math.max(...state.data.stops.map(s => Number(s.stop.split(':')[0])));
-      return `<p class="kt-msg"><strong>Aucune donnée au-delà de l’étage ${last}</strong>Les statistiques publiques s’arrêtent là.</p>`;
+      return `<p class="kt-msg"><strong>Aucun boss connu après l’étage ${KT.lastBossFloor(state.data.stops)}</strong>Les statistiques publiques s’arrêtent là.</p>`;
     }
     const dist = stop.floor - state.floor;
     const lvl = KT.rateLevel(stop.win);
@@ -289,7 +304,10 @@ function mount() {
   }
 
   function pollSave() {
-    const f = KT.floorFromSave(localStorage.getItem(KT.SAVE_KEY));
+    const raw = localStorage.getItem(KT.SAVE_KEY);
+    if (raw === state.lastRaw) return;
+    state.lastRaw = raw;
+    const f = KT.floorFromSave(raw);
     if (f === state.lastAuto) return;
     state.lastAuto = f;
     if (f !== null) {
@@ -313,8 +331,10 @@ function mount() {
     }
   });
   input.addEventListener('change', () => setManual(Number.parseInt(input.value, 10)));
+  // Le Shadow DOM ne fait que recibler les événements : sans cet arrêt, le jeu recevrait les chiffres tapés.
+  for (const type of ['keydown', 'keyup', 'keypress']) input.addEventListener(type, e => e.stopPropagation());
   root.addEventListener('toggle', e => {
-    if (!e.target.matches('.kt-guide')) return;
+    if (!e.target.matches('.kt-guide') || ui.guide === e.target.open) return;
     ui.guide = e.target.open;
     saveUi();
   }, true);
@@ -329,7 +349,7 @@ function mount() {
 
   const bar = root.querySelector('.kt-bar');
   bar.addEventListener('pointerdown', e => {
-    if (e.target.closest('button, input')) return;
+    if (e.button !== 0 || e.target.closest('button, input')) return;
     const dx = e.clientX - panel.offsetLeft;
     const dy = e.clientY - panel.offsetTop;
     bar.setPointerCapture(e.pointerId);
@@ -339,10 +359,19 @@ function mount() {
       place();
     };
     bar.addEventListener('pointermove', move);
-    bar.addEventListener('pointerup', () => {
+    // Fin du glisser, relâché ou annulé.
+    bar.addEventListener('lostpointercapture', () => {
       bar.removeEventListener('pointermove', move);
       saveUi();
     }, { once: true });
+  });
+  // Alternative au glisser (WCAG 2.5.7) : double-clic sur la barre → panneau remis en haut à droite.
+  bar.addEventListener('dblclick', e => {
+    if (e.target.closest('button, input')) return;
+    ui.x = null;
+    ui.y = 16;
+    saveUi();
+    place();
   });
 
   render();
@@ -357,13 +386,19 @@ function mount() {
   fetch(KT.API)
     .then(r => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
+      return r.json().catch(e => {
+        throw e instanceof SyntaxError ? new Error('format inattendu') : e;
+      });
+    }, e => {
+      // fetch ne rejette qu'avec TypeError en cas d'échec réseau.
+      throw e instanceof TypeError ? new Error('réseau') : e;
     })
-    .then(json => json.modes.torre)
-    .then(data => {
-      state.data = data;
+    .then(json => {
+      if (!KT.isTowerData(json?.modes?.torre)) throw new Error('format inattendu');
+      state.data = json.modes.torre;
       render();
-    }, err => {
+    })
+    .catch(err => {
       state.error = err.message;
       render();
     });
