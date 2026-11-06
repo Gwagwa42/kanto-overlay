@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maquette — shinies possédés dans la compo cible</title>
+<!--
+Retouche de 2026-11-05-conseils.html (même brief). Ajout : « shiny » après la progression d'une lignée de la compo cible dont une copie est
+shiny (la fusion transmet le shiny), en gris atténué comme la progression. Un shiny du banc n'a plus de « Vends » jusqu'à l'étage 120.
+Scénario : étage 57, banc plein, Minidraco ★★ shiny, Rattata shiny sur le banc.
+-->
+<style>
+  :root {
+    /* Tokens du panneau (repris tels quels dans kanto-overlay.user.js) */
+    --kt-surface: #ffffff;
+    --kt-surface-2: #eef1fa;
+    --kt-text: #141a33;
+    --kt-muted: #4a5378;
+    --kt-border: #c9cfe6;
+    --kt-control: #737c9c;
+    --kt-focus: #0072b2;
+    --kt-good-bg: #0072b2;
+    --kt-good-fg: #ffffff;
+    --kt-bad-bg: #f0e442;
+    --kt-bad-fg: #141a33;
+    --kt-mid-bg: #dfe3f2;
+    --kt-mid-fg: #141a33;
+    --kt-space-1: 4px;
+    --kt-space-2: 8px;
+    --kt-space-3: 12px;
+    --kt-space-4: 16px;
+    --kt-radius: 12px;
+    --kt-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+    /* Pastilles : couleurs fixes, posées sur le jeu toujours sombre */
+    --kp-do-bg: #0072b2;   --kp-do-fg: #ffffff;   /* ★ fais-le */
+    --kp-opt-bg: #ffffff;  --kp-opt-fg: #141a33;  /* ◆ si l'or le permet */
+    --kp-no-bg: #f0e442;   --kp-no-fg: #141a33;   /* ✕ évite */
+    --kp-edge: #141a33;
+    --kp-tip-bg: #141a33;  --kp-tip-fg: #eef1ff;  --kp-tip-muted: #aab3d6;
+    /* Décor du jeu, schématisé (non livré) */
+    --game-bg: #2b3a2a; --game-bar: #1b2448; --game-card: #dfe2ee; --game-card-fg: #1b2448; --game-slot: #2a345e;
+    --page-bg: #dfe6f5; --page-fg: #141a33; --page-muted: #4a5378;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --kt-surface: #141a33; --kt-surface-2: #1e2647; --kt-text: #eef1ff; --kt-muted: #aab3d6; --kt-border: #33406e;
+      --kt-control: #7a86b8; --kt-focus: #56b4e9; --kt-good-bg: #56b4e9; --kt-good-fg: #141a33; --kt-mid-bg: #2c3660; --kt-mid-fg: #eef1ff;
+      --page-bg: #0b0f1f; --page-fg: #eef1ff; --page-muted: #aab3d6;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--page-bg); color: var(--page-fg); font: 14px/1.4 var(--kt-font); }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .note { color: var(--page-muted); margin: 0 0 16px; max-width: 80ch; }
+  .layout { display: grid; grid-template-columns: 1fr 320px 320px; gap: 24px; align-items: start; }
+  h2 { font-size: 12px; font-weight: 600; color: var(--page-muted); margin: 0 0 8px; }
+  .stack { display: grid; gap: 24px; }
+
+  /* ---- Décor du jeu (schéma) ---- */
+  .game { background: var(--game-bg); border-radius: 12px; padding: 16px; display: grid; gap: 16px; }
+  .bench { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; }
+  .slot { position: relative; height: 56px; border-radius: 8px; background: var(--game-slot); color: #eef1ff; font-size: 12px;
+          display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; }
+  .bar { position: relative; background: var(--game-bar); border-radius: 12px; padding: 12px; display: grid;
+         grid-template-columns: 112px 1fr; gap: 12px; color: #eef1ff; }
+  .gold { position: absolute; top: -14px; left: 24px; background: #2a345e; border-radius: 8px; padding: 2px 12px;
+          font-weight: 700; color: #f6d55c; }
+  .side { display: grid; gap: 8px; }
+  .gbtn { position: relative; height: 48px; border-radius: 8px; background: #3a4a8c; font-size: 12px; font-weight: 600;
+          display: flex; flex-direction: column; justify-content: center; padding: 0 8px; }
+  .gbtn small { font-weight: 400; color: #c8cfee; }
+  .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .card { position: relative; height: 104px; border-radius: 8px; background: var(--game-card); color: var(--game-card-fg);
+          display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; font-size: 12px; font-weight: 700; }
+  .card .cost { font-weight: 400; }
+  .items { display: flex; gap: 8px; align-items: center; color: #eef1ff; font-size: 12px; }
+  .it { position: relative; width: 112px; height: 40px; border-radius: 20px; background: #3a4a8c; display: flex; align-items: center;
+        justify-content: center; }
+  .modal { background: #232c55; border-radius: 12px; padding: 32px 16px 16px; color: #eef1ff; }
+  .modal h3 { margin: 0 0 16px; text-align: center; font-size: 16px; color: #f6d55c; }
+  .mcards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .mcard { position: relative; border-radius: 10px; background: #3a3f8c; padding: 24px 8px 12px; text-align: center; font-size: 12px; }
+  .mcard b { display: block; font-size: 14px; margin-bottom: 4px; }
+  .mcard .path { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 999px; background: #1b2448; }
+
+  /* ---- Pastilles (livrées) ---- */
+  .kp { position: absolute; top: -12px; left: 50%; translate: -50%; z-index: 2; display: inline-flex; align-items: center; gap: 4px;
+        height: 24px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--kp-edge); font: 700 12px/1 var(--kt-font);
+        white-space: nowrap; cursor: help;
+        /* bord sombre : contraste sur les cartes claires ; liseré blanc : contraste sur le fond sombre du jeu */
+        box-shadow: 0 0 0 1px #ffffff, 0 1px 3px rgb(0 0 0 / .4); }
+  .kp.do { background: var(--kp-do-bg); color: var(--kp-do-fg); }
+  .kp.opt { background: var(--kp-opt-bg); color: var(--kp-opt-fg); }
+  .kp.no { background: var(--kp-no-bg); color: var(--kp-no-fg); }
+  .kp:focus-visible { outline: 2px solid #56b4e9; outline-offset: 2px; }
+  .tip { position: absolute; z-index: 3; bottom: calc(100% + 16px); left: 50%; translate: -50%; width: 240px; padding: 8px 12px; border-radius: 8px;
+         background: var(--kp-tip-bg); color: var(--kp-tip-fg); font: 400 12px/1.4 var(--kt-font); text-align: left;
+         box-shadow: 0 8px 24px rgb(0 0 0 / .45); }
+  .tip.below { bottom: auto; top: calc(100% + 8px); }
+  .tip strong { display: block; font-size: 14px; margin-bottom: 4px; }
+  .tip .m { color: var(--kp-tip-muted); }
+
+  /* ---- Panneau (existant + section Plan) ---- */
+  .kt { width: 320px; background: var(--kt-surface); color: var(--kt-text); border: 1px solid var(--kt-border);
+        border-radius: var(--kt-radius); box-shadow: 0 8px 24px rgb(0 0 0 / .35); font: 14px/1.4 var(--kt-font);
+        font-variant-numeric: tabular-nums; overflow: hidden; }
+  .kt-bar { display: flex; align-items: center; gap: var(--kt-space-2); padding: var(--kt-space-2) var(--kt-space-3); background: var(--kt-surface-2); }
+  .kt-title { font-weight: 600; flex: 1; }
+  .kt-src { font-size: 12px; color: var(--kt-muted); min-width: 6.5ch; text-align: center; }
+  .kt-btn { min-width: 28px; height: 28px; border: 1px solid var(--kt-control); border-radius: 8px; background: var(--kt-surface);
+            color: var(--kt-text); font: inherit; cursor: pointer; }
+  .kt-floor { width: 56px; height: 28px; border: 1px solid var(--kt-control); border-radius: 8px; background: var(--kt-surface);
+              color: var(--kt-text); font: inherit; text-align: center; }
+  .kt-body { padding: var(--kt-space-3); display: grid; gap: var(--kt-space-3); }
+  .kt p { margin: 0; }
+  .kt-label { font-size: 12px; color: var(--kt-muted); }
+  .kt-boss { font-size: 18px; font-weight: 700; }
+  .kt-boss small { font-size: 14px; font-weight: 400; color: var(--kt-muted); }
+  .kt-stats { display: flex; flex-wrap: wrap; gap: var(--kt-space-2); align-items: center; font-size: 12px; color: var(--kt-muted); }
+  .kt-rate { display: inline-block; padding: 2px var(--kt-space-2); border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .kt-rate.good { background: var(--kt-good-bg); color: var(--kt-good-fg); }
+  .kt-rate.bad { background: var(--kt-bad-bg); color: var(--kt-bad-fg); }
+  .kt-rate.mid { background: var(--kt-mid-bg); color: var(--kt-mid-fg); }
+  .kt-plan { display: grid; gap: var(--kt-space-2); }
+  .kt-comp { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--kt-space-1); }
+  .kt-comp li { padding: 2px var(--kt-space-2); border-radius: 8px; background: var(--kt-surface-2); font-size: 12px; }
+  .kt-comp li.core { font-weight: 700; }
+  .kt-comp li .p { color: var(--kt-muted); font-weight: 400; }
+  .kt-eco { font-size: 12px; color: var(--kt-muted); }
+  .kt-eco b { color: var(--kt-text); }
+  .kt-todo { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--kt-space-1); font-size: 12px; }
+  .kt-todo li { display: grid; grid-template-columns: 20px 1fr; gap: var(--kt-space-1); align-items: baseline; }
+  .kt-todo .s { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 999px; font-weight: 700;
+                border: 1px solid var(--kp-edge); }
+  .kt-todo .s.do { background: var(--kp-do-bg); color: var(--kp-do-fg); }
+  .kt-todo .s.opt { background: var(--kp-opt-bg); color: var(--kp-opt-fg); }
+  .kt-todo .s.no { background: var(--kp-no-bg); color: var(--kp-no-fg); }
+  .kt-todo .why { color: var(--kt-muted); }
+  .kt-copy { height: 32px; border: 0; border-radius: 8px; background: var(--kt-good-bg); color: var(--kt-good-fg); font: 600 14px var(--kt-font); cursor: pointer; }
+  .kt-copied { font-size: 12px; color: var(--kt-muted); }
+  .kt-msg { padding: var(--kt-space-2) var(--kt-space-3); border-radius: 8px; background: var(--kt-surface-2); }
+  .kt-msg strong { display: block; }
+  .kt-guide { border-top: 1px solid var(--kt-border); padding-top: var(--kt-space-2); font-size: 12px; }
+  .kt-guide summary { font-size: 14px; font-weight: 600; min-height: 24px; }
+  .kt-guide ul { margin: var(--kt-space-1) 0 0; padding-left: var(--kt-space-4); }
+  .kt-foot { padding: var(--kt-space-2) var(--kt-space-3); font-size: 12px; color: var(--kt-muted); border-top: 1px solid var(--kt-border); }
+  .kt-foot a { color: inherit; }
+  .row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<h1>Shinies possédés — compo cible et banc</h1>
+<p class="note">À gauche, le panneau actuel ; à droite, Minidraco et Rattata sont shiny. Minidraco porte « shiny » après sa progression ; Rattata, shiny hors compo,
+n'est plus proposé à la vente avant l'étage 121. Le code copié écrit <code>dratini:2s:…</code>.</p>
+<div class="row">
+  <section>
+    <h2>Sans shiny</h2>
+    <div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
+      <div class="kt-bar">
+        <span class="kt-title">Étage</span>
+        <button class="kt-btn" aria-label="Étage précédent">−</button>
+        <input class="kt-floor" value="57" inputmode="numeric" aria-label="Étage courant">
+        <button class="kt-btn" aria-label="Étage suivant">+</button>
+        <span class="kt-src">auto</span>
+        <button class="kt-btn" aria-label="Replier le panneau" aria-expanded="true">▾</button>
+      </div>
+      <div class="kt-body">
+        <div class="kt-plan">
+          <p class="kt-label">Compo cible · élite 59, Électhor 60, élite 64</p>
+          <ul class="kt-comp">
+            <li class="core">Ptéra <span class="p">0/3</span></li>
+            <li class="core">Minidraco ⚓ <span class="p">★★</span></li>
+            <li class="core">Caninos <span class="p">2/3</span></li>
+            <li>Goupix <span class="p">★★</span></li>
+            <li>Magmar <span class="p">0/3</span></li>
+          </ul>
+          <p class="kt-eco">Or <b>38</b> · palier 30 (intérêts +3) → <b>8 à dépenser</b>. À l'étage 60 (Électhor, 40,8 %) : tout jouer.</p>
+          <ol class="kt-todo" aria-label="Conseils">
+            <li><span class="s do" aria-label="À faire">★</span><span>Achète Caninos <span class="why">— 3ᵉ copie, passe ★★ ; cœur de la compo cible</span></span></li>
+            <li><span class="s do" aria-label="À faire">★</span><span>Achète Ptéra <span class="why">— cœur de la compo cible</span></span></li>
+            <li><span class="s no" aria-label="À éviter">✕</span><span>Vends Rattata <span class="why">— hors compo, libère le banc</span></span></li>
+          </ol>
+          <button class="kt-copy">Copier la formation</button>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section>
+    <h2>Minidraco et Rattata shiny</h2>
+    <div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
+      <div class="kt-bar">
+        <span class="kt-title">Étage</span>
+        <button class="kt-btn" aria-label="Étage précédent">−</button>
+        <input class="kt-floor" value="57" inputmode="numeric" aria-label="Étage courant">
+        <button class="kt-btn" aria-label="Étage suivant">+</button>
+        <span class="kt-src">auto</span>
+        <button class="kt-btn" aria-label="Replier le panneau" aria-expanded="true">▾</button>
+      </div>
+      <div class="kt-body">
+        <div class="kt-plan">
+          <p class="kt-label">Compo cible · élite 59, Électhor 60, élite 64</p>
+          <ul class="kt-comp">
+            <li class="core">Ptéra <span class="p">0/3</span></li>
+            <li class="core">Minidraco ⚓ <span class="p">★★ shiny</span></li>
+            <li class="core">Caninos <span class="p">2/3</span></li>
+            <li>Goupix <span class="p">★★</span></li>
+            <li>Magmar <span class="p">0/3</span></li>
+          </ul>
+          <p class="kt-eco">Or <b>38</b> · palier 30 (intérêts +3) → <b>8 à dépenser</b>. À l'étage 60 (Électhor, 40,8 %) : tout jouer.</p>
+          <ol class="kt-todo" aria-label="Conseils">
+            <li><span class="s do" aria-label="À faire">★</span><span>Achète Caninos <span class="why">— 3ᵉ copie, passe ★★ ; cœur de la compo cible</span></span></li>
+            <li><span class="s do" aria-label="À faire">★</span><span>Achète Ptéra <span class="why">— cœur de la compo cible</span></span></li>
+          </ol>
+          <button class="kt-copy">Copier la formation</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

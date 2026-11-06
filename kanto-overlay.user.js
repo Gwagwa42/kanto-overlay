@@ -973,7 +973,10 @@ function mount() {
     if (!a.target) return `<div class="kt-plan">${ecoHtml(a)}${todoHtml(a)}</div>`;
     const t = a.target;
     const stops = t.stops.map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
-    const chip = (id, core) => `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, KT.baseLine(id))}</span></li>`;
+    const chip = (id, core) => {
+      const base = KT.baseLine(id);
+      return `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, base)}${KT.shinyLine(a.game, base) ? ' shiny' : ''}</span></li>`;
+    };
     return `<div class="kt-plan"><p class="kt-label">Compo cible · ${esc(stops)}</p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${ecoHtml(a)}${todoHtml(a)}

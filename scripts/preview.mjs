@@ -16,8 +16,20 @@ const lang = require(`${root}test/fixtures/lang.json`);
 const S57 = require(`${root}test/fixtures/s57.js`);
 const MODALS = { ...S57, itemReward: ['protein', 'carbos', 'zinc'], tower: { boons: ['nugget'], offer: { ids: ['nugget', 'leftovers', 'flute'] } } };
 
+// Maquette 2026-11-06-shiny : Minidraco shiny dans la compo, Rattata shiny sur un banc plein (pas de « Vends » avant l'étage 121).
+const SHINY = {
+  ...S57,
+  units: {
+    ...S57.units, a: { ...S57.units.a, shiny: true }, e: { ...S57.units.e, shiny: true },
+    f: { id: 'f', line: 'zubat', star: 1 }, g: { id: 'g', line: 'zubat', star: 1 }, h: { id: 'h', line: 'pidgey', star: 1 },
+    i: { id: 'i', line: 'pidgey', star: 1 }, j: { id: 'j', line: 'ekans', star: 1 },
+  },
+  bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null],
+};
+
 const STATES = {
   conseils: { save: S57, api: 'ok', tip: true },
+  shiny: { save: SHINY, api: 'ok' },
   modales: { save: MODALS, api: 'ok', modal: true },
   'boss-difficile': { save: { ...S57, round: 1195 }, api: 'ok' },
   'sans-sauvegarde': { save: null, api: 'ok' },
