@@ -598,6 +598,53 @@ const KT = (() => {
       Object.assign(h, { lone: null, loneAt: null });
     };
 
+    // Paire idéale du sac : recette idéale d'un Pokémon libre, sans paire dans ce passage, dont l'autre composant attend dans le sac.
+    const idealPair = (free, id, i) => {
+      for (const h of free.filter(x => !x.after)) {
+        for (const f of h.ideal.filter(x => ideal(h, x) && book.parts.get(x)?.includes(id))) {
+          const ab = book.parts.get(f);
+          const j = pending('part').find(p => p.i !== i && p.id === (ab[0] === id ? ab[1] : ab[0]))?.i;
+          if (j !== undefined) return { h, f, ab, j };
+        }
+      }
+      return null;
+    };
+    // Un composant seul qui entre dans une recette idéale encore à faire (porté ou conseillé) n'est détourné que faute de
+    // place utile au rôle : le conseil reste le même une fois le composant posé.
+    const kept = h => h.ideal.some(f => ideal(h, f) && book.parts.get(f)?.includes(h.lone));
+    // Composant, première règle qui s'applique : complète une recette idéale, paire idéale du sac, entame une recette idéale,
+    // fusion utile au rôle, recette doublée utile au rôle, fusion utile au rôle d'un composant réservé, toute place, toute fusion.
+    const placePart = (id, i) => {
+      const done = hs.find(h => h.lone && ideal(h, fused(h, id)));
+      if (done) return fuse(i, done, id, `${names.item(fused(done, id))}, ${BEST}`);
+      const free = hs.filter(h => h.slots > 0 && !h.lone);
+      const duo = idealPair(free, id, i);
+      if (duo) {
+        pair(i, duo.j, duo.h, ...duo.ab, `${names.item(duo.f)}, ${BEST}`);
+        duo.h.slots -= 1;
+        duo.h.on.push(duo.f);
+        return;
+      }
+      const effect = `${names.effect(id) ?? 'son effet'} tout de suite`;
+      const begun = free.map(h => ({ h, f: h.ideal.find(f => ideal(h, f) && book.parts.get(f)?.includes(id)) })).find(x => x.f);
+      if (begun) {
+        const [a, b] = book.parts.get(begun.f);
+        return alone(i, begun.h, id, `${effect} ; plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
+      }
+      const useful = list => list.find(h => fits(h, fused(h, id)) && !h.on.includes(fused(h, id)));
+      const roleFuse = h => fuse(i, h, id, `${names.item(fused(h, id))}, ${ROLE_WHY[h.role]}`);
+      const open = useful(hs.filter(h => h.lone && !kept(h)));
+      if (open) return roleFuse(open);
+      const twin = book.make.get(`${id}+${id}`);
+      const double = free.find(h => fits(h, twin) && !h.on.includes(twin));
+      if (double) return alone(i, double, id, `${effect} ; plus tard avec ${names.item(id)} : ${names.item(twin)}, ${ROLE_WHY[double.role]}`);
+      const diverted = useful(hs.filter(h => h.lone && kept(h)));
+      if (diverted) return roleFuse(diverted);
+      if (free[0]) return alone(i, free[0], id, effect);
+      const any = hs.find(h => h.lone);
+      if (any) fuse(i, any, id, names.item(fused(any, id)));
+    };
+
     game.bag.forEach((id, i) => {
       if (id !== 'magnet') return;
       const off = game.units.find(u => u.items?.length && !targetBases(target).includes(baseLine(u.line)));
@@ -614,61 +661,7 @@ const KT = (() => {
       const h = fresh.find(x => fits(x, id)) ?? fresh[0] ?? free[0];
       if (h) full(i, h, id, fits(h, id) ? ROLE_WHY[h.role] : 'place libre dans la compo');
     }
-    // Composants, dans l'ordre : complète une recette idéale, paire idéale du sac, entame une recette idéale, fusion utile au
-    // rôle, recette doublée utile au rôle, fusion utile au rôle d'un composant réservé, toute place, toute fusion.
-    for (const { id, i } of pending('part')) {
-      if (marks[i] !== null) continue;
-      const done = hs.find(h => h.lone && ideal(h, fused(h, id)));
-      if (done) {
-        fuse(i, done, id, `${names.item(fused(done, id))}, ${BEST}`);
-        continue;
-      }
-      const free = hs.filter(h => h.slots > 0 && !h.lone);
-      const duo = free.filter(h => !h.after)
-        .flatMap(h => h.ideal.filter(f => ideal(h, f) && book.parts.get(f)?.includes(id)).map(f => ({ h, f, ab: book.parts.get(f) })))
-        .map(x => ({ ...x, j: pending('part').find(p => p.i !== i && p.id === (x.ab[0] === id ? x.ab[1] : x.ab[0]))?.i }))
-        .find(x => x.j !== undefined);
-      if (duo) {
-        pair(i, duo.j, duo.h, ...duo.ab, `${names.item(duo.f)}, ${BEST}`);
-        duo.h.slots -= 1;
-        duo.h.on.push(duo.f);
-        continue;
-      }
-      const effect = `${names.effect(id) ?? 'son effet'} tout de suite`;
-      const begun = free.map(h => ({ h, f: h.ideal.find(f => ideal(h, f) && book.parts.get(f)?.includes(id)) })).find(x => x.f);
-      if (begun) {
-        const [a, b] = book.parts.get(begun.f);
-        alone(i, begun.h, id, `${effect} ; plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
-        continue;
-      }
-      // Un composant seul qui entre dans une recette idéale encore à faire (porté ou conseillé) n'est détourné que faute de
-      // place utile au rôle : le conseil reste le même une fois le composant posé.
-      const kept = h => h.ideal.some(f => ideal(h, f) && book.parts.get(f)?.includes(h.lone));
-      const useful = list => list.find(h => fits(h, fused(h, id)) && !h.on.includes(fused(h, id)));
-      const roleFuse = h => fuse(i, h, id, `${names.item(fused(h, id))}, ${ROLE_WHY[h.role]}`);
-      const open = useful(hs.filter(h => h.lone && !kept(h)));
-      if (open) {
-        roleFuse(open);
-        continue;
-      }
-      const twin = book.make.get(`${id}+${id}`);
-      const double = free.find(h => fits(h, twin) && !h.on.includes(twin));
-      if (double) {
-        alone(i, double, id, `${effect} ; plus tard avec ${names.item(id)} : ${names.item(twin)}, ${ROLE_WHY[double.role]}`);
-        continue;
-      }
-      const diverted = useful(hs.filter(h => h.lone && kept(h)));
-      if (diverted) {
-        roleFuse(diverted);
-        continue;
-      }
-      if (free[0]) {
-        alone(i, free[0], id, effect);
-        continue;
-      }
-      const any = hs.find(h => h.lone);
-      if (any) fuse(i, any, id, names.item(fused(any, id)));
-    }
+    for (const { id, i } of pending('part')) if (marks[i] === null) placePart(id, i);
     const why = hs.length ? 'toute la compo a 3 objets' : 'aucun Pokémon de la compo possédé';
     for (const { id, i } of [...pending('full'), ...pending('part')]) marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, why);
     return { marks, holders: hs };
