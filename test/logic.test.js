@@ -354,13 +354,14 @@ test('objets : deux composants du sac qui fusionnent sur le même Pokémon annon
 });
 
 test('objets idéaux : 3 objets complets de la lignée exacte, ≥ 20 combats, par borne basse', () => {
-  const top = KT.topHolders(torre, data, 'dratini');
-  const expected = torre.holders.filter(h => h.line === 'dratini' && h.n >= 20 && data.items[h.id].k === 'full')
-    .sort((a, b) => b.lo - a.lo).slice(0, 3);
-  assert.equal(top.length, 3);
-  assert.deepEqual(top, expected);
-  assert.ok(torre.holders.some(h => h.line === 'dratini' && data.items[h.id].k === 'part'));
+  assert.deepEqual(KT.topHolders(torre, data, 'dratini').map(h => h.id), ['choice-band', 'focus-sash', 'scope-lens']);
   assert.deepEqual(KT.topHolders(torre, data, 'inconnu'), []);
+  // Composant, moins de 20 combats, forme ancrée : écartés même avec la meilleure borne basse.
+  const holders = [
+    { line: 'dratini', id: 'leftovers', n: 20, lo: 50 }, { line: 'dratini', id: 'iron', n: 99, lo: 90 },
+    { line: 'dratini', id: 'choice-band', n: 19, lo: 90 }, { line: 'dratini-a1', id: 'focus-sash', n: 99, lo: 90 },
+  ];
+  assert.deepEqual(KT.topHolders({ holders }, data, 'dratini').map(h => h.id), ['leftovers']);
 });
 
 test('récompense d’objet : prendre ce qui complète la recette idéale', () => {

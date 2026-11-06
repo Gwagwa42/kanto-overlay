@@ -509,7 +509,8 @@ const KT = (() => {
     return { make, parts };
   }
 
-  // Meilleurs objets complets portés par la lignée exacte (forme ancrée comprise) en Tour.
+  // Meilleurs objets complets portés en Tour par cette lignée exacte : une forme ancrée (-aN) ne compte que pour elle-même ; le
+  // repli sur la lignée de base est dans idealItems.
   function topHolders(torre, data, line) {
     return torre.holders.filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full')
       .sort((a, b) => b.lo - a.lo).slice(0, MAX_ITEMS);
@@ -600,10 +601,11 @@ const KT = (() => {
 
     // Paire idéale du sac : recette idéale d'un Pokémon libre, sans paire dans ce passage, dont l'autre composant attend dans le sac.
     const idealPair = (free, id, i) => {
+      const waiting = pending('part');
       for (const h of free.filter(x => !x.after)) {
         for (const f of h.ideal.filter(x => ideal(h, x) && book.parts.get(x)?.includes(id))) {
           const ab = book.parts.get(f);
-          const j = pending('part').find(p => p.i !== i && p.id === (ab[0] === id ? ab[1] : ab[0]))?.i;
+          const j = waiting.find(p => p.i !== i && p.id === (ab[0] === id ? ab[1] : ab[0]))?.i;
           if (j !== undefined) return { h, f, ab, j };
         }
       }
