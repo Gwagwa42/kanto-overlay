@@ -241,6 +241,7 @@ test('boutique sans statistiques : seules les 3ᵉ copies sont marquées', () =>
   assert.equal(a.target, null);
   assert.deepEqual(a.shop.map(brief), ['do Achète', null, null, null, null]);
   assert.equal(a.reroll, null);
+  assert.deepEqual(a.bag, [null, null, null]);
   assert.equal(a.code, null);
 });
 
