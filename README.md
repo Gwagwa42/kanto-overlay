@@ -40,6 +40,9 @@ barre le remet en haut à droite.
   le coin choisi (bouton « Porteur »), mêlée devant, distance au fond. Un Pokémon déjà dans sa zone garde sa case ; les autres
   prennent la première case libre (avant depuis le centre, fond depuis le coin). Les déplacements sont listés dans l'ordre où les
   faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors formation si le plateau est plein.
+- **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny »
+  dans la compo cible, ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, et s'écrit `ligne:2s:…` dans
+  le code KT1. Une unité shiny n'est pas proposée à la vente jusqu'à l'étage 120.
 
 ## Installation (Firefox)
 
@@ -55,8 +58,9 @@ types). Conformément à ses conditions, chaque source est gardée **une heure**
 (`ETag`) ; en cas d'erreur, la dernière copie sert et le pied du panneau en donne la date.
 
 L'API publique s'arrête aux règles 40 alors que la Tour tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
-le script (seuils d'XP, plafond d'intérêts, voies et noms des bénédictions, coût, types et portée de 24 lignées). Les conseils sur
-les shinies viennent d'un guide et ne sont pas vérifiés.
+le script (seuils d'XP, plafond d'intérêts, voies et noms des bénédictions, coût, types et portée de 24 lignées, effet d'un shiny :
++10 % de PV, dégâts et défenses, transmis par la fusion). La liste des shinies à saisir par tranche d'étages vient d'un guide et n'est
+pas vérifiée.
 
 Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pokémon Company.
 

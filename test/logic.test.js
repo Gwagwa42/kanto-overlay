@@ -498,6 +498,63 @@ test('formation : porteur à distance dans le coin du côté choisi, gardé s’
   assert.deepEqual(corner.moves.map(m => `${m.title} — ${m.why}`), ['Pose Abra — fond, colonne 2']);
 });
 
+// Unités de S57 remplacées ou ajoutées ; shiny : +10 % (makeUnit du jeu), transmis par la fusion.
+const withUnits = (units, extra = {}) => ({ ...S57, units: { ...S57.units, ...units }, ...extra });
+// Rôles lus sur les objets : Poudre Métal (défensif) va au tank, Orbe Vie (offensif) au porteur.
+const roles = s => advise({ ...s, items: ['eviolite', 'life-orb'] }).bag.map(m => m.title);
+
+test('shiny : lignée shiny si sa copie de meilleure étoile l’est, +2 points au trio', () => {
+  const shiny = withUnits({ b: { ...S57.units.b, shiny: true } });
+  assert.equal(KT.shinyLine(KT.readGame(shiny), 'growlithe'), true);
+  assert.equal(KT.shinyLine(KT.readGame(S57), 'growlithe'), false);
+  // Minidraco 2★ normal et 1★ shiny : pas de 2★ shiny annoncé (ni « s » dans le code KT1), et le 1★ shiny, de la lignée du
+  // porteur, n'est pas pris pour tank.
+  const lower = withUnits({ x: { id: 'x', line: 'dratini', star: 1, shiny: true } }, { bench: ['b', 'c', 'e', 'x', null, null, null, null, null] });
+  assert.equal(KT.shinyLine(KT.readGame(lower), 'dratini'), false);
+  assert.match(advise(lower).code, /;dratini:2:\d+:/);
+  assert.deepEqual(roles(lower), ['Poudre Métal → Caninos', 'Orbe Vie → Minidraco']);
+  const stops = KT.nextStops(torre.stops, 57);
+  const core = ['aerodactyl', 'dratini', 'growlithe'];
+  assert.equal(KT.coreScore(core, stops, new Map(), KT.readGame(shiny)) - KT.coreScore(core, stops, new Map(), KT.readGame(S57)), 2);
+});
+
+test('shiny : « s » après l’étoile dans le code KT1', () => {
+  assert.match(advise(withUnits({ a: { ...S57.units.a, shiny: true } })).code, /;dratini:2s:\d+:choice-band\.focus-sash\.scope-lens;/);
+});
+
+test('shiny : départage le porteur, le tank et le remplissage', () => {
+  // Minidraco et Caninos à 2★ : le shiny devient porteur, l'autre tank.
+  const lay = { board: { ...S57.board, 30: 'b' }, bench: [null, 'c', 'e', null, null, null, null, null, null] };
+  const g2 = { b: { ...S57.units.b, star: 2 } };
+  assert.deepEqual(roles(withUnits(g2, lay)), ['Poudre Métal → Caninos', 'Orbe Vie → Minidraco']);
+  assert.deepEqual(roles(withUnits({ b: { ...g2.b, shiny: true } }, lay)), ['Poudre Métal → Minidraco', 'Orbe Vie → Caninos']);
+  // Tank : Minidraco 1★ shiny (2062 × 1,1 PV) passe devant Caninos 1★ (2215 PV) ; Ptéra 2★ porte.
+  const tank = shiny => withUnits({ a: { id: 'a', line: 'dratini', star: 1, shiny }, x: { id: 'x', line: 'aerodactyl', star: 2 } }, { board: { ...S57.board, 30: 'x' } });
+  assert.deepEqual(roles(tank(false)), ['Poudre Métal → Caninos', 'Orbe Vie → Ptéra']);
+  assert.deepEqual(roles(tank(true)), ['Poudre Métal → Minidraco', 'Orbe Vie → Ptéra']);
+  // Remplissage : Goupix et Magmar 1★ apportent le même type ; le shiny passe devant.
+  const fill = shiny => withUnits({ d: { id: 'd', line: 'vulpix', star: 1, shiny }, m: { id: 'm', line: 'magmar', star: 1 } },
+    { level: 4, bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
+  assert.deepEqual(advise(fill(false)).target.fillers, ['magmar']);
+  assert.deepEqual(advise(fill(true)).target.fillers, ['vulpix']);
+});
+
+test('shiny : pas de « Vends » jusqu’à l’étage 120, boutique sans raison shiny si la lignée l’est déjà', () => {
+  const full = withUnits({
+    f: { id: 'f', line: 'ekans', star: 1, shiny: true }, g: { id: 'g', line: 'zubat', star: 1 }, h: { id: 'h', line: 'zubat', star: 1 },
+    i: { id: 'i', line: 'pidgey', star: 1 }, j: { id: 'j', line: 'pidgey', star: 1 },
+  }, { level: 4, bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null] });
+  assert.equal(advise(full).bench[3], null);
+  assert.equal(advise({ ...full, round: 1199 }).bench[3].title, 'Vends Abo');
+  // Goupix 2★ normal (remplissage) : une carte 1★ shiny ne change pas la copie jouée.
+  const above = withUnits({}, { shop: ['vulpix', 'aerodactyl', 'magmar', 'rattata', 'ekans'], shopShiny: [true, false, false, false, false] });
+  assert.deepEqual([brief(advise(above).shop[0]), advise(above).shop[0].why], ['opt Si l’or', 'renforce le plateau de la compo']);
+  const owned = withUnits({ m: { id: 'm', line: 'magmar', star: 1, shiny: true } },
+    { shopShiny: [false, false, true, false, false], bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
+  // Magmar reste dans la compo : seule la raison shiny disparaît.
+  assert.deepEqual([brief(advise(owned).shop[2]), advise(owned).shop[2].why], ['no Ignore', 'complément de la compo ; garde 30 pièces pour les intérêts']);
+});
+
 // Faux Cache Storage et faux fetch : la file `replies` donne les réponses (Error = rejet de fetch, textError = rejet de la
 // lecture du corps) ; `sent` garde l'en-tête If-None-Match de chaque requête.
 function fakeEnv(now) {

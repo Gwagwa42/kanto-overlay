@@ -45,6 +45,11 @@ const KT = (() => {
   const INERTIA = 30;
   // Par Pokémon possédé (+10, puis +10 à ★★) : un trio monté en ★★ (+60) l'emporte sur l'inertie.
   const OWNED_BONUS = 10;
+  // Shiny : +10 % de PV, dégâts et défenses (makeUnit du jeu) ; bonus de trio bien sous une copie possédée et sous l'inertie.
+  const SHINY_BONUS = 2;
+  const SHINY_HP = 1.1;
+  // Pas de « Vends » pour un shiny jusqu'à cet étage (choix de jeu : tranches du guide où on les ramasse sans condition d'économie).
+  const SHINY_KEEP_TO = 120;
   // Règles de la Tour v41 lues dans le code du jeu (route-*.js) : absentes de l'API publique.
   const XP_TO_NEXT = [0, 2, 4, 8, 12, 16, 24, 40, 96, 120];
   const XP_COST = 4;
@@ -307,6 +312,8 @@ const KT = (() => {
 
   const unitsOf = (game, base) => game.units.filter(u => baseLine(u.line) === base);
   const bestStar = (game, base) => Math.max(0, ...unitsOf(game, base).map(u => u.star));
+  // Lignée shiny : sa copie de meilleure étoile l'est (celle que décrivent la progression et le code KT1).
+  const shinyLine = (game, base) => unitsOf(game, base).some(u => u.shiny && u.star === bestStar(game, base));
   const ones = (game, base) => unitsOf(game, base).filter(u => u.star === 1).length;
   const pathCount = (boons, path) => boons.filter(b => boonPath(b) === path).length;
 
@@ -333,7 +340,7 @@ const KT = (() => {
     const stat = stops.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop)?.get(key)?.lo ?? 0), 0) / total;
     const owned = core.reduce((s, id) => {
       const star = bestStar(game, baseLine(id));
-      return s + (star >= 1 ? OWNED_BONUS : 0) + (star >= 2 ? OWNED_BONUS : 0);
+      return s + (star >= 1 ? OWNED_BONUS : 0) + (star >= 2 ? OWNED_BONUS : 0) + (shinyLine(game, baseLine(id)) ? SHINY_BONUS : 0);
     }, 0);
     return stat + owned;
   }
@@ -375,7 +382,8 @@ const KT = (() => {
       const next = pool
         .filter(b => !chosen.includes(b) && traitGain(data, chosen, b) > 0)
         .sort((a, b) => owned(b) - owned(a) || traitGain(data, chosen, b) - traitGain(data, chosen, a)
-          || bestStar(game, b) - bestStar(game, a) || lineLo(torre, b) - lineLo(torre, a) || a.localeCompare(b))[0];
+          || bestStar(game, b) - bestStar(game, a) || Number(shinyLine(game, b)) - Number(shinyLine(game, a))
+          || lineLo(torre, b) - lineLo(torre, a) || a.localeCompare(b))[0];
       if (!next) break;
       chosen.push(next);
       fillers.push(next);
@@ -425,7 +433,8 @@ const KT = (() => {
         return buy(c.cost, c.name, c.inCore ? '3ᵉ copie, passe ★★ ; cœur de la compo cible' : '3ᵉ copie, passe ★★', c.inCore ? proof : '');
       }
       if (c.inCore) return buy(c.cost, c.name, 'cœur de la compo cible', proof);
-      if (c.shiny && c.inTarget) return buy(c.cost, `${c.name} shiny`, '+10 % PV, défenses et dégâts');
+      // +10 % tout de suite seulement si la carte devient la meilleure copie de sa lignée.
+      if (c.shiny && c.inTarget && bestStar(game, c.base) <= 1 && !shinyLine(game, c.base)) return buy(c.cost, `${c.name} shiny`, '+10 % PV, défenses et dégâts');
       return undefined;
     });
     left -= reserve(left);
@@ -484,7 +493,7 @@ const KT = (() => {
       if (!u) return null;
       const base = baseLine(u.line);
       const paired = game.units.some(x => x.id !== u.id && baseLine(x.line) === base && x.star === u.star);
-      if (wanted.includes(base) || paired || (free > 1 && !short)) return null;
+      if (wanted.includes(base) || paired || (u.shiny && game.floor <= SHINY_KEEP_TO) || (free > 1 && !short)) return null;
       return mark('no', 'Vends', `Vends ${names.line(u.line)}`, free > 1 ? 'il manque de l’or pour un achat conseillé' : 'hors compo, libère le banc');
     });
   }
@@ -515,12 +524,12 @@ const KT = (() => {
   // défensifs en mêlée.
   function holdersOf(torre, data, game, target) {
     const own = targetBases(target)
-      .map(b => unitsOf(game, b).sort((x, y) => y.star - x.star || (y.items?.length ?? 0) - (x.items?.length ?? 0)
+      .map(b => unitsOf(game, b).sort((x, y) => y.star - x.star || Number(!!y.shiny) - Number(!!x.shiny) || (y.items?.length ?? 0) - (x.items?.length ?? 0)
         || Number(y.cell !== undefined) - Number(x.cell !== undefined))[0])
       .filter(Boolean);
-    const rank = (a, b) => b.star - a.star || lineLo(torre, b.line) - lineLo(torre, a.line);
+    const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || lineLo(torre, b.line) - lineLo(torre, a.line);
     const melee = u => !isRanged(data, baseLine(u.line));
-    const hp = u => lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0;
+    const hp = u => (lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0) * (u.shiny ? SHINY_HP : 1);
     const carry = own.filter(u => target.core.some(id => baseLine(id) === baseLine(u.line))).sort(rank)[0];
     const tank = own.filter(u => u !== carry && melee(u)).sort((a, b) => hp(b) - hp(a))[0];
     const rest = own.filter(u => u !== carry && u !== tank).sort(rank).map(u => [melee(u) ? 'front' : 'atk', u]);
@@ -755,7 +764,7 @@ const KT = (() => {
       const base = baseLine(id);
       const h = holders.find(x => baseLine(x.unit.line) === base);
       return {
-        line: id, base, star: Math.max(1, stars(id)), items: h ? h.ideal : [], role: h?.role ?? null, ranged: isRanged(data, base),
+        line: id, base, star: Math.max(1, stars(id)), shiny: shinyLine(game, base), items: h ? h.ideal : [], role: h?.role ?? null, ranged: isRanged(data, base),
         unit: h?.unit ?? null, from: h ? boardCell(h.unit.cell) ?? 'bench' : null,
       };
     });
@@ -825,7 +834,7 @@ const KT = (() => {
     return marks;
   }
   function kt1Code(units, rules) {
-    const parts = units.map(u => `${u.line}:${u.star}:${u.cell}${u.items.length ? `:${u.items.join('.')}` : ''}`);
+    const parts = units.map(u => `${u.line}:${u.star}${u.shiny ? 's' : ''}:${u.cell}${u.items.length ? `:${u.items.join('.')}` : ''}`);
     return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent('Plan kanto-overlay')}`, ...parts].join(';');
   }
 
@@ -936,7 +945,7 @@ const KT = (() => {
   return {
     SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
-    baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, targetComp, progress, anchorAdvice, advise, pct, shortDate,
+    baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell,
   };
 })();
@@ -1134,7 +1143,10 @@ function mount() {
     if (!a.target) return `<div class="kt-plan">${ecoHtml(a)}${todoHtml(a)}</div>`;
     const t = a.target;
     const bosses = t.stops.filter(s => s.boss !== 'elite').map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
-    const chip = (id, core) => `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, KT.baseLine(id))}</span></li>`;
+    const chip = (id, core) => {
+      const base = KT.baseLine(id);
+      return `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, base)}${KT.shinyLine(a.game, base) ? ' shiny' : ''}</span></li>`;
+    };
     return `<div class="kt-plan"><p class="kt-label">Compo cible${bosses ? ` · ${esc(bosses)}` : ''}</p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${ecoHtml(a)}${todoHtml(a)}
