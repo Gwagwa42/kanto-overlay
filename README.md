@@ -31,6 +31,9 @@ barre le remet en haut à droite.
 - **Objets** : recette idéale du porteur et du tank (meilleurs couples Pokémon/objet de la Tour) ; fusion immédiate en tout jouer.
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
 - **Formation** : mêlée devant (tank au centre), distance au fond et espacée, porteur dans le coin choisi (bouton « Porteur »).
+- **Shinies** : une lignée est shiny dès qu'une de tes copies l'est (la fusion le transmet) ; elle porte « shiny » dans la compo cible,
+  ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, n'est pas proposée à la vente jusqu'à l'étage 120 et
+  s'écrit `ligne:2s:…` dans le code KT1.
 
 ## Installation (Firefox)
 
@@ -46,8 +49,9 @@ types). Conformément à ses conditions, chaque source est gardée **une heure**
 (`ETag`) ; en cas d'erreur, la dernière copie sert et le pied du panneau en donne la date.
 
 L'API publique s'arrête aux règles 40 alors que la Tour tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
-le script (seuils d'XP, plafond d'intérêts, voies et noms des bénédictions, coût, types et portée de 24 lignées). Les conseils sur
-les shinies viennent d'un guide et ne sont pas vérifiés.
+le script (seuils d'XP, plafond d'intérêts, voies et noms des bénédictions, coût, types et portée de 24 lignées, effet d'un shiny :
++10 % de PV, dégâts et défenses, transmis par la fusion). La liste des shinies à saisir par tranche d'étages vient d'un guide et n'est
+pas vérifiée.
 
 Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pokémon Company.
 
