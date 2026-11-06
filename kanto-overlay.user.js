@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      1.4.0
+// @version      1.5.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -358,8 +358,9 @@ const KT = (() => {
     return gain;
   }
 
-  function targetComp(torre, data, game, previousKey) {
-    const stops = nextStops(torre.stops, game.floor, HORIZON);
+  // Meilleur trio sur une fenêtre de combats (+INERTIA pour le trio précédent), avec sa preuve : le trio sur le combat le plus
+  // dur où il a des statistiques.
+  function bestCore(torre, game, stops, previousKey) {
     if (!stops.length) return null;
     const coresByStop = new Map(stops.map(st => [st.stop, new Map(torre.cores
       .filter(c => c.stop === st.stop && c.n >= MIN_FIGHTS)
@@ -372,6 +373,14 @@ const KT = (() => {
       const score = coreScore(core, stops, coresByStop, game) + (key === previousKey ? INERTIA : 0);
       if (!best || score > best.score) best = { key, core: [...core], score };
     }
+    const proof = [...stops].sort((a, b) => b.weight - a.weight)
+      .map(st => ({ st, c: coresByStop.get(st.stop).get(best.key) })).find(x => x.c);
+    return { key: best.key, core: best.core, stops, proof };
+  }
+
+  function targetComp(torre, data, game, previousKey) {
+    const best = bestCore(torre, game, nextStops(torre.stops, game.floor, HORIZON), previousKey);
+    if (!best) return null;
     const chosen = best.core.map(baseLine);
     const pool = [...new Set([...game.units.map(u => baseLine(u.line)), ...game.shop.filter(Boolean)])].filter(b => lineInfo(data, b));
     // Remplissage jusqu'au niveau : lignées qui apportent un type à la compo, les unités possédées d'abord ; la boutique ne
@@ -388,11 +397,16 @@ const KT = (() => {
       chosen.push(next);
       fillers.push(next);
     }
-    // Preuve affichée dans les bulles : le trio sur le combat le plus dur où il a des statistiques.
-    const proof = [...stops].sort((a, b) => b.weight - a.weight)
-      .map(st => ({ st, c: coresByStop.get(st.stop).get(best.key) })).find(x => x.c);
-    return { key: best.key, core: best.core, fillers, stops, proof };
+    return { ...best, fillers };
   }
+
+  // Trio des 9 combats suivants (10 à 18), à préparer avec le surplus ; null s'il est déjà la compo cible.
+  function nextComp(torre, game, target, previousKey) {
+    const next = bestCore(torre, game, nextStops(torre.stops, game.floor, 2 * HORIZON).slice(HORIZON), previousKey);
+    return next && next.key !== target.key ? next : null;
+  }
+
+  const floorRange = stops => `étages ${stops[0].floor}–${stops.at(-1).floor}`;
 
   const targetBases = target => (target ? [...target.core.map(baseLine), ...target.fillers] : []);
 
@@ -405,13 +419,16 @@ const KT = (() => {
   // seul ; detail = ligne de preuve de la bulle.
   const mark = (level, label, title, why, detail = '') => ({ level, label, title, why, detail });
 
+  const proofText = (p, names) => (p ? `${p.c.core.map(names.line).join(' · ')} : ${pct(p.c.win)} contre ${bossName(p.st.boss)} ${p.st.floor} (${p.c.n} combats, au moins ${pct(p.c.lo)})` : '');
+
   // Marques de la boutique et or restant. Priorités : ★ (de gauche à droite), puis l'or réservé par reserve(or restant)
-  // (l'XP conseillée), puis les ◆. short : un ★ a été rétrogradé faute d'or (déclenche « Vends »).
-  function shopMarks(game, target, data, eco, names, reserve) {
+  // (l'XP conseillée), puis les ◆ de la compo cible, puis ceux de la compo suivante (hors tout jouer). short : un ★ a été
+  // rétrogradé faute d'or (déclenche « Vends »).
+  function shopMarks(game, target, next, data, eco, names, reserve) {
     const core = target ? target.core.map(baseLine) : [];
     const wanted = targetBases(target);
-    const p = target?.proof;
-    const proof = p ? `${p.c.core.map(names.line).join(' · ')} : ${pct(p.c.win)} contre ${bossName(p.st.boss)} ${p.st.floor} (${p.c.n} combats, au moins ${pct(p.c.lo)})` : '';
+    const later = next ? next.core.map(baseLine) : [];
+    const proof = proofText(target?.proof, names);
     let left = game.gold;
     let short = false;
     const buy = (cost, name, why, detail = '') => {
@@ -425,7 +442,7 @@ const KT = (() => {
     };
     const cards = game.shop.map((base, i) => base && {
       base, name: names.line(base), cost: lineInfo(data, base)?.c, triple: ones(game, base) === 2,
-      inTarget: wanted.includes(base), inCore: core.includes(base), shiny: game.shopShiny[i],
+      inTarget: wanted.includes(base), inCore: core.includes(base), inNext: later.includes(base), shiny: game.shopShiny[i],
     });
     const marks = cards.map(c => {
       if (!c) return null;
@@ -448,6 +465,18 @@ const KT = (() => {
       if ((c.inTarget || c.triple) && fits) {
         left -= c.cost;
         marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, c.triple ? '3ᵉ copie hors compo' : 'renforce le plateau de la compo');
+      }
+    });
+    cards.forEach((c, i) => {
+      if (!c || marks[i] !== undefined) return;
+      if (c.inNext && !c.inTarget) {
+        const range = floorRange(next.stops);
+        if (!eco.allIn && c.cost !== undefined && left - c.cost >= eco.floor) {
+          left -= c.cost;
+          marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, `prépare la compo des ${range}`, proofText(next.proof, names));
+          return;
+        }
+        marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, eco.allIn ? 'tout jouer : l’or va à la compo cible' : `compo des ${range} ; garde ${eco.floor} pièces pour les intérêts`);
         return;
       }
       marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `complément de la compo ; garde ${eco.floor} pièces pour les intérêts` : 'hors compo cible');
@@ -484,9 +513,9 @@ const KT = (() => {
     return { mark: mark('no', 'Attends', 'N’achète pas d’XP', `encore ${missing} XP ; l’XP gratuite arrive à chaque étage`), cost: 0 };
   }
 
-  function sellMarks(game, target, names, short) {
+  function sellMarks(game, target, next, names, short) {
     if (!target) return game.bench.map(() => null);
-    const wanted = targetBases(target);
+    const wanted = [...targetBases(target), ...(next ? next.core.map(baseLine) : [])];
     const free = game.bench.filter(id => !id).length;
     return game.bench.map(id => {
       const u = id && game.units.find(x => x.id === id);
@@ -835,16 +864,19 @@ const KT = (() => {
     return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent('Plan kanto-overlay')}`, ...parts].join(';');
   }
 
-  // previous : { key, run } du dernier trio choisi ; l'inertie ne vaut que dans la même partie (runSeed).
+  // previous : { key, run, next } des derniers trios choisis (compo cible, compo suivante) ; l'inertie ne vaut que dans la même
+  // partie (runSeed).
   function advise({ torre, data, lang, save, previous, side }) {
     const names = namer(lang);
     const game = readGame(save);
     const run = save.runSeed ?? null;
     const stops = torre ? nextStops(torre.stops, game.floor) : [];
     const eco = economy(game, stops);
-    const target = torre && data ? targetComp(torre, data, game, previous?.run === run ? previous.key : null) : null;
+    const same = previous?.run === run ? previous : null;
+    const target = torre && data ? targetComp(torre, data, game, same?.key ?? null) : null;
+    const next = target ? nextComp(torre, game, target, same?.next ?? null) : null;
     let xp;
-    const shop = shopMarks(game, target, data, eco, names, left => {
+    const shop = shopMarks(game, target, next, data, eco, names, left => {
       xp = xpMark(game, eco, left);
       return xp.cost;
     });
@@ -854,11 +886,11 @@ const KT = (() => {
     const items = itemMarks(data, game, holders, book, target, names);
     const units = target ? formation(target, game, data, holders, side) : [];
     return {
-      game, eco, target, names, run,
+      game, eco, target, next, names, run,
       shop: shop.marks,
       reroll: rerollMark(game, target, eco, shop.left),
       xp: xp.mark,
-      bench: sellMarks(game, target, names, shop.short),
+      bench: sellMarks(game, target, next, names, shop.short),
       bag: items.marks,
       reward: offerMarks(book, game, items.holders, names),
       offer: choice.marks,
@@ -944,7 +976,7 @@ const KT = (() => {
     SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
-    boardCell, topHolders,
+    boardCell, topHolders, floorRange,
   };
 })();
 
@@ -1111,6 +1143,7 @@ function planHtml(a, ui) {
   };
   return `<div class="kt-plan"><p class="kt-label">Compo cible${bosses ? ` · ${esc(bosses)}` : ''}</p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
+${a.next ? `<p class="kt-label">Ensuite · ${esc(KT.floorRange(a.next.stops))}</p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
 ${ecoHtml(a)}${todoHtml(a)}
 <div class="kt-actions"><button class="kt-copy" data-act="copy">Copier la formation</button>
 <button class="kt-btn kt-side" data-act="side" aria-label="Côté du porteur dans la formation">Porteur : ${ui.side === 'left' ? 'gauche' : 'droite'}</button></div></div>`;
@@ -1323,8 +1356,9 @@ function mount() {
       : null;
     if (state.advice?.code !== code) state.copied = null;
     const a = state.advice;
-    if (a?.target && (a.target.key !== ui.target?.key || a.run !== ui.target?.run)) {
-      ui.target = { key: a.target.key, run: a.run };
+    const next = a?.next?.key ?? null;
+    if (a?.target && (a.target.key !== ui.target?.key || a.run !== ui.target?.run || next !== ui.target?.next)) {
+      ui.target = { key: a.target.key, run: a.run, next };
       saveUi();
     }
   }

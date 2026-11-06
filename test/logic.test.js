@@ -273,6 +273,50 @@ test('vendre : unité du banc hors compo et sans paire, banc presque plein', () 
   assert.equal(brief(marks[3]), 'no Vends');
   assert.equal(marks[3].title, 'Vends Abo');
   assert.equal(marks[4], null);
+  // Leveinard, de la compo suivante, reste au banc.
+  const kept = { ...full, units: { ...full.units, f: { id: 'f', line: 'chansey', star: 1 } } };
+  assert.equal(advise(kept).next.key, 'chansey+dratini+lapras');
+  assert.equal(advise(kept).bench[3], null);
+});
+
+// Combats aux étages 10 à 27 : la compo cible se joue sur 10–18, la compo suivante sur 19–27.
+const twoWindows = later => {
+  const stops = Array.from({ length: 18 }, (_, i) => ({ stop: `${10 + i}:brock`, n: 100, win: 50, lo: 45, first: 50, tries: 2 }));
+  const cores = stops.flatMap((s, i) => (i < 9
+    ? [{ stop: s.stop, core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 }]
+    : later.map(([core, lo]) => ({ stop: s.stop, core, n: 50, win: 90, lo }))));
+  return { ...torre, stops, cores };
+};
+const EMPTY10 = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
+
+test('compo suivante : trio des combats 10 à 18, absent s’il est déjà la compo cible', () => {
+  const a = advise(S57);
+  assert.equal(a.next.key, 'chansey+dratini+lapras');
+  assert.equal(KT.floorRange(a.next.stops), 'étages 80–100');
+  assert.equal(advise(EMPTY10, { torre: twoWindows([[['abra', 'onix', 'zubat'], 80]]) }).next, null);
+});
+
+test('compo suivante : inertie de 30 points dans la même partie', () => {
+  const t = lo => twoWindows([[['caterpie', 'pidgey', 'rattata'], 80], [['ekans', 'spearow', 'zubat'], lo]]);
+  const previous = { key: 'abra+onix+zubat', run: 7, next: 'ekans+spearow+zubat' };
+  assert.equal(advise(EMPTY10, { torre: t(51) }).next.key, 'caterpie+pidgey+rattata');
+  assert.equal(advise(EMPTY10, { torre: t(51), previous }).next.key, 'ekans+spearow+zubat');
+  assert.equal(advise(EMPTY10, { torre: t(49), previous }).next.key, 'caterpie+pidgey+rattata');
+  assert.equal(advise(EMPTY10, { torre: t(51), previous: { ...previous, run: 8 } }).next.key, 'caterpie+pidgey+rattata');
+});
+
+test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamais sous le palier ni en tout jouer', () => {
+  const shop = { ...S57, shop: ['chansey', 'lapras', 'magmar', 'rattata', 'ekans'] };
+  // 36 pièces : Magmar (3, compo cible) passe avant Leveinard (4) malgré sa place ; Leveinard ferait passer sous 30.
+  const a = advise({ ...shop, gold: 36 });
+  assert.deepEqual(a.shop.slice(0, 3).map(brief), ['no Ignore', 'no Ignore', 'opt Si l’or']);
+  assert.equal(a.shop[0].why, 'compo des étages 80–100 ; garde 30 pièces pour les intérêts');
+  const b = advise({ ...shop, gold: 38 });
+  assert.deepEqual(b.shop.slice(0, 3).map(brief), ['opt Si l’or', 'no Ignore', 'opt Si l’or']);
+  assert.equal(b.shop[0].why, 'prépare la compo des étages 80–100');
+  assert.match(b.shop[0].detail, /^Leveinard · Minidraco · Lokhlass : /);
+  const allIn = advise({ ...shop, gold: 60, hp: 30 });
+  assert.equal(allIn.shop[0].why, 'tout jouer : l’or va à la compo cible');
 });
 
 // S57 : porteur Minidraco ★★ (idéal Bandeau Choix, Ceinture Force, Lentilscope), tank Caninos (idéal Lentilscope, Cuiller

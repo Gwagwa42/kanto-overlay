@@ -44,10 +44,14 @@ const STATES = {
 function slim(s) {
   const stops = torre.stops.filter(x => {
     const f = Number(x.stop.split(':')[0]);
-    return (f >= 55 && f <= 64) || (f >= 196 && f <= 200);
+    return (f >= 55 && f <= 100) || (f >= 196 && f <= 200);
   });
-  const next = KT.nextStops(torre.stops, 57).map(x => x.stop);
-  const cores = [...next.flatMap(st => torre.cores.filter(c => c.stop === st && c.n >= 20).sort((a, b) => b.lo - a.lo).slice(0, 6)),
+  // Compo cible et compo suivante de l'étage 57 : les 18 prochains combats ; les 6 meilleurs trios de chaque combat gardent leurs
+  // statistiques sur tous ces combats, pour un score identique à celui des données complètes.
+  const next = KT.nextStops(torre.stops, 57, 18).map(x => x.stop);
+  const played = torre.cores.filter(c => next.includes(c.stop) && c.n >= 20);
+  const best = new Set(next.flatMap(st => played.filter(c => c.stop === st).sort((a, b) => b.lo - a.lo).slice(0, 6).map(c => `${c.core}`)));
+  const cores = [...played.filter(c => best.has(`${c.core}`)),
     ...['60:zapdos', '200:mewtwo2'].flatMap(st => KT.topCores(torre.cores, st))];
   const lines = new Set([...cores.flatMap(c => c.core), ...s.shop, ...Object.values(s.units).map(u => u.line)].map(KT.baseLine));
   return {
