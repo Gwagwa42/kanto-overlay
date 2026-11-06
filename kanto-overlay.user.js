@@ -783,32 +783,47 @@ const KT = (() => {
   const ROW_NAMES = ['avant', '2ᵉ rangée', '3ᵉ rangée', 'fond'];
   const spot = cell => `${ROW_NAMES[rowOf(cell)]}, colonne ${colOf(cell) + 1}`;
 
-  // Déplacements vers la formation (conseils du panneau seul), dans l'ordre où les faire : d'abord les Pokémon posés mal placés
-  // (celui qui libère une case avant celui qui y va), puis les poses depuis le banc. Une pose sur la case d'un Pokémon hors
-  // formation le remplace ; faute de place libre, elle fait ranger un Pokémon hors formation au banc.
+  // Déplacements vers la formation (conseils du panneau seul), dans l'ordre où les faire, rejoués sur une table case → occupant :
+  // le jeu échange deux Pokémon quand on en pose un sur l'autre, si bien qu'un Pokémon arrivé par échange n'a plus de consigne.
+  // D'abord les Pokémon posés mal placés (celui dont la case cible est libre avant les autres), puis les poses depuis le banc :
+  // sur la case d'un Pokémon hors formation, elle le remplace ; faute de place libre, elle fait ranger au banc un Pokémon hors
+  // formation qui n'est la cible d'aucune pose.
   function moveAdvice(units, game, names) {
     const onBoard = game.units.filter(u => boardCell(u.cell) !== null);
-    const used = new Set(units.map(f => f.unit?.id));
-    const spare = onBoard.filter(u => !used.has(u.id));
-    let room = game.level - onBoard.length;
-    const movers = units.filter(u => typeof u.from === 'number' && u.from !== u.cell);
-    const moves = [];
-    while (movers.length) {
-      const k = movers.findIndex(u => !movers.some(v => v !== u && v.from === u.cell));
-      const [u] = movers.splice(Math.max(k, 0), 1);
-      moves.push(mark('do', '', `Déplace ${names.line(u.base)}`, `${spot(u.from)} → ${spot(u.cell)}`));
+    const at = new Map(onBoard.map(u => [boardCell(u.cell), u]));
+    const cellOf = unit => [...at].find(([, v]) => v === unit)?.[0];
+    const mine = new Set(units.map(f => f.unit).filter(Boolean));
+    const marks = [];
+    const pending = () => units.filter(f => typeof f.from === 'number' && cellOf(f.unit) !== f.cell);
+    for (let left = pending(); left.length; left = pending()) {
+      const u = left.find(f => !left.some(g => g !== f && cellOf(g.unit) === f.cell)) ?? left[0];
+      const from = cellOf(u.unit);
+      const other = at.get(u.cell);
+      const swap = other && mine.has(other) ? ` (échange avec ${names.line(other.line)})` : '';
+      marks.push(mark('do', '', `Déplace ${names.line(u.base)}`, `${spot(from)} → ${spot(u.cell)}${swap}`));
+      at.set(u.cell, u.unit);
+      if (other) at.set(from, other);
+      else at.delete(from);
     }
-    const poses = units.filter(u => u.from === 'bench').map(u => {
-      const there = spare.find(s => boardCell(s.cell) === u.cell);
-      const out = there ?? (room > 0 ? null : spare[0]);
-      if (out) spare.splice(spare.indexOf(out), 1);
-      else room -= 1;
-      const why = !out ? '' : out === there ? `, à la place de ${names.line(out.line)}` : ` ; range ${names.line(out.line)} au banc`;
-      return mark('do', '', `Pose ${names.line(u.base)}`, `${spot(u.cell)}${why}`);
-    });
-    return [...moves, ...poses];
+    let room = game.level - onBoard.length;
+    const poses = units.filter(f => f.from === 'bench').sort((a, b) => Number(at.has(b.cell)) - Number(at.has(a.cell)));
+    const targets = new Set(poses.map(f => f.cell));
+    for (const u of poses) {
+      const there = at.get(u.cell);
+      let why = '';
+      if (there) why = `, à la place de ${names.line(there.line)}`;
+      else if (room > 0) room -= 1;
+      else {
+        const spare = [...at].filter(([, v]) => !mine.has(v));
+        const [cell, out] = spare.find(([c]) => !targets.has(c)) ?? spare[0];
+        why = ` ; range ${names.line(out.line)} au banc`;
+        at.delete(cell);
+      }
+      at.set(u.cell, u.unit);
+      marks.push(mark('do', '', `Pose ${names.line(u.base)}`, `${spot(u.cell)}${why}`));
+    }
+    return marks;
   }
-
   function kt1Code(units, rules) {
     const parts = units.map(u => `${u.line}:${u.star}:${u.cell}${u.items.length ? `:${u.items.join('.')}` : ''}`);
     return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent('Plan kanto-overlay')}`, ...parts].join(';');

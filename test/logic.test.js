@@ -456,6 +456,24 @@ test('déplacements : remplacer l’occupant hors formation, ranger au banc faut
   assert.deepEqual(moves(twins), ['Pose Caninos — avant, colonne 4 ; range Caninos au banc']);
 });
 
+test('déplacements rejoués comme le jeu : échange, occupant déplacé, Pokémon rangé hors des cases visées', () => {
+  // Nosferapti (mêlée, fond colonne 1) et Abra (distance, avant colonne 4) échangent leurs cases : une seule consigne.
+  const t = { ...torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }],
+    cores: [{ stop: '10:brock', core: ['zubat', 'abra', 'pidgey'], n: 50, win: 90, lo: 80 }] };
+  const swap = KT.advise({ torre: t, data, lang, side: 'left', previous: null, save: {
+    ...save, round: 1009, level: 2, shop: [], bench: [], board: { 49: 'z', 31: 'x' },
+    units: { z: { id: 'z', line: 'zubat', star: 1 }, x: { id: 'x', line: 'abra', star: 1 } },
+  } });
+  assert.deepEqual(swap.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Nosferapti — fond, colonne 1 → avant, colonne 4 (échange avec Abra)']);
+  // Goupix va sur la case de Rattata, qui passe sur l'ancienne case de Goupix : Caninos y est posé à la place de Rattata.
+  assert.deepEqual(moves({ ...S57, level: 4, board: { 29: 'a', 31: 'd', 49: 'e' }, bench: BENCH(['b', 'c']) }),
+    ['Déplace Goupix — avant, colonne 4 → fond, colonne 1', 'Pose Caninos — avant, colonne 4, à la place de Rattata']);
+  // Plateau plein : Goupix prend la case de Rattata ; Caninos fait ranger Abo, pas un Pokémon dont la case sert à une pose.
+  const units = { ...S57.units, f: { id: 'f', line: 'ekans', star: 1 }, h: { id: 'h', line: 'pidgey', star: 1 } };
+  assert.deepEqual(moves({ ...S57, level: 4, units, board: { 29: 'a', 49: 'e', 30: 'f', 50: 'h' }, bench: BENCH(['b', 'c', 'd']) }),
+    ['Pose Goupix — fond, colonne 1, à la place de Rattata', 'Pose Caninos — avant, colonne 4 ; range Abo au banc']);
+});
+
 test('formation : porteur à distance dans le coin du côté choisi, gardé s’il y est déjà', () => {
   const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
   const t = { ...torre, stops, cores: [{ stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 }] };
