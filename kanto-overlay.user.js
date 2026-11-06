@@ -1058,148 +1058,113 @@ const COMPACT_BELOW = 64;
 // Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
 const TIP_HALF = 120;
 
-function mount() {
-  const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
-  const ui = { x: null, y: 16, collapsed: false, guide: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
-  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null };
+const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
-  const host = document.createElement('div');
-  const root = host.attachShadow({ mode: 'open' });
-  root.innerHTML = `<style>${CSS}</style>
-<div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
-  <div class="kt-bar">
-    <span class="kt-title">Étage</span>
-    <button class="kt-btn" data-act="dec" aria-label="Étage précédent">−</button>
-    <input class="kt-floor" inputmode="numeric" aria-label="Étage courant" placeholder="?">
-    <button class="kt-btn" data-act="inc" aria-label="Étage suivant">+</button>
-    <span class="kt-src"></span>
-    <button class="kt-btn" data-act="toggle"></button>
-  </div>
-  <div class="kt-alert" role="alert"></div>
-  <div class="kt-body"></div>
-  <p class="kt-copied" role="status"></p>
-  <div class="kt-foot"></div>
-</div>
-<div class="kp-layer"></div>`;
-  document.body.append(host);
-  const panel = root.querySelector('.kt');
-  const layer = root.querySelector('.kp-layer');
-  const input = root.querySelector('.kt-floor');
-  const body = root.querySelector('.kt-body');
-  const foot = root.querySelector('.kt-foot');
-  const toggle = root.querySelector('[data-act="toggle"]');
-  const src = root.querySelector('.kt-src');
-  const status = root.querySelector('.kt-copied');
-  const alertBox = root.querySelector('.kt-alert');
+// Conseils de partie seulement à l'étage de la sauvegarde : un étage saisi à la main ne sert qu'au prochain boss.
+const onSaveFloor = state => state.save !== null && state.floor === KT.floorFromSave(state.lastRaw);
 
-  const saveUi = () => localStorage.setItem(KT.UI_KEY, JSON.stringify(ui));
-
-  // Ancré à droite tant que le panneau n'a pas été déplacé, puis gardé dans la fenêtre.
-  function place() {
-    panel.style.top = `${Math.max(0, Math.min(ui.y, window.innerHeight - 40))}px`;
-    if (ui.x === null) {
-      panel.style.left = '';
-      panel.style.right = '16px';
-      return;
-    }
-    panel.style.right = 'auto';
-    panel.style.left = `${Math.max(0, Math.min(ui.x, window.innerWidth - panel.offsetWidth))}px`;
-  }
-
-  function guideHtml(floor) {
-    const g = KT.guideFor(floor);
-    const range = g.to === Infinity ? `étages ${g.from} et plus` : `étages ${g.from}–${g.to}`;
-    const shinies = g.shinies.length
-      ? `Shinies à saisir : ${esc(g.shinies.join(', '))}. ${esc(g.advice)} (conseil non vérifié ; un shiny a +10 % de PV, de défenses et de dégâts).`
-      : esc(g.advice);
-    return `<details class="kt-guide"${ui.guide ? ' open' : ''}><summary>Règles d’or · ${range}</summary>
+function guideHtml(floor, ui) {
+  const g = KT.guideFor(floor);
+  const range = g.to === Infinity ? `étages ${g.from} et plus` : `étages ${g.from}–${g.to}`;
+  const shinies = g.shinies.length
+    ? `Shinies à saisir : ${esc(g.shinies.join(', '))}. ${esc(g.advice)} (conseil non vérifié ; un shiny a +10 % de PV, de défenses et de dégâts).`
+    : esc(g.advice);
+  return `<details class="kt-guide"${ui.guide ? ' open' : ''}><summary>Règles d’or · ${range}</summary>
 <p>${shinies}</p><ul>${KT.GOLD_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>`;
-  }
+}
 
-  const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
+const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
 
-  function todoHtml(a) {
-    const order = { do: 0, opt: 1, no: 2 };
-    const seen = new Set();
-    const items = allMarks(a).sort((x, y) => order[x.level] - order[y.level]).filter(m => !seen.has(m.title) && seen.add(m.title));
-    const lines = items.map(m => `<li><span class="kt-sym kp-${m.level}" role="img" aria-label="${LEVEL_NAME[m.level]}">${SYM[m.level]}</span><span>${esc(m.title)} <span class="why">— ${esc(m.why)}</span></span></li>`);
-    for (const id of a.unknownOffer) lines.push(`<li><span></span><span>Bénédiction inconnue (${esc(id)}) <span class="why">— pas de conseil</span></span></li>`);
-    return lines.length ? `<ol class="kt-todo" aria-label="Conseils">${lines.join('')}</ol>` : '';
-  }
+function todoHtml(a) {
+  const order = { do: 0, opt: 1, no: 2 };
+  const seen = new Set();
+  const items = allMarks(a).sort((x, y) => order[x.level] - order[y.level]).filter(m => !seen.has(m.title) && seen.add(m.title));
+  const lines = items.map(m => `<li><span class="kt-sym kp-${m.level}" role="img" aria-label="${LEVEL_NAME[m.level]}">${SYM[m.level]}</span><span>${esc(m.title)} <span class="why">— ${esc(m.why)}</span></span></li>`);
+  for (const id of a.unknownOffer) lines.push(`<li><span></span><span>Bénédiction inconnue (${esc(id)}) <span class="why">— pas de conseil</span></span></li>`);
+  return lines.length ? `<ol class="kt-todo" aria-label="Conseils">${lines.join('')}</ol>` : '';
+}
 
-  function ecoHtml(a) {
-    const e = a.eco;
-    let wall = '';
-    if (e.allIn) wall = e.lowHp ? ` Tout jouer : PV sous 40.` : ' Tout jouer : combat difficile.';
-    else if (e.nextWall) wall = ` À l’étage ${e.nextWall.floor} (${esc(KT.bossName(e.nextWall.boss))}, ${KT.pct(e.nextWall.win)}) : tout jouer.`;
-    return `<p class="kt-eco">Or <b>${e.gold}</b> · palier ${e.floor} (intérêts +${e.floor / 10}) → <b>${e.spend} à dépenser</b>.${wall}</p>`;
-  }
+function ecoHtml(a) {
+  const e = a.eco;
+  let wall = '';
+  if (e.allIn) wall = e.lowHp ? ` Tout jouer : PV sous 40.` : ' Tout jouer : combat difficile.';
+  else if (e.nextWall) wall = ` À l’étage ${e.nextWall.floor} (${esc(KT.bossName(e.nextWall.boss))}, ${KT.pct(e.nextWall.win)}) : tout jouer.`;
+  return `<p class="kt-eco">Or <b>${e.gold}</b> · palier ${e.floor} (intérêts +${e.floor / 10}) → <b>${e.spend} à dépenser</b>.${wall}</p>`;
+}
 
-  function planHtml(a) {
-    if (!a.target) return `<div class="kt-plan">${ecoHtml(a)}${todoHtml(a)}</div>`;
-    const t = a.target;
-    const bosses = t.stops.filter(s => s.boss !== 'elite').map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
-    const chip = (id, core) => {
-      const base = KT.baseLine(id);
-      return `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, base)}${KT.shinyLine(a.game, base) ? ' shiny' : ''}</span></li>`;
-    };
-    return `<div class="kt-plan"><p class="kt-label">Compo cible${bosses ? ` · ${esc(bosses)}` : ''}</p>
+function planHtml(a, ui) {
+  if (!a.target) return `<div class="kt-plan">${ecoHtml(a)}${todoHtml(a)}</div>`;
+  const t = a.target;
+  const bosses = t.stops.filter(s => s.boss !== 'elite').map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
+  const chip = (id, core) => {
+    const base = KT.baseLine(id);
+    return `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, base)}${KT.shinyLine(a.game, base) ? ' shiny' : ''}</span></li>`;
+  };
+  return `<div class="kt-plan"><p class="kt-label">Compo cible${bosses ? ` · ${esc(bosses)}` : ''}</p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${ecoHtml(a)}${todoHtml(a)}
 <div class="kt-actions"><button class="kt-copy" data-act="copy">Copier la formation</button>
 <button class="kt-btn kt-side" data-act="side" aria-label="Côté du porteur dans la formation">Porteur : ${ui.side === 'left' ? 'gauche' : 'droite'}</button></div></div>`;
-  }
+}
 
-  function bossHtml() {
-    if (!state.torre) return '';
-    const stop = KT.nextBossStop(state.torre.stops, state.floor);
-    if (!stop) {
-      return `<p class="kt-msg"><strong>Aucun boss connu après l’étage ${KT.lastBossFloor(state.torre.stops)}</strong>Les statistiques publiques s’arrêtent là.</p>`;
-    }
-    const dist = stop.floor - state.floor;
-    const lvl = KT.rateLevel(stop.win);
-    const names = KT.namer(state.lang);
-    const cores = KT.topCores(state.torre.cores, stop.stop);
-    const coresHtml = cores.length
-      ? `<ol class="kt-cores">${cores.map(c => {
-        const l = KT.rateLevel(c.win);
-        return `<li><span>${esc(c.core.map(names.line).join(' · '))}</span><span class="kt-rate ${l.cls}">${l.sym} ${KT.pct(c.win)}</span><span class="n">${c.n} combats</span></li>`;
-      }).join('')}</ol>`
-      : '<p class="kt-msg">Aucun trio n’a encore 20 combats sur ce boss.</p>';
-    return `<div><p class="kt-label">Prochain boss</p>
+function bossHtml(state, ui) {
+  if (!state.torre) return '';
+  const stop = KT.nextBossStop(state.torre.stops, state.floor);
+  if (!stop) {
+    return `<p class="kt-msg"><strong>Aucun boss connu après l’étage ${KT.lastBossFloor(state.torre.stops)}</strong>Les statistiques publiques s’arrêtent là.</p>`;
+  }
+  const dist = stop.floor - state.floor;
+  const lvl = KT.rateLevel(stop.win);
+  const names = KT.namer(state.lang);
+  const cores = KT.topCores(state.torre.cores, stop.stop);
+  const coresHtml = cores.length
+    ? `<ol class="kt-cores">${cores.map(c => {
+      const l = KT.rateLevel(c.win);
+      return `<li><span>${esc(c.core.map(names.line).join(' · '))}</span><span class="kt-rate ${l.cls}">${l.sym} ${KT.pct(c.win)}</span><span class="n">${c.n} combats</span></li>`;
+    }).join('')}</ol>`
+    : '<p class="kt-msg">Aucun trio n’a encore 20 combats sur ce boss.</p>';
+  return `<div><p class="kt-label">Prochain boss</p>
 <p class="kt-boss">${esc(KT.bossName(stop.boss))} <small>· étage ${stop.floor}, ${dist ? `dans ${dist}` : 'en cours'}</small></p>
 <p class="kt-stats"><span class="kt-rate ${lvl.cls}">${lvl.sym} ${KT.pct(stop.win)} victoires</span> 1er essai ${KT.pct(stop.first)} · ${stop.tries.toLocaleString('fr-FR')} essais</p></div>
-${state.advice ? planHtml(state.advice) : ''}${state.save && !onSaveFloor() ? `<p class="kt-msg">Conseils de partie masqués : ta partie est à l’étage ${KT.floorFromSave(state.lastRaw)}.</p>` : ''}
+${state.advice ? planHtml(state.advice, ui) : ''}${state.save && !onSaveFloor(state) ? `<p class="kt-msg">Conseils de partie masqués : ta partie est à l’étage ${KT.floorFromSave(state.lastRaw)}.</p>` : ''}
 <div><p class="kt-label">Meilleurs trios (≥ 20 combats)</p>${coresHtml}</div>`;
-  }
+}
 
-  function alertHtml() {
-    if (!state.error) return '';
-    const effect = state.failed.some(k => k !== 'lang')
-      ? 'Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées.'
-      : 'Les objets et les sceaux sont nommés par leur identifiant.';
-    return `<p class="kt-msg"><strong>Données indisponibles (${esc(state.error)})</strong>${effect} Recharge la page dans une heure.</p>`;
-  }
+function alertHtml(state) {
+  if (!state.error) return '';
+  const effect = state.failed.some(k => k !== 'lang')
+    ? 'Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées.'
+    : 'Les objets et les sceaux sont nommés par leur identifiant.';
+  return `<p class="kt-msg"><strong>Données indisponibles (${esc(state.error)})</strong>${effect} Recharge la page dans une heure.</p>`;
+}
 
-  function contentHtml() {
-    if (state.error && !state.torre) {
-      const more = state.floor ? '' : '<p class="kt-msg">Saisis l’étage pour afficher les règles d’or.</p>';
-      return `${state.advice ? planHtml(state.advice) : ''}${more}${state.floor ? guideHtml(state.floor) : ''}`;
-    }
-    if (!state.torre) return '<p class="kt-msg" role="status">Chargement des statistiques de la Tour…</p>';
-    if (!state.floor) return '<p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p>';
-    return `${bossHtml()}${guideHtml(state.floor)}`;
+function panelHtml(state, ui) {
+  if (state.error && !state.torre) {
+    const more = state.floor ? '' : '<p class="kt-msg">Saisis l’étage pour afficher les règles d’or.</p>';
+    return `${state.advice ? planHtml(state.advice, ui) : ''}${more}${state.floor ? guideHtml(state.floor, ui) : ''}`;
   }
+  if (!state.torre) return '<p class="kt-msg" role="status">Chargement des statistiques de la Tour…</p>';
+  if (!state.floor) return '<p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p>';
+  return `${bossHtml(state, ui)}${guideHtml(state.floor, ui)}`;
+}
 
-  // Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien).
-  let lastHtml = null;
-  let lastCopied = '';
-  let lastAlert = '';
-  let lastFoot = '';
+function footHtml(state) {
+  const cached = state.stale ? ` · copie du ${esc(new Date(state.stale).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))}` : '';
+  const uncached = state.uncached ? ' · non gardé en cache' : '';
+  return `Du ${esc(KT.shortDate(state.torre.from))} au ${esc(KT.shortDate(state.torre.to))}${cached}${uncached} · Data: <a href="https://einoow.com" target="_blank" rel="noopener">Kanto Tactics · einoow.com</a>`;
+}
+
+function copiedHtml(state) {
+  if (state.copied === null) return '';
+  return state.copied.ok ? 'Code copié : colle-le dans Planificateur → Coller un code.'
+    : `Copie refusée par le navigateur : sélectionne le code et copie-le.<br><code>${esc(state.advice?.code ?? '')}</code>`;
+}
+
+// Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien).
+function pinLayer(layer) {
   let lastPins = null;
   let pins = [];
-  function paint() {
-    const a = state.advice;
+  function paint(a) {
     const sig = JSON.stringify(a && Object.keys(TARGETS).map(g => a[g]));
     if (sig === lastPins) {
       position();
@@ -1252,20 +1217,99 @@ ${state.advice ? planHtml(state.advice) : ''}${state.save && !onSaveFloor() ? `<
     }
   }
 
+  return { paint, position };
+}
+
+// Sources indépendantes : sans data.json ou lang.json, le prochain boss et les trios restent affichés.
+async function loadSources(state) {
+  const sources = [
+    ['torre', 'campana.json', KT.SOURCES.torre, j => KT.isTowerData(j?.modes?.torre), j => j.modes.torre],
+    ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j],
+    ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j],
+  ];
+  const env = { caches: globalThis.caches, fetch: (...a) => fetch(...a), now: Date.now() };
+  const results = await Promise.allSettled(sources.map(([, , url, accept]) => KT.loadJson(url, accept, env)));
+  const errors = [];
+  const stale = [];
+  results.forEach((r, i) => {
+    const [key, file, , , pick] = sources[i];
+    if (r.status === 'rejected') {
+      state.failed.push(key);
+      errors.push(`${file} : ${r.reason.message}`);
+      return;
+    }
+    state[key] = pick(r.value.json);
+    if (r.value.stale) stale.push(r.value.at);
+    if (r.value.uncached) state.uncached = true;
+  });
+  state.error = errors.length ? errors.join(' ; ') : null;
+  state.stale = stale.length ? Math.min(...stale) : null;
+}
+
+function mount() {
+  const ui = { x: null, y: 16, collapsed: false, guide: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null };
+
+  const host = document.createElement('div');
+  const root = host.attachShadow({ mode: 'open' });
+  root.innerHTML = `<style>${CSS}</style>
+<div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
+  <div class="kt-bar">
+    <span class="kt-title">Étage</span>
+    <button class="kt-btn" data-act="dec" aria-label="Étage précédent">−</button>
+    <input class="kt-floor" inputmode="numeric" aria-label="Étage courant" placeholder="?">
+    <button class="kt-btn" data-act="inc" aria-label="Étage suivant">+</button>
+    <span class="kt-src"></span>
+    <button class="kt-btn" data-act="toggle"></button>
+  </div>
+  <div class="kt-alert" role="alert"></div>
+  <div class="kt-body"></div>
+  <p class="kt-copied" role="status"></p>
+  <div class="kt-foot"></div>
+</div>
+<div class="kp-layer"></div>`;
+  document.body.append(host);
+  const panel = root.querySelector('.kt');
+  const layer = root.querySelector('.kp-layer');
+  const input = root.querySelector('.kt-floor');
+  const body = root.querySelector('.kt-body');
+  const foot = root.querySelector('.kt-foot');
+  const toggle = root.querySelector('[data-act="toggle"]');
+  const src = root.querySelector('.kt-src');
+  const status = root.querySelector('.kt-copied');
+  const alertBox = root.querySelector('.kt-alert');
+  const pins = pinLayer(layer);
+
+  let lastHtml = null;
+  let lastCopied = '';
+  let lastAlert = '';
+  let lastFoot = '';
+
+  const saveUi = () => localStorage.setItem(KT.UI_KEY, JSON.stringify(ui));
+
+  // Ancré à droite tant que le panneau n'a pas été déplacé, puis gardé dans la fenêtre.
+  function place() {
+    panel.style.top = `${Math.max(0, Math.min(ui.y, window.innerHeight - 40))}px`;
+    if (ui.x === null) {
+      panel.style.left = '';
+      panel.style.right = '16px';
+      return;
+    }
+    panel.style.right = 'auto';
+    panel.style.left = `${Math.max(0, Math.min(ui.x, window.innerWidth - panel.offsetWidth))}px`;
+  }
+
   let frame = 0;
   const schedule = () => {
     if (!frame) frame = requestAnimationFrame(() => {
       frame = 0;
-      position();
+      pins.position();
     });
   };
 
-  // Conseils de partie seulement à l'étage de la sauvegarde : un étage saisi à la main ne sert qu'au prochain boss.
-  const onSaveFloor = () => state.save !== null && state.floor === KT.floorFromSave(state.lastRaw);
-
   function compute() {
     const code = state.advice?.code;
-    state.advice = state.save && onSaveFloor() && (state.torre || state.error)
+    state.advice = state.save && onSaveFloor(state) && (state.torre || state.error)
       ? KT.advise({ torre: state.torre, data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side })
       : null;
     if (state.advice?.code !== code) state.copied = null;
@@ -1285,35 +1329,31 @@ ${state.advice ? planHtml(state.advice) : ''}${state.save && !onSaveFloor() ? `<
     if (root.activeElement !== input) input.value = state.floor ?? '';
     input.classList.toggle('is-empty', !state.floor);
     // Réécrire seulement ce qui change : un focus ou une bulle ouverte survit aux réécritures de la sauvegarde.
-    const html = contentHtml();
+    const html = panelHtml(state, ui);
     if (html !== lastHtml) {
       body.innerHTML = html;
       lastHtml = html;
     }
-    const alert = alertHtml();
+    const alert = alertHtml(state);
     if (alert !== lastAlert) {
       alertBox.innerHTML = alert;
       lastAlert = alert;
     }
     foot.hidden = !state.torre;
     if (state.torre) {
-      const cached = state.stale ? ` · copie du ${esc(new Date(state.stale).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))}` : '';
-      const uncached = state.uncached ? ' · non gardé en cache' : '';
-      const footer = `Du ${esc(KT.shortDate(state.torre.from))} au ${esc(KT.shortDate(state.torre.to))}${cached}${uncached} · Data: <a href="https://einoow.com" target="_blank" rel="noopener">Kanto Tactics · einoow.com</a>`;
+      const footer = footHtml(state);
       if (footer !== lastFoot) {
         foot.innerHTML = footer;
         lastFoot = footer;
       }
     }
-    const copied = state.copied === null ? ''
-      : state.copied.ok ? 'Code copié : colle-le dans Planificateur → Coller un code.'
-        : `Copie refusée par le navigateur : sélectionne le code et copie-le.<br><code>${esc(state.advice?.code ?? '')}</code>`;
+    const copied = copiedHtml(state);
     if (copied !== lastCopied) {
       status.innerHTML = copied;
       lastCopied = copied;
     }
     place();
-    paint();
+    pins.paint(state.advice);
   }
 
   function setManual(floor) {
@@ -1440,29 +1480,7 @@ ${state.advice ? planHtml(state.advice) : ''}${state.save && !onSaveFloor() ? `<
   pollSave();
   setInterval(pollSave, 2000);
 
-  // Sources indépendantes : sans data.json ou lang.json, le prochain boss et les trios restent affichés.
-  const sources = [
-    ['torre', 'campana.json', KT.SOURCES.torre, j => KT.isTowerData(j?.modes?.torre), j => j.modes.torre],
-    ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j],
-    ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j],
-  ];
-  const env = { caches: globalThis.caches, fetch: (...a) => fetch(...a), now: Date.now() };
-  Promise.allSettled(sources.map(([, , url, accept]) => KT.loadJson(url, accept, env))).then(results => {
-    const errors = [];
-    const stale = [];
-    results.forEach((r, i) => {
-      const [key, file, , , pick] = sources[i];
-      if (r.status === 'rejected') {
-        state.failed.push(key);
-        errors.push(`${file} : ${r.reason.message}`);
-        return;
-      }
-      state[key] = pick(r.value.json);
-      if (r.value.stale) stale.push(r.value.at);
-      if (r.value.uncached) state.uncached = true;
-    });
-    state.error = errors.length ? errors.join(' ; ') : null;
-    state.stale = stale.length ? Math.min(...stale) : null;
+  loadSources(state).then(() => {
     compute();
     render();
   }).catch(err => {
