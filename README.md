@@ -3,9 +3,9 @@
 Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](https://einoow.com/playables/kanto-tactics/) :
 - prochain boss (nom, étage, taux de victoire, taux au premier essai, nombre moyen d'essais) ;
 - les 3 meilleurs trios contre ce boss (au moins 20 combats) ;
-- une **compo cible** choisie pour les 3 prochains combats en partant de ton équipe, et des **conseils lus sur ta partie** : quoi
-  acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, quelle récompense et quelle
-  bénédiction prendre, quand ancrer une forme ;
+- une **compo cible** choisie pour les 9 prochains combats (environ 20 étages) en partant de ton équipe, et des **conseils lus sur
+  ta partie** : quoi acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, quelle
+  récompense et quelle bénédiction prendre, quand ancrer une forme ;
 - un bouton **Copier la formation** : code `KT1;…` à coller dans le Planificateur du jeu (Planificateur → Coller un code) ;
 - les règles d'or (intérêts, actualisation, shinies) pour la tranche d'étages en cours.
 
@@ -22,10 +22,11 @@ barre le remet en haut à droite.
 
 ## Comment les conseils sont choisis
 
-- **Compo cible** : parmi les trios d'au moins 20 combats des 3 prochains combats (élites comprises), celui dont la borne basse du taux
-  de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat, avec un bonus pour les Pokémon que tu
-  possèdes déjà. Elle ne change que pour un gain d'au moins 5 points. Le reste du plateau est rempli par les lignées qui renforcent ses
-  types, puis par tes unités.
+- **Compo cible** : parmi les trios d'au moins 20 combats des 9 prochains combats (élites comprises, environ 20 étages), celui dont la
+  borne basse du taux de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat, avec un bonus pour
+  les Pokémon que tu possèdes déjà. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
+  Le reste du plateau est rempli par les lignées qui renforcent ses types : tes unités d'abord, puis la boutique pour les places
+  restantes.
 - **Économie** : intérêts plafonnés à +3 en Tour, donc palier de 30 pièces (50 avec la voie Fortune complète). On ne dépense que le
   surplus, sauf en **tout jouer** : combat de l'étage sous 45 % de victoires, ou PV sous 40.
 - **Objets** : recette idéale du porteur et du tank (meilleurs couples Pokémon/objet de la Tour) ; fusion immédiate en tout jouer.

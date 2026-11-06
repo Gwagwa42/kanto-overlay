@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      1.1.0
+// @version      1.2.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -40,8 +40,11 @@ const KT = (() => {
   const MIN_FIGHTS = 20;
   const HARD_WIN = 45;
   const LOW_HP = 40;
-  const INERTIA = 5;
-  const OWNED_BONUS = 5;
+  // Compo cible : combats vus d'avance (≈ 20 étages, élites comprises) et gain minimal pour changer de trio.
+  const HORIZON = 9;
+  const INERTIA = 30;
+  // Par Pokémon possédé (+10, puis +10 à ★★) : un trio monté en ★★ (+60) l'emporte sur l'inertie.
+  const OWNED_BONUS = 10;
   // Règles de la Tour v41 lues dans le code du jeu (route-*.js) : absentes de l'API publique.
   const XP_TO_NEXT = [0, 2, 4, 8, 12, 16, 24, 40, 96, 120];
   const XP_COST = 4;
@@ -345,8 +348,8 @@ const KT = (() => {
     return gain;
   }
 
-  function targetComp(torre, data, game, previous) {
-    const stops = nextStops(torre.stops, game.floor);
+  function targetComp(torre, data, game, previousKey) {
+    const stops = nextStops(torre.stops, game.floor, HORIZON);
     if (!stops.length) return null;
     const coresByStop = new Map(stops.map(st => [st.stop, new Map(torre.cores
       .filter(c => c.stop === st.stop && c.n >= MIN_FIGHTS)
@@ -356,17 +359,19 @@ const KT = (() => {
     if (!candidates.size) return null;
     let best = null;
     for (const [key, core] of candidates) {
-      const score = coreScore(core, stops, coresByStop, game) + (key === previous ? INERTIA : 0);
+      const score = coreScore(core, stops, coresByStop, game) + (key === previousKey ? INERTIA : 0);
       if (!best || score > best.score) best = { key, core: [...core], score };
     }
     const chosen = best.core.map(baseLine);
     const pool = [...new Set([...game.units.map(u => baseLine(u.line)), ...game.shop.filter(Boolean)])].filter(b => lineInfo(data, b));
-    // Remplissage jusqu'au niveau : lignées qui apportent un type à la compo ; les unités possédées départagent.
+    // Remplissage jusqu'au niveau : lignées qui apportent un type à la compo, les unités possédées d'abord ; la boutique ne
+    // complète que les places restantes.
+    const owned = b => Number(bestStar(game, b) > 0);
     const fillers = [];
     while (chosen.length < game.level) {
       const next = pool
         .filter(b => !chosen.includes(b) && traitGain(data, chosen, b) > 0)
-        .sort((a, b) => traitGain(data, chosen, b) - traitGain(data, chosen, a)
+        .sort((a, b) => owned(b) - owned(a) || traitGain(data, chosen, b) - traitGain(data, chosen, a)
           || bestStar(game, b) - bestStar(game, a) || lineLo(torre, b) - lineLo(torre, a) || a.localeCompare(b))[0];
       if (!next) break;
       chosen.push(next);
@@ -433,7 +438,7 @@ const KT = (() => {
         marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, c.triple ? '3ᵉ copie hors compo' : 'renforce le plateau de la compo');
         return;
       }
-      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `garde ${eco.floor} pièces pour les intérêts` : 'hors compo cible');
+      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `complément de la compo ; garde ${eco.floor} pièces pour les intérêts` : 'hors compo cible');
     });
     return { marks, left, short };
   }
@@ -666,12 +671,14 @@ const KT = (() => {
     return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent('Plan kanto-overlay')}`, ...parts].join(';');
   }
 
+  // previous : { key, run } du dernier trio choisi ; l'inertie ne vaut que dans la même partie (runSeed).
   function advise({ torre, data, lang, save, previous, side }) {
     const names = namer(lang);
     const game = readGame(save);
+    const run = save.runSeed ?? null;
     const stops = torre ? nextStops(torre.stops, game.floor) : [];
     const eco = economy(game, stops);
-    const target = torre && data ? targetComp(torre, data, game, previous) : null;
+    const target = torre && data ? targetComp(torre, data, game, previous?.run === run ? previous.key : null) : null;
     let xp;
     const shop = shopMarks(game, target, data, eco, names, left => {
       xp = xpMark(game, eco, left);
@@ -679,7 +686,7 @@ const KT = (() => {
     });
     const choice = offerChoiceMarks(data, game, eco, names);
     return {
-      game, eco, target, names,
+      game, eco, target, names, run,
       shop: shop.marks,
       reroll: rerollMark(game, target, eco, shop.left),
       xp: xp.mark,
@@ -963,9 +970,9 @@ function mount() {
   function planHtml(a) {
     if (!a.target) return `<div class="kt-plan">${ecoHtml(a)}${todoHtml(a)}</div>`;
     const t = a.target;
-    const stops = t.stops.map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
+    const bosses = t.stops.filter(s => s.boss !== 'elite').map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
     const chip = (id, core) => `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, KT.baseLine(id))}</span></li>`;
-    return `<div class="kt-plan"><p class="kt-label">Compo cible · ${esc(stops)}</p>
+    return `<div class="kt-plan"><p class="kt-label">Compo cible${bosses ? ` · ${esc(bosses)}` : ''}</p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${ecoHtml(a)}${todoHtml(a)}
 <div class="kt-actions"><button class="kt-copy" data-act="copy">Copier la formation</button>
@@ -1091,9 +1098,9 @@ ${state.advice ? planHtml(state.advice) : ''}${state.save && !onSaveFloor() ? `<
       ? KT.advise({ torre: state.torre, data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side })
       : null;
     if (state.advice?.code !== code) state.copied = null;
-    const key = state.advice?.target?.key ?? ui.target;
-    if (key !== ui.target) {
-      ui.target = key;
+    const a = state.advice;
+    if (a?.target && (a.target.key !== ui.target?.key || a.run !== ui.target?.run)) {
+      ui.target = { key: a.target.key, run: a.run };
       saveUi();
     }
   }

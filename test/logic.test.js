@@ -133,7 +133,7 @@ test('compo cible : meilleur trio pondéré, remplissage par les lignées qui re
   assert.equal(KT.progress(a.game, 'aerodactyl'), '0/3');
 });
 
-test('compo cible : inertie de 5 points', () => {
+test('compo cible : inertie de 30 points', () => {
   const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
   const cores = lo => [
     { stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 },
@@ -141,16 +141,75 @@ test('compo cible : inertie de 5 points', () => {
   ];
   const game = KT.readGame({ ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [] });
   const t = lo => ({ ...torre, stops, cores: cores(lo) });
-  assert.equal(KT.targetComp(t(77), data, game, null).key, 'abra+onix+zubat');
-  assert.equal(KT.targetComp(t(77), data, game, 'pidgey+rattata+spearow').key, 'pidgey+rattata+spearow');
-  assert.equal(KT.targetComp(t(70), data, game, 'pidgey+rattata+spearow').key, 'abra+onix+zubat');
+  assert.equal(KT.targetComp(t(51), data, game, null).key, 'abra+onix+zubat');
+  assert.equal(KT.targetComp(t(51), data, game, 'pidgey+rattata+spearow').key, 'pidgey+rattata+spearow');
+  assert.equal(KT.targetComp(t(49), data, game, 'pidgey+rattata+spearow').key, 'abra+onix+zubat');
+});
+
+test('compo cible : 9 prochains combats, élites comprises', () => {
+  assert.deepEqual(advise(S57).target.stops.map(s => s.stop),
+    ['59:elite', '60:zapdos', '64:elite', '65:erika', '69:elite', '70:gengar', '74:elite', '75:koga', '79:elite']);
+});
+
+test('compo cible : inertie seulement dans la même partie (runSeed)', () => {
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const cores = [
+    { stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 },
+    { stop: '10:brock', core: ['pidgey', 'rattata', 'spearow'], n: 50, win: 90, lo: 60 },
+  ];
+  const s = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
+  const at = previous => KT.advise({ torre: { ...torre, stops, cores }, data, lang, save: s, previous, side: 'left' }).target.key;
+  assert.equal(at({ key: 'pidgey+rattata+spearow', run: 7 }), 'pidgey+rattata+spearow');
+  assert.equal(at({ key: 'pidgey+rattata+spearow', run: 8 }), 'abra+onix+zubat');
+  // Valeur des versions précédentes (clé seule) : rattachée à aucune partie.
+  assert.equal(at('pidgey+rattata+spearow'), 'abra+onix+zubat');
+  assert.equal(KT.advise({ torre, data, lang, save: s, previous: null, side: 'left' }).run, 7);
+});
+
+test('compléments : unités possédées avant la boutique, stables quand la boutique change', () => {
+  // Niveau 4 : une place après le trio. Rattata (possédé, Normal) apporte moins que Doduo (boutique, Normal 2) mais passe avant.
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const cores = [{ stop: '10:brock', core: ['pidgey', 'spearow', 'abra'], n: 50, win: 90, lo: 80 }];
+  const t = { ...torre, stops, cores };
+  const base = { ...save, round: 1009, level: 4, units: { r: { id: 'r', line: 'rattata', star: 1 } }, board: { 0: 'r' }, bench: [] };
+  const fill = shop => KT.targetComp(t, data, KT.readGame({ ...base, shop }), null).fillers;
+  assert.deepEqual(fill(['doduo', 'ekans']), ['rattata']);
+  assert.deepEqual(fill(['zubat', 'meowth']), ['rattata']);
+  assert.deepEqual(KT.targetComp(t, data, KT.readGame({ ...base, units: {}, board: {}, shop: ['doduo'] }), null).fillers, ['doduo']);
+  // Entre unités possédées, le gain de type passe avant les étoiles : Doduo ★ (gain 2) avant Rattata ★★ (gain 1).
+  const both = { ...base, units: { r: { id: 'r', line: 'rattata', star: 2 }, d: { id: 'd', line: 'doduo', star: 1 } }, board: { 0: 'r', 1: 'd' }, shop: [] };
+  assert.deepEqual(KT.targetComp(t, data, KT.readGame(both), null).fillers, ['doduo']);
+});
+
+test('compo cible : un trio monté en ★★ l’emporte sur l’inertie d’un trio non possédé', () => {
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const cores = [
+    // Inertie : abra 70 + 30 = 100 ; possession : pidgey 50 + 60 = 110 (80 avec l'ancien bonus de 5).
+    { stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 70 },
+    { stop: '10:brock', core: ['pidgey', 'rattata', 'spearow'], n: 50, win: 90, lo: 50 },
+  ];
+  const units = Object.fromEntries(['pidgey', 'rattata', 'spearow'].map(line => [line, { id: line, line, star: 2 }]));
+  const game = KT.readGame({ ...save, round: 1009, level: 3, units, board: { 0: 'pidgey', 1: 'rattata', 2: 'spearow' }, bench: [], shop: [] });
+  assert.equal(KT.targetComp({ ...torre, stops, cores }, data, game, 'abra+onix+zubat').key, 'pidgey+rattata+spearow');
+});
+
+test('achat d’une carte ★ : les autres pastilles de la boutique ne changent pas', () => {
+  const before = advise(S57);
+  assert.equal(brief(before.shop[0]), 'do Achète');
+  const bought = {
+    ...S57, gold: S57.gold - KT.lineInfo(data, 'growlithe').c, shop: [null, ...S57.shop.slice(1)],
+    units: { ...S57.units, z: { id: 'z', line: 'growlithe', star: 1 } }, bench: ['b', 'c', 'e', 'z', null, null, null, null, null],
+  };
+  const after = advise(bought, { previous: { key: before.target.key, run: before.run } });
+  assert.equal(after.target.key, before.target.key);
+  assert.deepEqual(after.shop.slice(1).map(brief), before.shop.slice(1).map(brief));
 });
 
 test('boutique : ★ 3ᵉ copie et cœur, ◆ si l’or, ✕ hors compo', () => {
   const a = advise(S57);
   // Caninos et Ptéra (★, 8 pièces) laissent 30 : Magmar (3) ferait passer sous le palier.
   assert.deepEqual(a.shop.map(brief), ['do Achète', 'do Achète', 'no Ignore', 'no Ignore', 'no Ignore']);
-  assert.match(a.shop[2].why, /garde 30 pièces/);
+  assert.match(a.shop[2].why, /^complément de la compo ; garde 30 pièces/);
   assert.equal(brief(advise({ ...S57, gold: 41 }).shop[2]), 'opt Si l’or');
   assert.match(a.shop[0].why, /3ᵉ copie/);
   assert.match(a.shop[1].why, /cœur/);
