@@ -404,11 +404,98 @@ test('ancrage : conseillé si la compo vise une forme ancrée non encore choisie
   assert.deepEqual(KT.anchorAdvice(target, KT.readGame({ ...S57, units: {}, board: {}, bench: [] }), names), []);
 });
 
-test('formation : code KT1 (rangée 0 = avant, porteur côté choisi)', () => {
+test('formation : code KT1 trié par cellule, Pokémon bien placé gardé, porteur côté choisi', () => {
+  // S57 : Minidraco (case 29 → cellule 1, mêlée au premier rang) garde sa case ; Goupix (31 → 3, distance au premier rang) part
+  // au fond ; Caninos (tank, au banc) prend le centre de l'avant, Ptéra la case suivante.
   assert.equal(advise(S57).code,
-    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;growlithe:1:3:scope-lens.twisted-spoon.assault-vest;aerodactyl:1:2;'
-    + 'dratini:2:4:choice-band.focus-sash.scope-lens;vulpix:2:21:choice-specs.scope-lens.quick-claw;magmar:1:23');
-  assert.match(advise(S57, { side: 'right' }).code, /vulpix:2:27:choice-specs.scope-lens.quick-claw;magmar:1:25$/);
+    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;dratini:2:1:choice-band.focus-sash.scope-lens;aerodactyl:1:2;'
+    + 'growlithe:1:3:scope-lens.twisted-spoon.assault-vest;vulpix:2:21:choice-specs.scope-lens.quick-claw;magmar:1:23');
+  assert.match(advise(S57, { side: 'right' }).code, /magmar:1:25;vulpix:2:27:choice-specs.scope-lens.quick-claw$/);
+});
+
+test('formation : case de la sauvegarde → cellule KT1 (côté joueur = cases 28 à 55)', () => {
+  assert.deepEqual([38, 28, 55, 27, 56, undefined].map(KT.boardCell), [10, 0, 27, null, null, null]);
+});
+
+test('formation : dans la limite du niveau, cœur possédé d’abord', () => {
+  const units = advise({ ...S57, level: 2 }).code.split(';').slice(4).map(u => u.split(':')[0]);
+  assert.deepEqual(units.sort(), ['dratini', 'growlithe']);
+});
+
+test('formation : une seule unité par cellule, niveaux 3 à 9, des deux côtés', () => {
+  for (const side of ['left', 'right']) {
+    for (let level = 3; level <= 9; level++) {
+      const cells = advise({ ...S57, level }, { side }).code.split(';').slice(4).map(u => Number(u.split(':')[2]));
+      assert.equal(new Set(cells).size, cells.length, `niveau ${level}, ${side}`);
+      assert.ok(cells.every(c => c >= 0 && c <= 27));
+    }
+  }
+});
+
+const BENCH = ids => [...ids, ...Array(9 - ids.length).fill(null)];
+const moves = (save, extra) => advise(save, extra).moves.map(m => `${m.title} — ${m.why}`);
+
+test('déplacements : d’abord libérer la case, puis poser depuis le banc', () => {
+  // S57 : Goupix (distance) quitte la case avant-colonne 4 avant que Caninos (tank) y soit posé.
+  assert.deepEqual(moves(S57), ['Déplace Goupix — avant, colonne 4 → fond, colonne 1', 'Pose Caninos — avant, colonne 4']);
+  assert.ok(advise(S57).moves.every(m => m.level === 'do' && m.label === ''));
+  // Déjà bien placé partout : aucun déplacement.
+  assert.deepEqual(moves({ ...S57, level: 2, board: { 29: 'a', 31: 'b' }, bench: BENCH(['c', 'd', 'e']) }), []);
+});
+
+test('déplacements : remplacer l’occupant hors formation, ranger au banc faute de place, copie en double comptée', () => {
+  // Niveau 3 (Minidraco, Caninos, Ptéra) : Goupix, hors formation, occupe la case du tank.
+  assert.deepEqual(moves({ ...S57, level: 3, board: { 29: 'a', 31: 'd', 30: 'e' }, bench: BENCH(['b', 'c']) }),
+    ['Pose Caninos — avant, colonne 4, à la place de Goupix']);
+  // Niveau 4, 3 posés : la 1ʳᵉ pose prend la place libre, la 2ᵉ fait ranger Rattata.
+  const f = { id: 'f', line: 'ekans', star: 1 };
+  assert.deepEqual(moves({ ...S57, level: 4, units: { ...S57.units, f }, board: { 29: 'a', 30: 'e', 32: 'f' }, bench: BENCH(['b', 'c', 'd']) }),
+    ['Pose Caninos — avant, colonne 4', 'Pose Goupix — fond, colonne 1 ; range Rattata au banc']);
+  // Caninos ★★ au banc, Caninos ★ posé : la copie posée n'est pas dans la formation, elle libère la place.
+  const twins = { ...S57, level: 2, units: { ...S57.units, c: { id: 'c', line: 'growlithe', star: 2 } }, board: { 29: 'a', 30: 'b' }, bench: BENCH(['c', 'd', 'e']) };
+  assert.deepEqual(moves(twins), ['Pose Caninos — avant, colonne 4 ; range Caninos au banc']);
+});
+
+test('déplacements rejoués comme le jeu : échange, occupant déplacé, Pokémon rangé hors des cases visées', () => {
+  // Nosferapti (mêlée, fond colonne 1) et Abra (distance, avant colonne 4) échangent leurs cases : une seule consigne.
+  const t = { ...torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }],
+    cores: [{ stop: '10:brock', core: ['zubat', 'abra', 'pidgey'], n: 50, win: 90, lo: 80 }] };
+  const swap = KT.advise({ torre: t, data, lang, side: 'left', previous: null, save: {
+    ...save, round: 1009, level: 2, shop: [], bench: [], board: { 49: 'z', 31: 'x' },
+    units: { z: { id: 'z', line: 'zubat', star: 1 }, x: { id: 'x', line: 'abra', star: 1 } },
+  } });
+  assert.deepEqual(swap.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Nosferapti — fond, colonne 1 → avant, colonne 4 (échange avec Abra)']);
+  // Goupix va sur la case de Rattata, qui passe sur l'ancienne case de Goupix : Caninos y est posé à la place de Rattata.
+  assert.deepEqual(moves({ ...S57, level: 4, board: { 29: 'a', 31: 'd', 49: 'e' }, bench: BENCH(['b', 'c']) }),
+    ['Déplace Goupix — avant, colonne 4 → fond, colonne 1', 'Pose Caninos — avant, colonne 4, à la place de Rattata']);
+  // Plateau plein : Goupix prend la case de Rattata ; Caninos fait ranger Abo, pas un Pokémon dont la case sert à une pose.
+  const units = { ...S57.units, f: { id: 'f', line: 'ekans', star: 1 }, h: { id: 'h', line: 'pidgey', star: 1 } };
+  assert.deepEqual(moves({ ...S57, level: 4, units, board: { 29: 'a', 49: 'e', 30: 'f', 50: 'h' }, bench: BENCH(['b', 'c', 'd']) }),
+    ['Pose Goupix — fond, colonne 1, à la place de Rattata', 'Pose Caninos — avant, colonne 4 ; range Abo au banc']);
+});
+
+test('formation : porteur à distance dans le coin du côté choisi, gardé s’il y est déjà', () => {
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const t = { ...torre, stops, cores: [{ stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 }] };
+  const at = (cell, side) => KT.advise({
+    torre: t, data, lang, side, previous: null,
+    save: { ...save, round: 1009, level: 3, units: { x: { id: 'x', line: 'abra', star: 2 } }, board: { [cell]: 'x' }, bench: [], shop: [] },
+  });
+  assert.deepEqual(at(29, 'left').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 1']);
+  assert.deepEqual(at(29, 'right').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 7']);
+  // Fond, colonne 3 : dans le coin gauche (gardé), hors du coin droit.
+  assert.deepEqual(at(51, 'left').moves, []);
+  assert.match(at(51, 'left').code, /abra:2:23/);
+  assert.deepEqual(at(51, 'right').moves.map(m => m.why), ['fond, colonne 3 → fond, colonne 7']);
+  // Onix et Goupix (distance) déjà au fond en colonnes 1 et 3 : le porteur reste dans le coin (colonne 2), pas en colonne 5.
+  const corner = KT.advise({
+    torre: { ...t, cores: [{ stop: '10:brock', core: ['abra', 'onix', 'vulpix'], n: 50, win: 90, lo: 80 }] }, data, lang, side: 'left', previous: null,
+    save: {
+      ...save, round: 1009, level: 3, shop: [], bench: ['x'], board: { 49: 'o', 51: 'v' },
+      units: { x: { id: 'x', line: 'abra', star: 2 }, o: { id: 'o', line: 'onix', star: 1 }, v: { id: 'v', line: 'vulpix', star: 1 } },
+    },
+  });
+  assert.deepEqual(corner.moves.map(m => `${m.title} — ${m.why}`), ['Pose Abra — fond, colonne 2']);
 });
 
 // Faux Cache Storage et faux fetch : la file `replies` donne les réponses (Error = rejet de fetch, textError = rejet de la

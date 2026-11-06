@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      1.3.0
+// @version      1.4.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -507,6 +507,9 @@ const KT = (() => {
     return list.slice(0, MAX_ITEMS).map(h => h.id);
   }
 
+  // Portée inconnue : mêlée.
+  const isRanged = (data, base) => (lineInfo(data, base)?.range ?? 1) > 1;
+
   // Porteurs : un Pokémon possédé par lignée de la compo cible (le plus étoilé, puis celui qui porte le plus d'objets, puis
   // posé). Porteur (cœur, objets offensifs), tank (mêlée aux PV max), puis les autres (★, puis lineLo) : offensifs à distance,
   // défensifs en mêlée.
@@ -516,7 +519,7 @@ const KT = (() => {
         || Number(y.cell !== undefined) - Number(x.cell !== undefined))[0])
       .filter(Boolean);
     const rank = (a, b) => b.star - a.star || lineLo(torre, b.line) - lineLo(torre, a.line);
-    const melee = u => lineInfo(data, baseLine(u.line))?.range === 1;
+    const melee = u => !isRanged(data, baseLine(u.line));
     const hp = u => lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0;
     const carry = own.filter(u => target.core.some(id => baseLine(id) === baseLine(u.line))).sort(rank)[0];
     const tank = own.filter(u => u !== carry && melee(u)).sort((a, b) => hp(b) - hp(a))[0];
@@ -733,27 +736,94 @@ const KT = (() => {
     });
   }
 
-  // Formation KT1 : cellule = rangée × 7 + colonne, rangée 0 = avant (doc de l'API).
+  // La sauvegarde indexe le plateau sur 8 rangées × 7 : les 4 rangées ennemies (cases 0-27), puis les tiennes de l'avant au fond
+  // (28-55). La cellule KT1 (0-27, rangée × 7 + colonne, rangée 0 = avant, doc de l'API) est donc la case de la sauvegarde − 28.
+  const ENEMY_CELLS = 28;
+  const boardCell = cell => (Number.isInteger(cell) && cell >= ENEMY_CELLS && cell < 2 * ENEMY_CELLS ? cell - ENEMY_CELLS : null);
+  const rowOf = cell => Math.floor(cell / 7);
+  const colOf = cell => cell % 7;
+
+  // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). Chaque Pokémon a ses cases
+  // par préférence : tank au premier rang puis devant, porteur à distance dans le coin choisi puis au fond, mêlée devant
+  // (depuis le centre), distance au fond (depuis le coin). Déjà sur une case de sa première liste, il la garde ; sinon il prend
+  // la première case libre. unit : l'unité possédée (porteur de holdersOf), from : sa cellule, 'bench', ou null s'il n'est
+  // pas possédé.
   function formation(target, game, data, holders, side) {
-    const ids = [...target.core, ...target.fillers];
-    const roleBase = role => {
-      const h = holders.find(x => x.role === role);
-      return h && baseLine(h.unit.line);
-    };
-    const carry = roleBase('carry');
-    const tank = roleBase('tank');
-    const units = ids.map(id => {
+    const stars = id => bestStar(game, baseLine(id));
+    const kept = new Set([...[...target.core].sort((a, b) => stars(b) - stars(a)), ...target.fillers].slice(0, game.level));
+    const units = [...target.core, ...target.fillers].filter(id => kept.has(id)).map(id => {
       const base = baseLine(id);
       const h = holders.find(x => baseLine(x.unit.line) === base);
-      return { line: id, base, star: Math.max(1, bestStar(game, base)), items: h ? h.ideal : [], ranged: (lineInfo(data, base)?.range ?? 1) > 1 };
+      return {
+        line: id, base, star: Math.max(1, stars(id)), items: h ? h.ideal : [], role: h?.role ?? null, ranged: isRanged(data, base),
+        unit: h?.unit ?? null, from: h ? boardCell(h.unit.cell) ?? 'bench' : null,
+      };
     });
-    const front = units.filter(u => !u.ranged).sort((a, b) => Number(b.base === tank) - Number(a.base === tank));
-    const back = units.filter(u => u.ranged).sort((a, b) => Number(b.base === carry) - Number(a.base === carry));
     const edge = side === 'right' ? [6, 4, 2, 0, 5, 1, 3] : [0, 2, 4, 6, 1, 5, 3];
-    const place = (list, rows, cols) => list.map((u, i) => ({ ...u, cell: rows[Math.floor(i / 7)] * 7 + cols[i % 7] }));
-    return [...place(front, [0, 1], [3, 2, 4, 1, 5, 0, 6]), ...place(back, [3, 2], edge)];
+    const front = [0, 1].flatMap(r => [3, 2, 4, 1, 5, 0, 6].map(c => r * 7 + c));
+    const back = [3, 2].flatMap(r => edge.map(c => r * 7 + c));
+    const corner = back.filter(c => (side === 'right' ? colOf(c) >= 4 : colOf(c) <= 2));
+    const zones = u => {
+      if (u.role === 'tank') return [front.filter(c => rowOf(c) === 0), front];
+      if (u.role === 'carry' && u.ranged) return [corner, back];
+      return [u.ranged ? back : front];
+    };
+    const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
+    const taken = new Set([...stay].map(u => u.from));
+    const first = role => (a, b) => Number(b.role === role) - Number(a.role === role);
+    const order = [...units.filter(u => !u.ranged).sort(first('tank')), ...units.filter(u => u.ranged).sort(first('carry'))];
+    for (const u of order) {
+      u.cell = stay.has(u) ? u.from : zones(u).flat().find(c => !taken.has(c));
+      taken.add(u.cell);
+    }
+    // Doc de l'API : unités triées par cellule.
+    return units.sort((a, b) => a.cell - b.cell);
   }
 
+  const ROW_NAMES = ['avant', '2ᵉ rangée', '3ᵉ rangée', 'fond'];
+  const spot = cell => `${ROW_NAMES[rowOf(cell)]}, colonne ${colOf(cell) + 1}`;
+
+  // Déplacements vers la formation (conseils du panneau seul), dans l'ordre où les faire, rejoués sur une table case → occupant :
+  // le jeu échange deux Pokémon quand on en pose un sur l'autre, si bien qu'un Pokémon arrivé par échange n'a plus de consigne.
+  // D'abord les Pokémon posés mal placés (celui dont la case cible est libre avant les autres), puis les poses depuis le banc :
+  // sur la case d'un Pokémon hors formation, elle le remplace ; faute de place libre, elle fait ranger au banc un Pokémon hors
+  // formation qui n'est la cible d'aucune pose.
+  function moveAdvice(units, game, names) {
+    const onBoard = game.units.filter(u => boardCell(u.cell) !== null);
+    const at = new Map(onBoard.map(u => [boardCell(u.cell), u]));
+    const cellOf = unit => [...at].find(([, v]) => v === unit)?.[0];
+    const mine = new Set(units.map(f => f.unit).filter(Boolean));
+    const marks = [];
+    const pending = () => units.filter(f => typeof f.from === 'number' && cellOf(f.unit) !== f.cell);
+    for (let left = pending(); left.length; left = pending()) {
+      const u = left.find(f => !left.some(g => g !== f && cellOf(g.unit) === f.cell)) ?? left[0];
+      const from = cellOf(u.unit);
+      const other = at.get(u.cell);
+      const swap = other && mine.has(other) ? ` (échange avec ${names.line(other.line)})` : '';
+      marks.push(mark('do', '', `Déplace ${names.line(u.base)}`, `${spot(from)} → ${spot(u.cell)}${swap}`));
+      at.set(u.cell, u.unit);
+      if (other) at.set(from, other);
+      else at.delete(from);
+    }
+    let room = game.level - onBoard.length;
+    const poses = units.filter(f => f.from === 'bench').sort((a, b) => Number(at.has(b.cell)) - Number(at.has(a.cell)));
+    const targets = new Set(poses.map(f => f.cell));
+    for (const u of poses) {
+      const there = at.get(u.cell);
+      let why = '';
+      if (there) why = `, à la place de ${names.line(there.line)}`;
+      else if (room > 0) room -= 1;
+      else {
+        const spare = [...at].filter(([, v]) => !mine.has(v));
+        const [cell, out] = spare.find(([c]) => !targets.has(c)) ?? spare[0];
+        why = ` ; range ${names.line(out.line)} au banc`;
+        at.delete(cell);
+      }
+      at.set(u.cell, u.unit);
+      marks.push(mark('do', '', `Pose ${names.line(u.base)}`, `${spot(u.cell)}${why}`));
+    }
+    return marks;
+  }
   function kt1Code(units, rules) {
     const parts = units.map(u => `${u.line}:${u.star}:${u.cell}${u.items.length ? `:${u.items.join('.')}` : ''}`);
     return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent('Plan kanto-overlay')}`, ...parts].join(';');
@@ -775,6 +845,7 @@ const KT = (() => {
     const choice = offerChoiceMarks(data, game, eco, names);
     const holders = target ? holdersOf(torre, data, game, target) : [];
     const items = itemMarks(data, game, holders, target, names);
+    const units = target ? formation(target, game, data, holders, side) : [];
     return {
       game, eco, target, names, run,
       shop: shop.marks,
@@ -786,7 +857,8 @@ const KT = (() => {
       offer: choice.marks,
       unknownOffer: choice.unknown,
       anchor: anchorAdvice(target, game, names),
-      code: target ? kt1Code(formation(target, game, data, holders, side), torre.rules) : null,
+      moves: moveAdvice(units, game, names),
+      code: target ? kt1Code(units, torre.rules) : null,
     };
   }
 
@@ -865,6 +937,7 @@ const KT = (() => {
     SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, targetComp, progress, anchorAdvice, advise, pct, shortDate,
+    boardCell,
   };
 })();
 
@@ -1038,7 +1111,7 @@ function mount() {
 <p>${shinies}</p><ul>${KT.GOLD_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>`;
   }
 
-  const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor].filter(Boolean);
+  const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
 
   function todoHtml(a) {
     const order = { do: 0, opt: 1, no: 2 };
