@@ -409,6 +409,7 @@ const KT = (() => {
   const floorRange = stops => `étages ${stops[0].floor}–${stops.at(-1).floor}`;
 
   const targetBases = target => (target ? [...target.core.map(baseLine), ...target.fillers] : []);
+  const nextBases = next => (next ? next.core.map(baseLine) : []);
 
   function progress(game, base) {
     const star = bestStar(game, base);
@@ -427,7 +428,7 @@ const KT = (() => {
   function shopMarks(game, target, next, data, eco, names, reserve) {
     const core = target ? target.core.map(baseLine) : [];
     const wanted = targetBases(target);
-    const later = next ? next.core.map(baseLine) : [];
+    const later = nextBases(next);
     const proof = proofText(target?.proof, names);
     let left = game.gold;
     let short = false;
@@ -462,21 +463,27 @@ const KT = (() => {
         return;
       }
       const fits = c.cost !== undefined && (eco.allIn ? c.cost <= left : left - c.cost >= eco.floor);
-      if ((c.inTarget || c.triple) && fits) {
+      if ((c.inTarget || (c.triple && !c.inNext)) && fits) {
         left -= c.cost;
         marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, c.triple ? '3ᵉ copie hors compo' : 'renforce le plateau de la compo');
       }
     });
+    // L'actualisation qui cherche les copies de la compo cible passe avant la compo suivante.
+    const reroll = target && targetIncomplete(game, target) ? REROLL_COST : 0;
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
       if (c.inNext && !c.inTarget) {
         const range = floorRange(next.stops);
-        if (!eco.allIn && c.cost !== undefined && left - c.cost >= eco.floor) {
+        const fits = c.cost !== undefined && left - c.cost >= eco.floor;
+        if (!eco.allIn && fits && left - c.cost - reroll >= eco.floor) {
           left -= c.cost;
           marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, `prépare la compo des ${range}`, proofText(next.proof, names));
           return;
         }
-        marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, eco.allIn ? 'tout jouer : l’or va à la compo cible' : `compo des ${range} ; garde ${eco.floor} pièces pour les intérêts`);
+        let why = `compo des ${range} ; garde ${eco.floor} pièces pour les intérêts`;
+        if (eco.allIn) why = 'tout jouer : l’or va à la compo cible';
+        else if (fits) why = `compo des ${range} ; l’or va d’abord à l’actualisation pour la compo cible`;
+        marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, why);
         return;
       }
       marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `complément de la compo ; garde ${eco.floor} pièces pour les intérêts` : 'hors compo cible');
@@ -515,7 +522,8 @@ const KT = (() => {
 
   function sellMarks(game, target, next, names, short) {
     if (!target) return game.bench.map(() => null);
-    const wanted = [...targetBases(target), ...(next ? next.core.map(baseLine) : [])];
+    // Faute d'or pour un ★ de la compo cible, la compo suivante n'est plus gardée.
+    const wanted = [...targetBases(target), ...(short ? [] : nextBases(next))];
     const free = game.bench.filter(id => !id).length;
     return game.bench.map(id => {
       const u = id && game.units.find(x => x.id === id);

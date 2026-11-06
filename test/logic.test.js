@@ -200,8 +200,9 @@ test('achat d’une carte ★ : les autres pastilles de la boutique ne changent 
     ...S57, gold: S57.gold - KT.lineInfo(data, 'growlithe').c, shop: [null, ...S57.shop.slice(1)],
     units: { ...S57.units, z: { id: 'z', line: 'growlithe', star: 1 } }, bench: ['b', 'c', 'e', 'z', null, null, null, null, null],
   };
-  const after = advise(bought, { previous: { key: before.target.key, run: before.run } });
+  const after = advise(bought, { previous: { key: before.target.key, run: before.run, next: before.next.key } });
   assert.equal(after.target.key, before.target.key);
+  assert.equal(after.next.key, before.next.key);
   assert.deepEqual(after.shop.slice(1).map(brief), before.shop.slice(1).map(brief));
 });
 
@@ -273,10 +274,11 @@ test('vendre : unité du banc hors compo et sans paire, banc presque plein', () 
   assert.equal(brief(marks[3]), 'no Vends');
   assert.equal(marks[3].title, 'Vends Abo');
   assert.equal(marks[4], null);
-  // Leveinard, de la compo suivante, reste au banc.
+  // Leveinard, de la compo suivante, reste au banc ; sauf s'il manque de l'or pour un ★ de la compo cible.
   const kept = { ...full, units: { ...full.units, f: { id: 'f', line: 'chansey', star: 1 } } };
   assert.equal(advise(kept).next.key, 'chansey+dratini+lapras');
   assert.equal(advise(kept).bench[3], null);
+  assert.equal(brief(advise({ ...kept, gold: 3 }).bench[3]), 'no Vends');
 });
 
 // Combats aux étages 10 à 27 : la compo cible se joue sur 10–18, la compo suivante sur 19–27.
@@ -294,6 +296,10 @@ test('compo suivante : trio des combats 10 à 18, absent s’il est déjà la co
   assert.equal(a.next.key, 'chansey+dratini+lapras');
   assert.equal(KT.floorRange(a.next.stops), 'étages 80–100');
   assert.equal(advise(EMPTY10, { torre: twoWindows([[['abra', 'onix', 'zubat'], 80]]) }).next, null);
+  // Tranche suivante sans trio d'au moins 20 combats, ou sans combat.
+  const empty = twoWindows([]);
+  assert.equal(advise(EMPTY10, { torre: empty }).next, null);
+  assert.equal(advise(EMPTY10, { torre: { ...empty, stops: empty.stops.slice(0, 9) } }).next, null);
 });
 
 test('compo suivante : inertie de 30 points dans la même partie', () => {
@@ -311,12 +317,22 @@ test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamai
   const a = advise({ ...shop, gold: 36 });
   assert.deepEqual(a.shop.slice(0, 3).map(brief), ['no Ignore', 'no Ignore', 'opt Si l’or']);
   assert.equal(a.shop[0].why, 'compo des étages 80–100 ; garde 30 pièces pour les intérêts');
-  const b = advise({ ...shop, gold: 38 });
+  // 40 pièces : Magmar (3), puis Leveinard (4) en gardant 30 et l'actualisation (2) ; Lokhlass ne passe plus.
+  const b = advise({ ...shop, gold: 40 });
   assert.deepEqual(b.shop.slice(0, 3).map(brief), ['opt Si l’or', 'no Ignore', 'opt Si l’or']);
   assert.equal(b.shop[0].why, 'prépare la compo des étages 80–100');
   assert.match(b.shop[0].detail, /^Leveinard · Minidraco · Lokhlass : /);
   const allIn = advise({ ...shop, gold: 60, hp: 30 });
   assert.equal(allIn.shop[0].why, 'tout jouer : l’or va à la compo cible');
+  // 3ᵉ copie d'une lignée de la compo suivante : même motif, même règle d'or.
+  const third = { ...shop, gold: 60, units: { ...S57.units, x: { id: 'x', line: 'chansey', star: 1 }, y: { id: 'y', line: 'chansey', star: 1 } } };
+  assert.equal(advise(third).shop[0].why, 'prépare la compo des étages 80–100');
+  assert.equal(brief(advise({ ...third, hp: 30 }).shop[0]), 'no Ignore');
+  // Compo cible incomplète : l'actualisation (2) passe avant Leveinard (4) ; 35 pièces ne suffisent pas aux deux.
+  const roll = advise({ ...S57, gold: 35, shop: ['chansey', 'rattata', 'ekans', null, null] });
+  assert.equal(roll.shop[0].why, 'compo des étages 80–100 ; l’or va d’abord à l’actualisation pour la compo cible');
+  assert.equal(brief(roll.reroll), 'do Actualise');
+  assert.equal(brief(advise({ ...S57, gold: 36, shop: ['chansey', 'rattata', 'ekans', null, null] }).shop[0]), 'opt Si l’or');
 });
 
 // S57 : porteur Minidraco ★★ (idéal Bandeau Choix, Ceinture Force, Lentilscope), tank Caninos (idéal Lentilscope, Cuiller
