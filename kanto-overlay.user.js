@@ -543,8 +543,8 @@ const KT = (() => {
     const hs = holders.map(h => {
       const on = [...(h.unit.items ?? [])];
       const lone = on.find(id => kind(id) === 'part') ?? null;
-      // loneAt : case du sac du composant seul conseillé dans ce passage ; aim : recette qu'il entame ; after : paire à poser avant.
-      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, aim: null, after: null };
+      // loneAt : case du sac du composant seul conseillé dans ce passage ; after : paire à poser avant.
+      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, after: null };
     });
     const fits = (h, id) => {
       const stat = data.items[id]?.stat;
@@ -568,11 +568,11 @@ const KT = (() => {
       put(j, h, `${both} → ${h.who}`, why + after(h));
       h.after = both;
     };
-    const alone = (i, h, id, aim, why) => {
+    const alone = (i, h, id, why) => {
       put(i, h, `${names.item(id)} → ${h.who}`, why + after(h));
       h.slots -= 1;
       h.on.push(id);
-      Object.assign(h, { lone: id, loneAt: i, aim });
+      Object.assign(h, { lone: id, loneAt: i });
     };
     // Fusion avec le composant seul du Pokémon : s'il a été conseillé dans ce passage, les deux bulles annoncent la paire.
     const fuse = (i, h, id, why) => {
@@ -580,7 +580,7 @@ const KT = (() => {
       if (h.loneAt !== null) pair(h.loneAt, i, h, h.lone, id, why);
       else put(i, h, `${names.item(id)} → ${h.who}`, `fusionne avec ${names.item(h.lone)} : ${why}`);
       h.on[h.on.indexOf(h.lone)] = made;
-      Object.assign(h, { lone: null, loneAt: null, aim: null });
+      Object.assign(h, { lone: null, loneAt: null });
     };
 
     game.bag.forEach((id, i) => {
@@ -623,11 +623,12 @@ const KT = (() => {
       const begun = free.map(h => ({ h, f: h.ideal.find(f => ideal(h, f) && book.parts.get(f)?.includes(id)) })).find(x => x.f);
       if (begun) {
         const [a, b] = book.parts.get(begun.f);
-        alone(i, begun.h, id, begun.f, `${effect} ; plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
+        alone(i, begun.h, id, `${effect} ; plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
         continue;
       }
-      // Un composant conseillé dans ce passage pour une recette idéale n'est détourné que faute de place utile au rôle.
-      const kept = h => h.loneAt !== null && h.ideal.includes(h.aim);
+      // Un composant seul qui entre dans une recette idéale encore à faire (porté ou conseillé) n'est détourné que faute de
+      // place utile au rôle : le conseil reste le même une fois le composant posé.
+      const kept = h => h.ideal.some(f => ideal(h, f) && book.parts.get(f)?.includes(h.lone));
       const useful = list => list.find(h => fits(h, fused(h, id)) && !h.on.includes(fused(h, id)));
       const roleFuse = h => fuse(i, h, id, `${names.item(fused(h, id))}, ${ROLE_WHY[h.role]}`);
       const open = useful(hs.filter(h => h.lone && !kept(h)));
@@ -638,7 +639,7 @@ const KT = (() => {
       const twin = book.make.get(`${id}+${id}`);
       const double = free.find(h => fits(h, twin) && !h.on.includes(twin));
       if (double) {
-        alone(i, double, id, twin, `${effect} ; plus tard avec ${names.item(id)} : ${names.item(twin)}, ${ROLE_WHY[double.role]}`);
+        alone(i, double, id, `${effect} ; plus tard avec ${names.item(id)} : ${names.item(twin)}, ${ROLE_WHY[double.role]}`);
         continue;
       }
       const diverted = useful(hs.filter(h => h.lone && kept(h)));
@@ -647,7 +648,7 @@ const KT = (() => {
         continue;
       }
       if (free[0]) {
-        alone(i, free[0], id, null, effect);
+        alone(i, free[0], id, effect);
         continue;
       }
       const any = hs.find(h => h.lone);

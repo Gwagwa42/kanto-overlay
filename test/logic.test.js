@@ -328,6 +328,16 @@ test('objets : jamais de 4ᵉ objet ; « Garde » seulement quand toute la compo
   assert.deepEqual([brief(nobody), nobody.why], ['opt Garde', 'aucun Pokémon de la compo possédé']);
 });
 
+test('objets : composant porté réservé à une recette idéale, recette doublée annoncée, 2ᵉ paire après la 1ʳᵉ', () => {
+  // Goupix porte Carbone (Lentilscope, Vive Griffe à faire) : Fer n’y fusionne pas en Pic Venin, il va seul au tank pour
+  // Protecteur (Caninos a déjà Cuiller Tordue, sa seule recette idéale avec du Fer).
+  const fer = advise(withItems(['iron'], { b: ['twisted-spoon'], d: ['carbos'] })).bag[0];
+  assert.deepEqual([fer.title, fer.why], ['Fer → Caninos', '+20 % Défense tout de suite ; plus tard avec Fer : Protecteur, objet défensif pour ton tank']);
+  const two = advise(withItems(['protein', 'hp-up', 'carbos', 'carbos'])).bag;
+  assert.deepEqual(two.map(m => m.title), ['Protéine + Carbone → Minidraco', 'PV Plus + Carbone → Minidraco', 'Protéine + Carbone → Minidraco', 'PV Plus + Carbone → Minidraco']);
+  assert.match(two[3].why, /^Ceinture Force, meilleur objet de sa lignée en Tour \(après Protéine \+ Carbone\)$/);
+});
+
 test('objets : composant qui fusionne avec celui déjà porté en objet idéal, copie qui porte des objets prioritaire', () => {
   const a = advise(withItems(['carbos'], { a: ['protein'] }));
   assert.deepEqual([a.bag[0].title, a.bag[0].why], ['Carbone → Minidraco', 'fusionne avec Protéine : Lentilscope, meilleur objet de sa lignée en Tour']);
