@@ -65,7 +65,6 @@ test('forme des données : Tour, données de jeu, langue', () => {
   assert.equal(KT.isGameData(data), true);
   assert.equal(KT.isGameData({ ...data, recipes: [['a', 'b']] }), false);
   assert.equal(KT.isGameData({ ...data, lines: { abra: { c: 1 } } }), false);
-  assert.equal(KT.isGameData({ ...data, items: { ...data.items, protein: { k: 'part' } } }), false);
   assert.equal(KT.isLang(lang), true);
   assert.equal(KT.isLang({ ...lang, seals: null }), false);
 });
@@ -285,10 +284,11 @@ const FULL3 = ['leftovers', 'life-orb', 'eviolite'];
 test('objets : paire idéale, et composant seul équipé tout de suite vers sa recette', () => {
   const a = advise(S57);
   assert.deepEqual(a.bag.map(brief), ['do → Minidraco', 'do → Caninos', 'do → Caninos']);
-  assert.match(a.bag[0].why, /PV tout de suite ; avec Carbone : Ceinture Force, meilleur objet de sa lignée$/);
+  assert.match(a.bag[0].why, /PV tout de suite ; plus tard avec Carbone : Ceinture Force, meilleur objet de sa lignée en Tour$/);
   assert.match(a.bag[1].why, /Cuiller Tordue/);
   assert.equal(a.bag[1].title, a.bag[2].title);
   assert.equal(brief(advise(withItems(['iron'])).bag[0]), 'do → Caninos');
+  assert.deepEqual(advise(withItems(['emblem-fire'])).bag, [null]);
   const magnet = advise({ ...S57, level: 4, items: ['magnet'], units: { ...S57.units, e: { id: 'e', line: 'ekans', star: 1, items: ['leftovers'] } } });
   assert.equal(brief(magnet.bag[0]), 'do Retire de Abo');
 });
@@ -298,15 +298,21 @@ test('objets : complet hors liste idéale vers le rôle (défensif au tank, offe
   assert.deepEqual(a.bag.map(m => [brief(m), m.why]), [
     ['do → Caninos', 'objet défensif pour ton tank'], ['do → Minidraco', 'objet offensif pour ton porteur'],
   ]);
+  // Idéal d'abord, quel que soit l'ordre du sac ; pas deux fois le même objet sur un Pokémon.
+  const last = advise(withItems(['life-orb', 'choice-band'], { a: ['leftovers', 'eviolite'] }));
+  assert.deepEqual(last.bag.map(brief), ['do → Goupix', 'do → Minidraco']);
+  assert.deepEqual(advise(withItems(['leftovers', 'leftovers'])).bag.map(brief), ['do → Caninos', 'do → Minidraco']);
 });
 
 test('objets : porteur et tank pleins, l’objet va à un 3ᵉ Pokémon de la compo', () => {
-  assert.equal(brief(advise(withItems(['choice-specs'], { a: FULL3, b: FULL3 })).bag[0]), 'do → Goupix');
+  const m = advise(withItems(['choice-band'], { a: FULL3, b: FULL3 })).bag[0];
+  assert.deepEqual([brief(m), m.why], ['do → Goupix', 'objet offensif pour un attaquant']);
 });
 
-test('objets : chaque composant conseillé pour une seule recette', () => {
-  const a = advise(withItems(['protein', 'carbos', 'hp-up']));
-  assert.deepEqual(a.bag.map(m => m.title), ['Protéine + Carbone → Minidraco', 'Protéine + Carbone → Minidraco', 'PV Plus → Minidraco']);
+test('objets : chaque composant conseillé pour une seule recette ; après une paire, l’ordre de pose est donné', () => {
+  const a = advise(withItems(['protein', 'hp-up', 'carbos']));
+  assert.deepEqual(a.bag.map(m => m.title), ['Protéine + Carbone → Minidraco', 'PV Plus → Minidraco', 'Protéine + Carbone → Minidraco']);
+  assert.match(a.bag[1].why, /\(après Protéine \+ Carbone\)$/);
 });
 
 test('objets : jamais de 4ᵉ objet ; « Garde » seulement quand toute la compo est pleine', () => {
@@ -315,11 +321,18 @@ test('objets : jamais de 4ᵉ objet ; « Garde » seulement quand toute la compo
   assert.deepEqual(full.bag.map(brief), ['do → Caninos', 'do → Caninos']);
   const none = advise(withItems(['protein'], { a: FULL3, b: FULL3, d: FULL3 }));
   assert.deepEqual([brief(none.bag[0]), none.bag[0].why], ['opt Garde', 'toute la compo a 3 objets']);
+  // Composant seul sur un Pokémon déjà à 3 objets : la fusion ne prend pas de place.
+  const fuse = advise(withItems(['carbos'], { a: ['protein', 'leftovers', 'eviolite'], b: FULL3, d: FULL3 })).bag[0];
+  assert.deepEqual([fuse.title, fuse.why], ['Carbone → Minidraco', 'fusionne avec Protéine : Lentilscope, meilleur objet de sa lignée en Tour']);
+  const nobody = advise({ ...S57, items: ['protein'], units: {}, board: {}, bench: [] }).bag[0];
+  assert.deepEqual([brief(nobody), nobody.why], ['opt Garde', 'aucun Pokémon de la compo possédé']);
 });
 
-test('objets : composant qui fusionne avec celui déjà porté en objet idéal', () => {
+test('objets : composant qui fusionne avec celui déjà porté en objet idéal, copie qui porte des objets prioritaire', () => {
   const a = advise(withItems(['carbos'], { a: ['protein'] }));
   assert.deepEqual([a.bag[0].title, a.bag[0].why], ['Carbone → Minidraco', 'fusionne avec Protéine : Lentilscope, meilleur objet de sa lignée en Tour']);
+  // Deux Caninos ★ au banc : celui qui porte la Protéine est le porteur retenu.
+  assert.equal(advise(withItems(['carbos'], { c: ['protein'] })).bag[0].title, 'Carbone → Caninos');
 });
 
 test('objets : deux composants du sac qui fusionnent sur le même Pokémon annoncent la paire', () => {
@@ -333,7 +346,10 @@ test('objets : deux composants du sac qui fusionnent sur le même Pokémon annon
 test('récompense d’objet : prendre ce qui complète la recette idéale', () => {
   const a = advise({ ...S57, itemReward: ['protein', 'carbos', 'zinc'] });
   assert.deepEqual(a.reward.map(brief), [null, 'do Prends', null]);
-  assert.match(a.reward[1].why, /complète/);
+  assert.equal(a.reward[1].why, 'complète Ceinture Force sur Minidraco');
+  // Lu après les conseils du sac : le Fer part dans Poudre Métal, le Calcium ne complète plus Cuiller Tordue.
+  const after = advise({ ...withItems(['leftovers', 'protector', 'iron', 'zinc']), itemReward: ['calcium'] });
+  assert.equal(after.reward[0].why, 'entame Lunettes Choix pour Goupix');
 });
 
 test('bénédictions : PV bas, puis Fortune jusqu’à 3, puis voie la plus avancée', () => {

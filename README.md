@@ -29,10 +29,11 @@ barre le remet en haut à droite.
   restantes.
 - **Économie** : intérêts plafonnés à +3 en Tour, donc palier de 30 pièces (50 avec la voie Fortune complète). On ne dépense que le
   surplus, sauf en **tout jouer** : combat de l'étage sous 45 % de victoires, ou PV sous 40.
-- **Objets** : tout objet du sac va tout de suite sur un Pokémon de la compo. Un composant seul donne déjà son effet et fusionne sur
-  le Pokémon avec le suivant. Priorité à la recette idéale de chaque lignée (meilleurs couples Pokémon/objet de la Tour), sinon par
+- **Objets** : tout objet complet ou composant du sac va tout de suite sur un Pokémon de la compo. Un composant seul donne déjà son
+  effet et fusionne sur le Pokémon avec le suivant ; deux composants du sac pour le même Pokémon sont donnés en paire, avec l'ordre
+  de pose quand il compte. Priorité à la recette idéale de chaque lignée (meilleurs couples Pokémon/objet de la Tour), sinon par
   rôle : offensif au porteur puis aux attaquants, défensif au tank puis à la mêlée. 3 objets au plus par Pokémon ; « Garde »
-  seulement quand toute la compo est pleine.
+  seulement quand toute la compo est pleine. La récompense d'objet se choisit d'après ce qui reste à compléter après ces conseils.
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
 - **Formation** : mêlée devant (tank au centre), distance au fond et espacée, porteur dans le coin choisi (bouton « Porteur »).
 
