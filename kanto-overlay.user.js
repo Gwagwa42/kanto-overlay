@@ -509,11 +509,15 @@ const KT = (() => {
     return { make, parts };
   }
 
+  // Meilleurs objets complets portés par la lignée exacte (forme ancrée comprise) en Tour.
+  function topHolders(torre, data, line) {
+    return torre.holders.filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full')
+      .sort((a, b) => b.lo - a.lo).slice(0, MAX_ITEMS);
+  }
+
   function idealItems(torre, data, line) {
-    const full = h => data.items[h.id]?.k === 'full';
-    const pick = id => torre.holders.filter(h => h.line === id && h.n >= MIN_FIGHTS && full(h)).sort((a, b) => b.lo - a.lo);
-    const list = pick(line).length ? pick(line) : pick(baseLine(line));
-    return list.slice(0, MAX_ITEMS).map(h => h.id);
+    const own = topHolders(torre, data, line);
+    return (own.length ? own : topHolders(torre, data, baseLine(line))).map(h => h.id);
   }
 
   // Portée inconnue : mêlée.
@@ -945,7 +949,7 @@ const KT = (() => {
     SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
-    boardCell,
+    boardCell, topHolders,
   };
 })();
 

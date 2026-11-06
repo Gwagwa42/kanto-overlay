@@ -353,6 +353,16 @@ test('objets : deux composants du sac qui fusionnent sur le même Pokémon annon
   ]);
 });
 
+test('objets idéaux : 3 objets complets de la lignée exacte, ≥ 20 combats, par borne basse', () => {
+  const top = KT.topHolders(torre, data, 'dratini');
+  const expected = torre.holders.filter(h => h.line === 'dratini' && h.n >= 20 && data.items[h.id].k === 'full')
+    .sort((a, b) => b.lo - a.lo).slice(0, 3);
+  assert.equal(top.length, 3);
+  assert.deepEqual(top, expected);
+  assert.ok(torre.holders.some(h => h.line === 'dratini' && data.items[h.id].k === 'part'));
+  assert.deepEqual(KT.topHolders(torre, data, 'inconnu'), []);
+});
+
 test('récompense d’objet : prendre ce qui complète la recette idéale', () => {
   const a = advise({ ...S57, itemReward: ['protein', 'carbos', 'zinc'] });
   assert.deepEqual(a.reward.map(brief), [null, 'do Prends', null]);
