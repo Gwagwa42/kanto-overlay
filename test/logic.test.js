@@ -283,6 +283,51 @@ test('formation : code KT1 (rangée 0 = avant, porteur côté choisi)', () => {
   assert.match(advise(S57, { side: 'right' }).code, /vulpix:2:27;magmar:1:25$/);
 });
 
+// Unités de S57 remplacées ou ajoutées ; shiny : +10 % (makeUnit du jeu), transmis par la fusion.
+const withUnits = (units, extra = {}) => ({ ...S57, units: { ...S57.units, ...units }, ...extra });
+
+test('shiny : lignée shiny dès qu’une copie l’est, +2 points au trio', () => {
+  const shiny = withUnits({ b: { ...S57.units.b, shiny: true } });
+  assert.equal(KT.shinyLine(KT.readGame(shiny), 'growlithe'), true);
+  assert.equal(KT.shinyLine(KT.readGame(S57), 'growlithe'), false);
+  const stops = KT.nextStops(torre.stops, 57);
+  const core = ['aerodactyl', 'dratini', 'growlithe'];
+  assert.equal(KT.coreScore(core, stops, new Map(), KT.readGame(shiny)) - KT.coreScore(core, stops, new Map(), KT.readGame(S57)), 2);
+});
+
+test('shiny : « s » après l’étoile dans le code KT1', () => {
+  assert.match(advise(withUnits({ a: { ...S57.units.a, shiny: true } })).code, /;dratini:2s:4:choice-band\.focus-sash\.scope-lens;/);
+});
+
+test('shiny : départage le porteur, le tank et le remplissage', () => {
+  // Minidraco et Caninos à 2★ : le shiny porte (fond), l'autre tient le centre de la première rangée (case 3).
+  const lay = { board: { ...S57.board, 30: 'b' }, bench: [null, 'c', 'e', null, null, null, null, null, null] };
+  const g2 = { b: { ...S57.units.b, star: 2 } };
+  assert.match(advise(withUnits(g2, lay)).code, /;growlithe:2:3:/);
+  assert.match(advise(withUnits({ b: { ...g2.b, shiny: true } }, lay)).code, /;dratini:2:3:.*;growlithe:2s:4:/);
+  // Tank : Minidraco 1★ shiny (2062 × 1,1 PV) passe devant Caninos 1★ (2215 PV).
+  const tank = shiny => withUnits({ a: { id: 'a', line: 'dratini', star: 1, shiny }, x: { id: 'x', line: 'aerodactyl', star: 2 } }, { board: { ...S57.board, 30: 'x' } });
+  assert.match(advise(tank(false)).code, /;growlithe:1:3:/);
+  assert.match(advise(tank(true)).code, /;dratini:1s:3:/);
+  // Remplissage : Goupix et Magmar 1★ apportent le même type ; le shiny passe devant.
+  const fill = shiny => withUnits({ d: { id: 'd', line: 'vulpix', star: 1, shiny }, m: { id: 'm', line: 'magmar', star: 1 } },
+    { level: 4, bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
+  assert.deepEqual(advise(fill(false)).target.fillers, ['magmar']);
+  assert.deepEqual(advise(fill(true)).target.fillers, ['vulpix']);
+});
+
+test('shiny : pas de « Vends » jusqu’à l’étage 120, boutique sans raison shiny si la lignée l’est déjà', () => {
+  const full = withUnits({
+    f: { id: 'f', line: 'ekans', star: 1, shiny: true }, g: { id: 'g', line: 'zubat', star: 1 }, h: { id: 'h', line: 'zubat', star: 1 },
+    i: { id: 'i', line: 'pidgey', star: 1 }, j: { id: 'j', line: 'pidgey', star: 1 },
+  }, { level: 4, bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null] });
+  assert.equal(advise(full).bench[3], null);
+  assert.equal(advise({ ...full, round: 1199 }).bench[3].title, 'Vends Abo');
+  const owned = withUnits({ m: { id: 'm', line: 'magmar', star: 1, shiny: true } },
+    { shopShiny: [false, false, true, false, false], bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
+  assert.doesNotMatch(advise(owned).shop[2].why, /\+10 %/);
+});
+
 // Faux Cache Storage et faux fetch : la file `replies` donne les réponses (Error = rejet de fetch, textError = rejet de la
 // lecture du corps) ; `sent` garde l'en-tête If-None-Match de chaque requête.
 function fakeEnv(now) {

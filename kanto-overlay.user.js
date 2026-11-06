@@ -42,6 +42,11 @@ const KT = (() => {
   const LOW_HP = 40;
   const INERTIA = 5;
   const OWNED_BONUS = 5;
+  // Shiny : +10 % de PV, dégâts et défenses (makeUnit du jeu) ; bonus de trio sous l'inertie et sous une copie possédée.
+  const SHINY_BONUS = 2;
+  const SHINY_HP = 1.1;
+  // Dernier étage où le guide conseille encore de ramasser les shinies : pas de « Vends » jusque-là.
+  const SHINY_KEEP_TO = 120;
   // Règles de la Tour v41 lues dans le code du jeu (route-*.js) : absentes de l'API publique.
   const XP_TO_NEXT = [0, 2, 4, 8, 12, 16, 24, 40, 96, 120];
   const XP_COST = 4;
@@ -301,6 +306,8 @@ const KT = (() => {
 
   const unitsOf = (game, base) => game.units.filter(u => baseLine(u.line) === base);
   const bestStar = (game, base) => Math.max(0, ...unitsOf(game, base).map(u => u.star));
+  // La fusion transmet le shiny : la lignée l'est dès qu'une copie l'est.
+  const shinyLine = (game, base) => unitsOf(game, base).some(u => u.shiny);
   const ones = (game, base) => unitsOf(game, base).filter(u => u.star === 1).length;
   const pathCount = (boons, path) => boons.filter(b => boonPath(b) === path).length;
 
@@ -327,7 +334,7 @@ const KT = (() => {
     const stat = stops.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop)?.get(key)?.lo ?? 0), 0) / total;
     const owned = core.reduce((s, id) => {
       const star = bestStar(game, baseLine(id));
-      return s + (star >= 1 ? OWNED_BONUS : 0) + (star >= 2 ? OWNED_BONUS : 0);
+      return s + (star >= 1 ? OWNED_BONUS : 0) + (star >= 2 ? OWNED_BONUS : 0) + (shinyLine(game, baseLine(id)) ? SHINY_BONUS : 0);
     }, 0);
     return stat + owned;
   }
@@ -367,7 +374,8 @@ const KT = (() => {
       const next = pool
         .filter(b => !chosen.includes(b) && traitGain(data, chosen, b) > 0)
         .sort((a, b) => traitGain(data, chosen, b) - traitGain(data, chosen, a)
-          || bestStar(game, b) - bestStar(game, a) || lineLo(torre, b) - lineLo(torre, a) || a.localeCompare(b))[0];
+          || bestStar(game, b) - bestStar(game, a) || Number(shinyLine(game, b)) - Number(shinyLine(game, a))
+          || lineLo(torre, b) - lineLo(torre, a) || a.localeCompare(b))[0];
       if (!next) break;
       chosen.push(next);
       fillers.push(next);
@@ -417,7 +425,7 @@ const KT = (() => {
         return buy(c.cost, c.name, c.inCore ? '3ᵉ copie, passe ★★ ; cœur de la compo cible' : '3ᵉ copie, passe ★★', c.inCore ? proof : '');
       }
       if (c.inCore) return buy(c.cost, c.name, 'cœur de la compo cible', proof);
-      if (c.shiny && c.inTarget) return buy(c.cost, `${c.name} shiny`, '+10 % PV, défenses et dégâts');
+      if (c.shiny && c.inTarget && !shinyLine(game, c.base)) return buy(c.cost, `${c.name} shiny`, '+10 % PV, défenses et dégâts');
       return undefined;
     });
     left -= reserve(left);
@@ -476,7 +484,7 @@ const KT = (() => {
       if (!u) return null;
       const base = baseLine(u.line);
       const paired = game.units.some(x => x.id !== u.id && baseLine(x.line) === base && x.star === u.star);
-      if (wanted.includes(base) || paired || (free > 1 && !short)) return null;
+      if (wanted.includes(base) || paired || (u.shiny && game.floor <= SHINY_KEEP_TO) || (free > 1 && !short)) return null;
       return mark('no', 'Vends', `Vends ${names.line(u.line)}`, free > 1 ? 'il manque de l’or pour un achat conseillé' : 'hors compo, libère le banc');
     });
   }
@@ -502,8 +510,9 @@ const KT = (() => {
   // Porteur (objets offensifs) et tank (portée 1, PV max) parmi les unités possédées de la compo cible.
   function holdersOf(torre, data, game, target) {
     const coreUnits = game.units.filter(u => target.core.some(id => baseLine(id) === baseLine(u.line)));
-    const carry = [...coreUnits].sort((a, b) => b.star - a.star || lineLo(torre, b.line) - lineLo(torre, a.line))[0];
-    const hp = u => lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0;
+    const carry = [...coreUnits].sort((a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny)
+      || lineLo(torre, b.line) - lineLo(torre, a.line))[0];
+    const hp = u => (lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0) * (u.shiny ? SHINY_HP : 1);
     const tank = game.units
       .filter(u => u !== carry && targetBases(target).includes(baseLine(u.line)) && lineInfo(data, baseLine(u.line))?.range === 1)
       .sort((a, b) => hp(b) - hp(a))[0];
@@ -652,7 +661,7 @@ const KT = (() => {
     const units = ids.map(id => {
       const base = baseLine(id);
       const h = holders.find(x => baseLine(x.unit.line) === base);
-      return { line: id, base, star: Math.max(1, bestStar(game, base)), items: h ? h.ideal : [], ranged: (lineInfo(data, base)?.range ?? 1) > 1 };
+      return { line: id, base, star: Math.max(1, bestStar(game, base)), shiny: shinyLine(game, base), items: h ? h.ideal : [], ranged: (lineInfo(data, base)?.range ?? 1) > 1 };
     });
     const front = units.filter(u => !u.ranged).sort((a, b) => Number(b.base === tank) - Number(a.base === tank));
     const back = units.filter(u => u.ranged).sort((a, b) => Number(b.base === carry) - Number(a.base === carry));
@@ -662,7 +671,7 @@ const KT = (() => {
   }
 
   function kt1Code(units, rules) {
-    const parts = units.map(u => `${u.line}:${u.star}:${u.cell}${u.items.length ? `:${u.items.join('.')}` : ''}`);
+    const parts = units.map(u => `${u.line}:${u.star}${u.shiny ? 's' : ''}:${u.cell}${u.items.length ? `:${u.items.join('.')}` : ''}`);
     return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent('Plan kanto-overlay')}`, ...parts].join(';');
   }
 
@@ -767,7 +776,7 @@ const KT = (() => {
   return {
     SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
-    baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, targetComp, progress, anchorAdvice, advise, pct, shortDate,
+    baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
   };
 })();
 
