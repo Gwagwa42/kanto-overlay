@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      1.2.0
+// @version      1.3.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -53,6 +53,8 @@ const KT = (() => {
   const FORTUNE_INTEREST = 2;
   const PATH_SIZE = 3;
   const MAX_ITEMS = 3;
+  // Stats offensives des objets (data.items[id].stat) ; les autres (hp, def, spd, shield) sont défensives.
+  const OFFENSE = ['atk', 'spa', 'as', 'crit', 'mana', 'vamp'];
   // Bénédictions de la Tour v41 (absentes de l'API) → voie (null : hors voie) et nom ; ordre = préférence à égalité.
   const BOONS = {
     coincase: ['fortune', 'Boîte Jetons'], nugget: ['fortune', 'Maxi Pépite'], fbag: ['fortune', 'Sac de Jetons'],
@@ -205,6 +207,7 @@ const KT = (() => {
     return isObject(d?.lines) && isObject(d.items) && Array.isArray(d.recipes) && isObject(d.traits) && isObject(d.seals)
       && Object.values(d.lines).every(l => Number.isFinite(l?.c) && Array.isArray(l.t) && Array.isArray(l.s) && Number.isFinite(l.range))
       && Object.values(d.traits).every(t => Array.isArray(t?.th))
+      && Object.values(d.items).every(i => !['full', 'part'].includes(i?.k) || typeof i.stat === 'string')
       && d.recipes.every(r => Array.isArray(r) && r.length === 3);
   }
 
@@ -261,6 +264,7 @@ const KT = (() => {
       line,
       stage: (base, n) => LINES[base]?.[n] ?? base,
       item: id => lang?.items[id]?.name ?? id,
+      effect: id => lang?.items[id]?.short ?? null,
       seal: id => lang?.seals[id]?.name ?? id,
     };
   }
@@ -504,63 +508,128 @@ const KT = (() => {
     return list.slice(0, MAX_ITEMS).map(h => h.id);
   }
 
-  // Porteur (objets offensifs) et tank (portée 1, PV max) parmi les unités possédées de la compo cible.
+  // Porteurs : un Pokémon possédé par lignée de la compo cible (le plus étoilé, posé d'abord). Porteur (cœur, objets offensifs),
+  // tank (mêlée aux PV max), puis les autres (★, puis lineLo) : offensifs à distance, défensifs en mêlée.
   function holdersOf(torre, data, game, target) {
-    const coreUnits = game.units.filter(u => target.core.some(id => baseLine(id) === baseLine(u.line)));
-    const carry = [...coreUnits].sort((a, b) => b.star - a.star || lineLo(torre, b.line) - lineLo(torre, a.line))[0];
+    const own = targetBases(target)
+      .map(b => unitsOf(game, b).sort((x, y) => y.star - x.star || Number(y.cell !== undefined) - Number(x.cell !== undefined))[0])
+      .filter(Boolean);
+    const rank = (a, b) => b.star - a.star || lineLo(torre, b.line) - lineLo(torre, a.line);
+    const melee = u => lineInfo(data, baseLine(u.line))?.range === 1;
     const hp = u => lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0;
-    const tank = game.units
-      .filter(u => u !== carry && targetBases(target).includes(baseLine(u.line)) && lineInfo(data, baseLine(u.line))?.range === 1)
-      .sort((a, b) => hp(b) - hp(a))[0];
-    return [['carry', carry], ['tank', tank]].filter(([, u]) => u).map(([role, u]) => ({ role, unit: u, ideal: idealItems(torre, data, u.line) }));
+    const carry = own.filter(u => target.core.some(id => baseLine(id) === baseLine(u.line))).sort(rank)[0];
+    const tank = own.filter(u => u !== carry && melee(u)).sort((a, b) => hp(b) - hp(a))[0];
+    const rest = own.filter(u => u !== carry && u !== tank).sort(rank).map(u => [melee(u) ? 'front' : 'atk', u]);
+    return [['carry', carry], ['tank', tank], ...rest].filter(([, u]) => u)
+      .map(([role, u]) => ({ role, unit: u, ideal: idealItems(torre, data, u.line) }));
   }
 
-  function itemMarks(torre, data, game, target, eco, names) {
+  const ROLE_WHY = {
+    carry: 'objet offensif pour ton porteur', atk: 'objet offensif pour un attaquant',
+    tank: 'objet défensif pour ton tank', front: 'objet défensif pour ta mêlée',
+  };
+
+  // Tout objet va tout de suite sur un Pokémon de la compo : un composant posé seul donne déjà son effet et fusionne avec le
+  // suivant. Chaque objet du sac est conseillé une fois ; places et composant seul de chaque porteur sont décomptés au fil des
+  // conseils. Ordre : objets complets, composant qui complète une recette idéale, paire du sac, puis composants restants.
+  function itemMarks(torre, data, game, target, names) {
     const marks = game.bag.map(() => null);
     if (!target || !data) return marks;
     const book = recipeBook(data);
-    const holders = holdersOf(torre, data, game, target);
-    const bagCount = id => game.bag.filter(x => x === id).length;
-    game.bag.forEach((id, i) => {
-      const item = data.items[id];
-      const name = names.item(id);
-      if (id === 'magnet') {
-        const wanted = targetBases(target);
-        const off = game.units.find(u => u.items?.length && !wanted.includes(baseLine(u.line)));
-        if (off) marks[i] = mark('do', `Retire de ${names.line(off.line)}`, `Aimant sur ${names.line(off.line)}`, 'récupère ses objets : il sort de la compo');
+    const kind = id => data.items[id]?.k;
+    const hs = holdersOf(torre, data, game, target).map(h => {
+      const on = [...(h.unit.items ?? [])];
+      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone: on.find(id => kind(id) === 'part') ?? null, loneAt: null };
+    });
+    const fits = (h, id) => {
+      const stat = data.items[id]?.stat;
+      return stat !== undefined && OFFENSE.includes(stat) === (h.role === 'carry' || h.role === 'atk');
+    };
+    const ideal = (h, full) => h.ideal.includes(full) && !h.on.includes(full);
+    const fused = (h, id) => book.make.get(`${h.lone}+${id}`);
+    const pending = k => game.bag.map((id, i) => ({ id, i })).filter(x => marks[x.i] === null && kind(x.id) === k);
+    const give = (i, h, title, why) => {
+      marks[i] = mark('do', `→ ${h.who}`, title, why);
+    };
+    // loneAt : case du sac du composant seul conseillé dans ce passage (sa bulle est réécrite s'il fusionne ensuite).
+    const equip = (h, id, i) => {
+      if (kind(id) === 'part' && h.lone) {
+        h.on.push(fused(h, id));
+        h.lone = null;
+        h.loneAt = null;
         return;
       }
-      for (const h of holders) {
-        const on = h.unit.items ?? [];
-        if (on.length >= MAX_ITEMS && item?.k !== 'part') continue;
-        const who = names.line(h.unit.line);
-        if (item?.k === 'full' && h.ideal.includes(id) && !on.includes(id)) {
-          marks[i] = mark('do', `→ ${who}`, `${name} → ${who}`, 'meilleur objet de sa lignée en Tour');
-          return;
-        }
-        if (item?.k !== 'part') continue;
-        for (const full of h.ideal.filter(f => !on.includes(f))) {
-          const [a, b] = book.parts.get(full) ?? [];
-          if (a !== id && b !== id) continue;
-          const partner = a === id ? b : a;
-          const ready = on.includes(partner) || bagCount(partner) >= (partner === id ? 2 : 1);
-          if (ready) {
-            marks[i] = mark('do', `→ ${who}`, `${names.item(a)} + ${names.item(b)} → ${who}`, `${names.item(full)}, meilleur objet de sa lignée en Tour`);
-            return;
-          }
-        }
+      h.slots -= 1;
+      h.on.push(id);
+      if (kind(id) === 'part') {
+        h.lone = id;
+        h.loneAt = i;
       }
-      const carry = holders.find(h => h.role === 'carry');
-      if (eco.allIn && item?.k === 'part' && carry) {
-        const partner = game.bag.find((p, j) => j !== i && book.make.has(`${id}+${p}`));
-        if (partner) {
-          const who = names.line(carry.unit.line);
-          marks[i] = mark('do', `→ ${who}`, `${name} → ${who}`, `tout jouer : ${names.item(book.make.get(`${id}+${partner}`))} tout de suite`);
-          return;
-        }
-      }
-      marks[i] = mark('opt', 'Garde', `Garde ${name}`, 'en attendant sa recette idéale');
+    };
+
+    game.bag.forEach((id, i) => {
+      if (id !== 'magnet') return;
+      const off = game.units.find(u => u.items?.length && !targetBases(target).includes(baseLine(u.line)));
+      if (off) marks[i] = mark('do', `Retire de ${names.line(off.line)}`, `Aimant sur ${names.line(off.line)}`, 'récupère ses objets : il sort de la compo');
     });
+    for (const { id, i } of pending('full')) {
+      const free = hs.filter(h => h.slots > 0);
+      const best = free.filter(h => ideal(h, id)).sort((a, b) => a.ideal.indexOf(id) - b.ideal.indexOf(id))[0];
+      const h = best ?? free.find(x => fits(x, id)) ?? free[0];
+      if (!h) continue;
+      give(i, h, `${names.item(id)} → ${h.who}`, best ? 'meilleur objet de sa lignée en Tour' : fits(h, id) ? ROLE_WHY[h.role] : 'place libre dans la compo');
+      equip(h, id, i);
+    }
+    for (const { id, i } of pending('part')) {
+      const h = hs.find(x => x.lone && ideal(x, fused(x, id)));
+      if (!h) continue;
+      give(i, h, `${names.item(id)} → ${h.who}`, `fusionne avec ${names.item(h.lone)} : ${names.item(fused(h, id))}, meilleur objet de sa lignée en Tour`);
+      equip(h, id, i);
+    }
+    // Paire du sac formant un objet idéal d'un porteur qui a une place et pas de composant seul.
+    for (const { id, i } of pending('part')) {
+      if (marks[i] !== null) continue;
+      const pair = hs.filter(x => x.slots > 0 && !x.lone)
+        .flatMap(h => h.ideal.filter(f => ideal(h, f) && book.parts.get(f)?.includes(id)).map(full => ({ h, full })))
+        .map(x => {
+          const [a, b] = book.parts.get(x.full);
+          return { ...x, a, b, partner: pending('part').find(p => p.i !== i && p.id === (a === id ? b : a)) };
+        })
+        .find(x => x.partner);
+      if (!pair) continue;
+      const title = `${names.item(pair.a)} + ${names.item(pair.b)} → ${pair.h.who}`;
+      const why = `${names.item(pair.full)}, meilleur objet de sa lignée en Tour`;
+      give(i, pair.h, title, why);
+      give(pair.partner.i, pair.h, title, why);
+      pair.h.slots -= 1;
+      pair.h.on.push(pair.full);
+    }
+    // Composants restants : recette idéale entamée, fusion utile au rôle, recette doublée utile au rôle, puis toute place.
+    for (const { id, i } of pending('part')) {
+      const alone = hs.filter(h => h.slots > 0 && !h.lone);
+      const begun = alone.map(h => ({ h, full: h.ideal.find(f => ideal(h, f) && book.parts.get(f)?.includes(id)) })).find(x => x.full);
+      const twin = book.make.get(`${id}+${id}`);
+      const h = begun?.h ?? hs.find(x => x.lone && fits(x, fused(x, id))) ?? alone.find(x => fits(x, twin)) ?? alone[0] ?? hs.find(x => x.lone);
+      if (!h) continue;
+      if (h.lone && h.loneAt !== null) {
+        // Fusion avec un composant conseillé juste avant : les deux bulles annoncent la paire.
+        const full = fused(h, id);
+        const title = `${names.item(h.lone)} + ${names.item(id)} → ${h.who}`;
+        const why = fits(h, full) ? `${names.item(full)}, ${ROLE_WHY[h.role]}` : names.item(full);
+        give(h.loneAt, h, title, why);
+        give(i, h, title, why);
+      } else if (h.lone) {
+        give(i, h, `${names.item(id)} → ${h.who}`, `fusionne avec ${names.item(h.lone)} : ${names.item(fused(h, id))}`);
+      } else {
+        const effect = `${names.effect(id) ?? 'son effet'} tout de suite`;
+        const [a, b] = begun?.h === h ? book.parts.get(begun.full) : [];
+        give(i, h, `${names.item(id)} → ${h.who}`, a ? `${effect} ; avec ${names.item(a === id ? b : a)} : ${names.item(begun.full)}, meilleur objet de sa lignée` : effect);
+      }
+      equip(h, id, i);
+    }
+    for (const { id, i } of [...pending('full'), ...pending('part')]) {
+      marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, 'toute la compo a 3 objets');
+    }
     return marks;
   }
 
@@ -691,7 +760,7 @@ const KT = (() => {
       reroll: rerollMark(game, target, eco, shop.left),
       xp: xp.mark,
       bench: sellMarks(game, target, names, shop.short),
-      bag: itemMarks(torre, data, game, target, eco, names),
+      bag: itemMarks(torre, data, game, target, names),
       reward: offerMarks(torre, data, game, target, names),
       offer: choice.marks,
       unknownOffer: choice.unknown,

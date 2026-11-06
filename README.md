@@ -29,7 +29,10 @@ barre le remet en haut à droite.
   restantes.
 - **Économie** : intérêts plafonnés à +3 en Tour, donc palier de 30 pièces (50 avec la voie Fortune complète). On ne dépense que le
   surplus, sauf en **tout jouer** : combat de l'étage sous 45 % de victoires, ou PV sous 40.
-- **Objets** : recette idéale du porteur et du tank (meilleurs couples Pokémon/objet de la Tour) ; fusion immédiate en tout jouer.
+- **Objets** : tout objet du sac va tout de suite sur un Pokémon de la compo. Un composant seul donne déjà son effet et fusionne sur
+  le Pokémon avec le suivant. Priorité à la recette idéale de chaque lignée (meilleurs couples Pokémon/objet de la Tour), sinon par
+  rôle : offensif au porteur puis aux attaquants, défensif au tank puis à la mêlée. 3 objets au plus par Pokémon ; « Garde »
+  seulement quand toute la compo est pleine.
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
 - **Formation** : mêlée devant (tank au centre), distance au fond et espacée, porteur dans le coin choisi (bouton « Porteur »).
 
@@ -42,7 +45,7 @@ barre le remet en haut à droite.
 ## Données
 
 Data: Kanto Tactics · [einoow.com](https://einoow.com) — API publique `https://einoow.com/api/meta/kanto/` : `campana.json`
-(statistiques de la Tour), `data.json` (lignées, objets, recettes, types, sceaux), `lang.json?lang=fr` (noms des objets, sceaux,
+(statistiques de la Tour), `data.json` (lignées, objets, recettes, types, sceaux), `lang.json?lang=fr` (noms et effets des objets, sceaux,
 types). Conformément à ses conditions, chaque source est gardée **une heure** dans le Cache Storage du navigateur, puis revalidée
 (`ETag`) ; en cas d'erreur, la dernière copie sert et le pied du panneau en donne la date.
 
