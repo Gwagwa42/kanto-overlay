@@ -22,10 +22,11 @@ barre le remet en haut à droite.
 
 ## Comment les conseils sont choisis
 
-- **Compo cible** : parmi les trios d'au moins 20 combats des 3 prochains combats (élites comprises), celui dont la borne basse du taux
-  de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat, avec un bonus pour les Pokémon que tu
-  possèdes déjà. Elle ne change que pour un gain d'au moins 5 points. Le reste du plateau est rempli par les lignées qui renforcent ses
-  types, puis par tes unités.
+- **Compo cible** : parmi les trios d'au moins 20 combats des 9 prochains combats (élites comprises, environ 25 étages), celui dont la
+  borne basse du taux de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat, avec un bonus pour
+  les Pokémon que tu possèdes déjà. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
+  Le reste du plateau est rempli par les lignées qui renforcent ses types : tes unités d'abord, puis la boutique pour les places
+  restantes.
 - **Économie** : intérêts plafonnés à +3 en Tour, donc palier de 30 pièces (50 avec la voie Fortune complète). On ne dépense que le
   surplus, sauf en **tout jouer** : combat de l'étage sous 45 % de victoires, ou PV sous 40.
 - **Objets** : recette idéale du porteur et du tank (meilleurs couples Pokémon/objet de la Tour) ; fusion immédiate en tout jouer.
