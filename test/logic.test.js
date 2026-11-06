@@ -404,11 +404,46 @@ test('ancrage : conseillé si la compo vise une forme ancrée non encore choisie
   assert.deepEqual(KT.anchorAdvice(target, KT.readGame({ ...S57, units: {}, board: {}, bench: [] }), names), []);
 });
 
-test('formation : code KT1 (rangée 0 = avant, porteur côté choisi)', () => {
+test('formation : code KT1 trié par cellule, Pokémon bien placé gardé, porteur côté choisi', () => {
+  // S57 : Minidraco (case 29 → cellule 1, mêlée au premier rang) garde sa case ; Goupix (31 → 3, distance au premier rang) part
+  // au fond ; Caninos (tank, au banc) prend le centre de l'avant, Ptéra la case suivante.
   assert.equal(advise(S57).code,
-    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;growlithe:1:3:scope-lens.twisted-spoon.assault-vest;aerodactyl:1:2;'
-    + 'dratini:2:4:choice-band.focus-sash.scope-lens;vulpix:2:21:choice-specs.scope-lens.quick-claw;magmar:1:23');
-  assert.match(advise(S57, { side: 'right' }).code, /vulpix:2:27:choice-specs.scope-lens.quick-claw;magmar:1:25$/);
+    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;dratini:2:1:choice-band.focus-sash.scope-lens;aerodactyl:1:2;'
+    + 'growlithe:1:3:scope-lens.twisted-spoon.assault-vest;vulpix:2:21:choice-specs.scope-lens.quick-claw;magmar:1:23');
+  assert.match(advise(S57, { side: 'right' }).code, /magmar:1:25;vulpix:2:27:choice-specs.scope-lens.quick-claw$/);
+});
+
+test('formation : case de la sauvegarde → cellule KT1 (côté joueur = cases 28 à 55)', () => {
+  assert.deepEqual([38, 28, 55, 27, 56, undefined].map(KT.boardCell), [10, 0, 27, null, null, null]);
+});
+
+test('formation : dans la limite du niveau, cœur possédé d’abord', () => {
+  const units = advise({ ...S57, level: 2 }).code.split(';').slice(4).map(u => u.split(':')[0]);
+  assert.deepEqual(units.sort(), ['dratini', 'growlithe']);
+});
+
+test('formation : une seule unité par cellule, niveaux 3 à 9, des deux côtés', () => {
+  for (const side of ['left', 'right']) {
+    for (let level = 3; level <= 9; level++) {
+      const cells = advise({ ...S57, level }, { side }).code.split(';').slice(4).map(u => Number(u.split(':')[2]));
+      assert.equal(new Set(cells).size, cells.length, `niveau ${level}, ${side}`);
+      assert.ok(cells.every(c => c >= 0 && c <= 27));
+    }
+  }
+});
+
+test('déplacements : poser depuis le banc, déplacer un mal placé, à la place d’un hors formation si le plateau est plein', () => {
+  const a = advise(S57);
+  assert.deepEqual(a.moves.map(m => `${m.title} — ${m.why}`), [
+    'Pose Caninos — avant, colonne 4', 'Déplace Goupix — avant, colonne 4 → fond, colonne 1',
+  ]);
+  assert.ok(a.moves.every(m => m.level === 'do' && m.label === ''));
+  // Niveau 3, plateau plein (Minidraco, Goupix, Rattata) : Caninos remplace Rattata, hors formation.
+  const full = advise({ ...S57, level: 3, board: { 29: 'a', 31: 'd', 30: 'e' }, bench: ['b', 'c', null, null, null, null, null, null, null] });
+  assert.match(full.moves.find(m => m.title === 'Pose Caninos').why, /, à la place de Rattata$/);
+  // Déjà bien placé partout : aucun déplacement.
+  const placed = { ...S57, level: 2, board: { 29: 'a', 31: 'b' }, bench: ['c', 'd', 'e', null, null, null, null, null, null] };
+  assert.deepEqual(advise(placed).moves, []);
 });
 
 // Faux Cache Storage et faux fetch : la file `replies` donne les réponses (Error = rejet de fetch, textError = rejet de la

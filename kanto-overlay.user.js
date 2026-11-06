@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      1.3.0
+// @version      1.4.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -733,25 +733,65 @@ const KT = (() => {
     });
   }
 
-  // Formation KT1 : cellule = rangée × 7 + colonne, rangée 0 = avant (doc de l'API).
+  // La sauvegarde indexe le plateau sur 8 rangées × 7 : les 4 rangées ennemies (cases 0-27), puis les tiennes de l'avant au fond
+  // (28-55). La cellule KT1 (0-27, rangée × 7 + colonne, rangée 0 = avant, doc de l'API) est donc la case de la sauvegarde − 28.
+  const ENEMY_CELLS = 28;
+  const boardCell = cell => (Number.isInteger(cell) && cell >= ENEMY_CELLS && cell < 2 * ENEMY_CELLS ? cell - ENEMY_CELLS : null);
+  const rowOf = cell => Math.floor(cell / 7);
+  const colOf = cell => cell % 7;
+
+  // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord). Un Pokémon déjà bien placé garde sa case
+  // (tank au premier rang, porteur à distance au fond du côté choisi, mêlée devant, distance au fond) ; les autres prennent les
+  // cases libres : avant depuis le centre (tank d'abord), fond depuis le coin du porteur. from : cellule actuelle, 'bench', ou
+  // null si le Pokémon n'est pas possédé.
   function formation(target, game, data, holders, side) {
-    const ids = [...target.core, ...target.fillers];
-    const roleBase = role => {
-      const h = holders.find(x => x.role === role);
-      return h && baseLine(h.unit.line);
-    };
-    const carry = roleBase('carry');
-    const tank = roleBase('tank');
-    const units = ids.map(id => {
+    const core = [...target.core].sort((a, b) => bestStar(game, baseLine(b)) - bestStar(game, baseLine(a)));
+    const units = [...core, ...target.fillers].slice(0, game.level).map(id => {
       const base = baseLine(id);
       const h = holders.find(x => baseLine(x.unit.line) === base);
-      return { line: id, base, star: Math.max(1, bestStar(game, base)), items: h ? h.ideal : [], ranged: (lineInfo(data, base)?.range ?? 1) > 1 };
+      return {
+        line: id, base, star: Math.max(1, bestStar(game, base)), items: h ? h.ideal : [], role: h?.role ?? null,
+        ranged: (lineInfo(data, base)?.range ?? 1) > 1, from: h ? boardCell(h.unit.cell) ?? 'bench' : null,
+      };
     });
-    const front = units.filter(u => !u.ranged).sort((a, b) => Number(b.base === tank) - Number(a.base === tank));
-    const back = units.filter(u => u.ranged).sort((a, b) => Number(b.base === carry) - Number(a.base === carry));
+    const corner = c => (side === 'right' ? colOf(c) >= 4 : colOf(c) <= 2);
+    const wellPlaced = u => {
+      if (typeof u.from !== 'number') return false;
+      if (u.role === 'tank') return rowOf(u.from) === 0;
+      if (u.role === 'carry' && u.ranged) return rowOf(u.from) >= 2 && corner(u.from);
+      return u.ranged ? rowOf(u.from) >= 2 : rowOf(u.from) <= 1;
+    };
+    const taken = new Set(units.filter(wellPlaced).map(u => u.from));
     const edge = side === 'right' ? [6, 4, 2, 0, 5, 1, 3] : [0, 2, 4, 6, 1, 5, 3];
-    const place = (list, rows, cols) => list.map((u, i) => ({ ...u, cell: rows[Math.floor(i / 7)] * 7 + cols[i % 7] }));
-    return [...place(front, [0, 1], [3, 2, 4, 1, 5, 0, 6]), ...place(back, [3, 2], edge)];
+    const frontCells = [0, 1].flatMap(r => [3, 2, 4, 1, 5, 0, 6].map(c => r * 7 + c));
+    const backCells = [3, 2].flatMap(r => edge.map(c => r * 7 + c));
+    const free = cells => {
+      const c = cells.find(x => !taken.has(x));
+      taken.add(c);
+      return c;
+    };
+    const first = role => (a, b) => Number(b.role === role) - Number(a.role === role);
+    const front = units.filter(u => !u.ranged).sort(first('tank'));
+    const back = units.filter(u => u.ranged).sort(first('carry'));
+    // Doc de l'API : unités triées par cellule.
+    return [...front.map(u => [u, frontCells]), ...back.map(u => [u, backCells])]
+      .map(([u, cells]) => ({ ...u, cell: wellPlaced(u) ? u.from : free(cells) }))
+      .sort((a, b) => a.cell - b.cell);
+  }
+
+  const ROW_NAMES = ['avant', '2ᵉ rangée', '3ᵉ rangée', 'fond'];
+  const spot = cell => `${ROW_NAMES[rowOf(cell)]}, colonne ${colOf(cell) + 1}`;
+
+  // Déplacements vers la formation (conseils du panneau seul) : poser un Pokémon du banc, à la place d'un Pokémon hors formation
+  // si le plateau est plein, ou déplacer un Pokémon mal placé.
+  function moveAdvice(units, game, names) {
+    const onBoard = game.units.filter(u => boardCell(u.cell) !== null);
+    const spare = onBoard.length >= game.level ? onBoard.filter(u => !units.some(f => f.base === baseLine(u.line))) : [];
+    return units.filter(u => u.from !== null && u.from !== u.cell).map(u => {
+      if (u.from !== 'bench') return mark('do', '', `Déplace ${names.line(u.base)}`, `${spot(u.from)} → ${spot(u.cell)}`);
+      const out = spare.shift();
+      return mark('do', '', `Pose ${names.line(u.base)}`, `${spot(u.cell)}${out ? `, à la place de ${names.line(out.line)}` : ''}`);
+    });
   }
 
   function kt1Code(units, rules) {
@@ -775,6 +815,7 @@ const KT = (() => {
     const choice = offerChoiceMarks(data, game, eco, names);
     const holders = target ? holdersOf(torre, data, game, target) : [];
     const items = itemMarks(data, game, holders, target, names);
+    const units = target ? formation(target, game, data, holders, side) : [];
     return {
       game, eco, target, names, run,
       shop: shop.marks,
@@ -786,7 +827,8 @@ const KT = (() => {
       offer: choice.marks,
       unknownOffer: choice.unknown,
       anchor: anchorAdvice(target, game, names),
-      code: target ? kt1Code(formation(target, game, data, holders, side), torre.rules) : null,
+      moves: moveAdvice(units, game, names),
+      code: target ? kt1Code(units, torre.rules) : null,
     };
   }
 
@@ -865,6 +907,7 @@ const KT = (() => {
     SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, targetComp, progress, anchorAdvice, advise, pct, shortDate,
+    boardCell,
   };
 })();
 
@@ -1038,7 +1081,7 @@ function mount() {
 <p>${shinies}</p><ul>${KT.GOLD_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>`;
   }
 
-  const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor].filter(Boolean);
+  const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
 
   function todoHtml(a) {
     const order = { do: 0, opt: 1, no: 2 };
