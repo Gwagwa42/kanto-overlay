@@ -290,7 +290,8 @@ test('shiny : lignée shiny si sa copie de meilleure étoile l’est, +2 points 
   const shiny = withUnits({ b: { ...S57.units.b, shiny: true } });
   assert.equal(KT.shinyLine(KT.readGame(shiny), 'growlithe'), true);
   assert.equal(KT.shinyLine(KT.readGame(S57), 'growlithe'), false);
-  // Minidraco 2★ normal et 1★ shiny : pas de 2★ shiny annoncé (ni « s » dans le code KT1).
+  // Minidraco 2★ normal et 1★ shiny : pas de 2★ shiny annoncé (ni « s » dans le code KT1), et le 1★ shiny, de la lignée du
+  // porteur, n'est pas pris pour tank (Minidraco reste en case 4, pas au centre).
   const lower = withUnits({ x: { id: 'x', line: 'dratini', star: 1, shiny: true } }, { bench: ['b', 'c', 'e', 'x', null, null, null, null, null] });
   assert.equal(KT.shinyLine(KT.readGame(lower), 'dratini'), false);
   assert.match(advise(lower).code, /;dratini:2:4:/);
@@ -327,6 +328,9 @@ test('shiny : pas de « Vends » jusqu’à l’étage 120, boutique sans raison
   }, { level: 4, bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null] });
   assert.equal(advise(full).bench[3], null);
   assert.equal(advise({ ...full, round: 1199 }).bench[3].title, 'Vends Abo');
+  // Goupix 2★ normal (remplissage) : une carte 1★ shiny ne change pas la copie jouée.
+  const above = withUnits({}, { shop: ['vulpix', 'aerodactyl', 'magmar', 'rattata', 'ekans'], shopShiny: [true, false, false, false, false] });
+  assert.deepEqual([brief(advise(above).shop[0]), advise(above).shop[0].why], ['opt Si l’or', 'renforce le plateau de la compo']);
   const owned = withUnits({ m: { id: 'm', line: 'magmar', star: 1, shiny: true } },
     { shopShiny: [false, false, true, false, false], bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
   // Magmar reste dans la compo : seule la raison shiny disparaît.

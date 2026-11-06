@@ -425,7 +425,8 @@ const KT = (() => {
         return buy(c.cost, c.name, c.inCore ? '3ᵉ copie, passe ★★ ; cœur de la compo cible' : '3ᵉ copie, passe ★★', c.inCore ? proof : '');
       }
       if (c.inCore) return buy(c.cost, c.name, 'cœur de la compo cible', proof);
-      if (c.shiny && c.inTarget && !shinyLine(game, c.base)) return buy(c.cost, `${c.name} shiny`, '+10 % PV, défenses et dégâts');
+      // +10 % tout de suite seulement si la carte devient la meilleure copie de sa lignée.
+      if (c.shiny && c.inTarget && bestStar(game, c.base) <= 1 && !shinyLine(game, c.base)) return buy(c.cost, `${c.name} shiny`, '+10 % PV, défenses et dégâts');
       return undefined;
     });
     left -= reserve(left);

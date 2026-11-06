@@ -21,9 +21,9 @@ const SHINY = {
   ...S57,
   units: {
     ...S57.units, a: { ...S57.units.a, shiny: true }, e: { ...S57.units.e, shiny: true },
-    // Lignées déjà dans la boutique : la page reste sous la limite d'une URL data:.
-    f: { id: 'f', line: 'magmar', star: 1 }, g: { id: 'g', line: 'magmar', star: 1 }, h: { id: 'h', line: 'aerodactyl', star: 1 },
-    i: { id: 'i', line: 'aerodactyl', star: 1 }, j: { id: 'j', line: 'ekans', star: 1 },
+    // Lignées hors compo déjà dans la page (trios affichés, boutique) : même compo que la maquette, page sous la limite d'une URL data:.
+    f: { id: 'f', line: 'shellder', star: 1 }, g: { id: 'g', line: 'shellder', star: 1 }, h: { id: 'h', line: 'staryu', star: 1 },
+    i: { id: 'i', line: 'staryu', star: 1 }, j: { id: 'j', line: 'ekans', star: 1 },
   },
   bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null],
 };
