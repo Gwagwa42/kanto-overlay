@@ -509,11 +509,16 @@ const KT = (() => {
     return { make, parts };
   }
 
+  // Meilleurs objets complets portés en Tour par cette lignée exacte : une forme ancrée (-aN) ne compte que pour elle-même ; le
+  // repli sur la lignée de base est dans idealItems.
+  function topHolders(torre, data, line) {
+    return torre.holders.filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full')
+      .sort((a, b) => b.lo - a.lo).slice(0, MAX_ITEMS);
+  }
+
   function idealItems(torre, data, line) {
-    const full = h => data.items[h.id]?.k === 'full';
-    const pick = id => torre.holders.filter(h => h.line === id && h.n >= MIN_FIGHTS && full(h)).sort((a, b) => b.lo - a.lo);
-    const list = pick(line).length ? pick(line) : pick(baseLine(line));
-    return list.slice(0, MAX_ITEMS).map(h => h.id);
+    const own = topHolders(torre, data, line);
+    return (own.length ? own : topHolders(torre, data, baseLine(line))).map(h => h.id);
   }
 
   // Portée inconnue : mêlée.
@@ -547,10 +552,9 @@ const KT = (() => {
   // et fusionne avec le prochain composant posé sur ce Pokémon. Chaque objet du sac est conseillé une fois ; l'état de chaque
   // porteur (objets, places, composant seul) suit les conseils, et une seule paire par Pokémon et par passage (l'ordre de pose
   // ne serait plus clair). Renvoie aussi cet état final, pour le choix de la récompense.
-  function itemMarks(data, game, holders, target, names) {
+  function itemMarks(data, game, holders, book, target, names) {
     const marks = game.bag.map(() => null);
     if (!target || !data) return { marks, holders: [] };
-    const book = recipeBook(data);
     const kind = id => data.items[id]?.k;
     const hs = holders.map(h => {
       const on = [...(h.unit.items ?? [])];
@@ -595,6 +599,54 @@ const KT = (() => {
       Object.assign(h, { lone: null, loneAt: null });
     };
 
+    // Paire idéale du sac : recette idéale d'un Pokémon libre, sans paire dans ce passage, dont l'autre composant attend dans le sac.
+    const idealPair = (free, id, i) => {
+      const waiting = pending('part');
+      for (const h of free.filter(x => !x.after)) {
+        for (const f of h.ideal.filter(x => ideal(h, x) && book.parts.get(x)?.includes(id))) {
+          const ab = book.parts.get(f);
+          const j = waiting.find(p => p.i !== i && p.id === (ab[0] === id ? ab[1] : ab[0]))?.i;
+          if (j !== undefined) return { h, f, ab, j };
+        }
+      }
+      return null;
+    };
+    // Un composant seul qui entre dans une recette idéale encore à faire (porté ou conseillé) n'est détourné que faute de
+    // place utile au rôle : le conseil reste le même une fois le composant posé.
+    const kept = h => h.ideal.some(f => ideal(h, f) && book.parts.get(f)?.includes(h.lone));
+    // Composant, première règle qui s'applique : complète une recette idéale, paire idéale du sac, entame une recette idéale,
+    // fusion utile au rôle, recette doublée utile au rôle, fusion utile au rôle d'un composant réservé, toute place, toute fusion.
+    const placePart = (id, i) => {
+      const done = hs.find(h => h.lone && ideal(h, fused(h, id)));
+      if (done) return fuse(i, done, id, `${names.item(fused(done, id))}, ${BEST}`);
+      const free = hs.filter(h => h.slots > 0 && !h.lone);
+      const duo = idealPair(free, id, i);
+      if (duo) {
+        pair(i, duo.j, duo.h, ...duo.ab, `${names.item(duo.f)}, ${BEST}`);
+        duo.h.slots -= 1;
+        duo.h.on.push(duo.f);
+        return;
+      }
+      const effect = `${names.effect(id) ?? 'son effet'} tout de suite`;
+      const begun = free.map(h => ({ h, f: h.ideal.find(f => ideal(h, f) && book.parts.get(f)?.includes(id)) })).find(x => x.f);
+      if (begun) {
+        const [a, b] = book.parts.get(begun.f);
+        return alone(i, begun.h, id, `${effect} ; plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
+      }
+      const useful = list => list.find(h => fits(h, fused(h, id)) && !h.on.includes(fused(h, id)));
+      const roleFuse = h => fuse(i, h, id, `${names.item(fused(h, id))}, ${ROLE_WHY[h.role]}`);
+      const open = useful(hs.filter(h => h.lone && !kept(h)));
+      if (open) return roleFuse(open);
+      const twin = book.make.get(`${id}+${id}`);
+      const double = free.find(h => fits(h, twin) && !h.on.includes(twin));
+      if (double) return alone(i, double, id, `${effect} ; plus tard avec ${names.item(id)} : ${names.item(twin)}, ${ROLE_WHY[double.role]}`);
+      const diverted = useful(hs.filter(h => h.lone && kept(h)));
+      if (diverted) return roleFuse(diverted);
+      if (free[0]) return alone(i, free[0], id, effect);
+      const any = hs.find(h => h.lone);
+      if (any) fuse(i, any, id, names.item(fused(any, id)));
+    };
+
     game.bag.forEach((id, i) => {
       if (id !== 'magnet') return;
       const off = game.units.find(u => u.items?.length && !targetBases(target).includes(baseLine(u.line)));
@@ -611,70 +663,15 @@ const KT = (() => {
       const h = fresh.find(x => fits(x, id)) ?? fresh[0] ?? free[0];
       if (h) full(i, h, id, fits(h, id) ? ROLE_WHY[h.role] : 'place libre dans la compo');
     }
-    // Composants, dans l'ordre : complète une recette idéale, paire idéale du sac, entame une recette idéale, fusion utile au
-    // rôle, recette doublée utile au rôle, fusion utile au rôle d'un composant réservé, toute place, toute fusion.
-    for (const { id, i } of pending('part')) {
-      if (marks[i] !== null) continue;
-      const done = hs.find(h => h.lone && ideal(h, fused(h, id)));
-      if (done) {
-        fuse(i, done, id, `${names.item(fused(done, id))}, ${BEST}`);
-        continue;
-      }
-      const free = hs.filter(h => h.slots > 0 && !h.lone);
-      const duo = free.filter(h => !h.after)
-        .flatMap(h => h.ideal.filter(f => ideal(h, f) && book.parts.get(f)?.includes(id)).map(f => ({ h, f, ab: book.parts.get(f) })))
-        .map(x => ({ ...x, j: pending('part').find(p => p.i !== i && p.id === (x.ab[0] === id ? x.ab[1] : x.ab[0]))?.i }))
-        .find(x => x.j !== undefined);
-      if (duo) {
-        pair(i, duo.j, duo.h, ...duo.ab, `${names.item(duo.f)}, ${BEST}`);
-        duo.h.slots -= 1;
-        duo.h.on.push(duo.f);
-        continue;
-      }
-      const effect = `${names.effect(id) ?? 'son effet'} tout de suite`;
-      const begun = free.map(h => ({ h, f: h.ideal.find(f => ideal(h, f) && book.parts.get(f)?.includes(id)) })).find(x => x.f);
-      if (begun) {
-        const [a, b] = book.parts.get(begun.f);
-        alone(i, begun.h, id, `${effect} ; plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
-        continue;
-      }
-      // Un composant seul qui entre dans une recette idéale encore à faire (porté ou conseillé) n'est détourné que faute de
-      // place utile au rôle : le conseil reste le même une fois le composant posé.
-      const kept = h => h.ideal.some(f => ideal(h, f) && book.parts.get(f)?.includes(h.lone));
-      const useful = list => list.find(h => fits(h, fused(h, id)) && !h.on.includes(fused(h, id)));
-      const roleFuse = h => fuse(i, h, id, `${names.item(fused(h, id))}, ${ROLE_WHY[h.role]}`);
-      const open = useful(hs.filter(h => h.lone && !kept(h)));
-      if (open) {
-        roleFuse(open);
-        continue;
-      }
-      const twin = book.make.get(`${id}+${id}`);
-      const double = free.find(h => fits(h, twin) && !h.on.includes(twin));
-      if (double) {
-        alone(i, double, id, `${effect} ; plus tard avec ${names.item(id)} : ${names.item(twin)}, ${ROLE_WHY[double.role]}`);
-        continue;
-      }
-      const diverted = useful(hs.filter(h => h.lone && kept(h)));
-      if (diverted) {
-        roleFuse(diverted);
-        continue;
-      }
-      if (free[0]) {
-        alone(i, free[0], id, effect);
-        continue;
-      }
-      const any = hs.find(h => h.lone);
-      if (any) fuse(i, any, id, names.item(fused(any, id)));
-    }
+    for (const { id, i } of pending('part')) if (marks[i] === null) placePart(id, i);
     const why = hs.length ? 'toute la compo a 3 objets' : 'aucun Pokémon de la compo possédé';
     for (const { id, i } of [...pending('full'), ...pending('part')]) marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, why);
     return { marks, holders: hs };
   }
 
   // Récompense : d'après l'état des porteurs après les conseils du sac (composants seuls et places restantes).
-  function offerMarks(data, game, hs, names) {
+  function offerMarks(book, game, hs, names) {
     if (!hs.length || !game.reward.length) return game.reward.map(() => null);
-    const book = recipeBook(data);
     const value = id => hs.flatMap(h => h.ideal.filter(f => !h.on.includes(f)).map(f => {
       const ab = book.parts.get(f) ?? [];
       if (f === id) return h.slots > 0 && { s: 3, why: `${BEST} pour ${h.who}` };
@@ -853,7 +850,8 @@ const KT = (() => {
     });
     const choice = offerChoiceMarks(data, game, eco, names);
     const holders = target ? holdersOf(torre, data, game, target) : [];
-    const items = itemMarks(data, game, holders, target, names);
+    const book = target ? recipeBook(data) : null;
+    const items = itemMarks(data, game, holders, book, target, names);
     const units = target ? formation(target, game, data, holders, side) : [];
     return {
       game, eco, target, names, run,
@@ -862,7 +860,7 @@ const KT = (() => {
       xp: xp.mark,
       bench: sellMarks(game, target, names, shop.short),
       bag: items.marks,
-      reward: offerMarks(data, game, items.holders, names),
+      reward: offerMarks(book, game, items.holders, names),
       offer: choice.marks,
       unknownOffer: choice.unknown,
       anchor: anchorAdvice(target, game, names),
@@ -946,11 +944,12 @@ const KT = (() => {
     SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
-    boardCell,
+    boardCell, topHolders,
   };
 })();
 
 const CSS = `
+/* Jetons */
 :host { all: initial;
   /* Pastilles : couleurs fixes, posées sur le jeu toujours sombre ; bord sombre + liseré blanc = contraste sur les deux fonds */
   --kp-do-bg:#0072b2; --kp-do-fg:#fff; --kp-opt-bg:#fff; --kp-opt-fg:#141a33; --kp-no-bg:#f0e442; --kp-no-fg:#141a33;
@@ -958,14 +957,16 @@ const CSS = `
   --kt-space-1:4px; --kt-space-2:8px; --kt-space-3:12px; --kt-space-4:16px; --kt-font:system-ui,-apple-system,"Segoe UI",sans-serif; }
 .kt { --kt-surface:#fff; --kt-surface-2:#eef1fa; --kt-text:#141a33; --kt-muted:#4a5378; --kt-border:#c9cfe6; --kt-control:#737c9c;
   --kt-focus:#0072b2; --kt-good-bg:#0072b2; --kt-good-fg:#fff; --kt-bad-bg:#f0e442; --kt-bad-fg:#141a33; --kt-mid-bg:#dfe3f2; --kt-mid-fg:#141a33;
-  --kt-radius:12px;
-  position: fixed; z-index: 2147483647; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; box-sizing: border-box;
-  background: var(--kt-surface); color: var(--kt-text); border: 1px solid var(--kt-border); border-radius: var(--kt-radius);
-  box-shadow: 0 8px 24px rgb(0 0 0 / .35); font: 14px/1.4 var(--kt-font); font-variant-numeric: tabular-nums; }
+  --kt-radius:12px; }
 @media (prefers-color-scheme: dark) {
   .kt { --kt-surface:#141a33; --kt-surface-2:#1e2647; --kt-text:#eef1ff; --kt-muted:#aab3d6; --kt-border:#33406e; --kt-control:#7a86b8;
     --kt-focus:#56b4e9; --kt-good-bg:#56b4e9; --kt-good-fg:#141a33; --kt-mid-bg:#2c3660; --kt-mid-fg:#eef1ff; }
 }
+
+/* Panneau */
+.kt { position: fixed; z-index: 2147483647; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; box-sizing: border-box;
+  background: var(--kt-surface); color: var(--kt-text); border: 1px solid var(--kt-border); border-radius: var(--kt-radius);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .35); font: 14px/1.4 var(--kt-font); font-variant-numeric: tabular-nums; }
 .kt * { box-sizing: border-box; }
 .kt-bar { display: flex; align-items: center; gap: var(--kt-space-2); padding: var(--kt-space-2) var(--kt-space-3); background: var(--kt-surface-2); cursor: move; touch-action: none; user-select: none; }
 .kt-title { font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1018,6 +1019,8 @@ const CSS = `
 .kt.is-collapsed .kt-alert { display: none; }
 .kt-copied code { font-size: 12px; user-select: all; }
 .kt.is-collapsed .kt-copied { display: none; }
+
+/* Pastilles */
 .kp-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
 .kp { position: fixed; display: inline-flex; align-items: center; gap: var(--kt-space-1); height: 24px; min-width: 24px; padding: 0 var(--kt-space-2); translate: -50% 0;
   border-radius: 999px; border: 1px solid var(--kp-edge); font: 700 12px/1 var(--kt-font); white-space: nowrap; cursor: help;
@@ -1030,6 +1033,8 @@ const CSS = `
 .kp-opt, .kt-sym.kp-opt { background: var(--kp-opt-bg); color: var(--kp-opt-fg); }
 .kp-no, .kt-sym.kp-no { background: var(--kp-no-bg); color: var(--kp-no-fg); }
 .kp:focus-visible { outline: 2px solid var(--kp-focus); outline-offset: 2px; }
+
+/* Bulles */
 .kp-tip { display: none; position: absolute; left: 50%; translate: -50% 0; bottom: calc(100% + var(--kt-space-2)); width: 240px; padding: var(--kt-space-2) var(--kt-space-3);
   border-radius: 8px; background: var(--kp-tip-bg); color: var(--kp-tip-fg); font: 400 12px/1.4 var(--kt-font); white-space: normal;
   text-align: left; box-shadow: 0 8px 24px rgb(0 0 0 / .45); }
@@ -1062,148 +1067,113 @@ const COMPACT_BELOW = 64;
 // Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
 const TIP_HALF = 120;
 
-function mount() {
-  const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
-  const ui = { x: null, y: 16, collapsed: false, guide: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
-  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null };
+const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
-  const host = document.createElement('div');
-  const root = host.attachShadow({ mode: 'open' });
-  root.innerHTML = `<style>${CSS}</style>
-<div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
-  <div class="kt-bar">
-    <span class="kt-title">Étage</span>
-    <button class="kt-btn" data-act="dec" aria-label="Étage précédent">−</button>
-    <input class="kt-floor" inputmode="numeric" aria-label="Étage courant" placeholder="?">
-    <button class="kt-btn" data-act="inc" aria-label="Étage suivant">+</button>
-    <span class="kt-src"></span>
-    <button class="kt-btn" data-act="toggle"></button>
-  </div>
-  <div class="kt-alert" role="alert"></div>
-  <div class="kt-body"></div>
-  <p class="kt-copied" role="status"></p>
-  <div class="kt-foot"></div>
-</div>
-<div class="kp-layer"></div>`;
-  document.body.append(host);
-  const panel = root.querySelector('.kt');
-  const layer = root.querySelector('.kp-layer');
-  const input = root.querySelector('.kt-floor');
-  const body = root.querySelector('.kt-body');
-  const foot = root.querySelector('.kt-foot');
-  const toggle = root.querySelector('[data-act="toggle"]');
-  const src = root.querySelector('.kt-src');
-  const status = root.querySelector('.kt-copied');
-  const alertBox = root.querySelector('.kt-alert');
+// Conseils de partie seulement à l'étage de la sauvegarde : un étage saisi à la main ne sert qu'au prochain boss.
+const onSaveFloor = state => state.save !== null && state.floor === KT.floorFromSave(state.lastRaw);
 
-  const saveUi = () => localStorage.setItem(KT.UI_KEY, JSON.stringify(ui));
-
-  // Ancré à droite tant que le panneau n'a pas été déplacé, puis gardé dans la fenêtre.
-  function place() {
-    panel.style.top = `${Math.max(0, Math.min(ui.y, window.innerHeight - 40))}px`;
-    if (ui.x === null) {
-      panel.style.left = '';
-      panel.style.right = '16px';
-      return;
-    }
-    panel.style.right = 'auto';
-    panel.style.left = `${Math.max(0, Math.min(ui.x, window.innerWidth - panel.offsetWidth))}px`;
-  }
-
-  function guideHtml(floor) {
-    const g = KT.guideFor(floor);
-    const range = g.to === Infinity ? `étages ${g.from} et plus` : `étages ${g.from}–${g.to}`;
-    const shinies = g.shinies.length
-      ? `Shinies à saisir : ${esc(g.shinies.join(', '))}. ${esc(g.advice)} (conseil non vérifié ; un shiny a +10 % de PV, de défenses et de dégâts).`
-      : esc(g.advice);
-    return `<details class="kt-guide"${ui.guide ? ' open' : ''}><summary>Règles d’or · ${range}</summary>
+function guideHtml(floor, ui) {
+  const g = KT.guideFor(floor);
+  const range = g.to === Infinity ? `étages ${g.from} et plus` : `étages ${g.from}–${g.to}`;
+  const shinies = g.shinies.length
+    ? `Shinies à saisir : ${esc(g.shinies.join(', '))}. ${esc(g.advice)} (conseil non vérifié ; un shiny a +10 % de PV, de défenses et de dégâts).`
+    : esc(g.advice);
+  return `<details class="kt-guide"${ui.guide ? ' open' : ''}><summary>Règles d’or · ${range}</summary>
 <p>${shinies}</p><ul>${KT.GOLD_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>`;
-  }
+}
 
-  const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
+const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
 
-  function todoHtml(a) {
-    const order = { do: 0, opt: 1, no: 2 };
-    const seen = new Set();
-    const items = allMarks(a).sort((x, y) => order[x.level] - order[y.level]).filter(m => !seen.has(m.title) && seen.add(m.title));
-    const lines = items.map(m => `<li><span class="kt-sym kp-${m.level}" role="img" aria-label="${LEVEL_NAME[m.level]}">${SYM[m.level]}</span><span>${esc(m.title)} <span class="why">— ${esc(m.why)}</span></span></li>`);
-    for (const id of a.unknownOffer) lines.push(`<li><span></span><span>Bénédiction inconnue (${esc(id)}) <span class="why">— pas de conseil</span></span></li>`);
-    return lines.length ? `<ol class="kt-todo" aria-label="Conseils">${lines.join('')}</ol>` : '';
-  }
+function todoHtml(a) {
+  const order = { do: 0, opt: 1, no: 2 };
+  const seen = new Set();
+  const items = allMarks(a).sort((x, y) => order[x.level] - order[y.level]).filter(m => !seen.has(m.title) && seen.add(m.title));
+  const lines = items.map(m => `<li><span class="kt-sym kp-${m.level}" role="img" aria-label="${LEVEL_NAME[m.level]}">${SYM[m.level]}</span><span>${esc(m.title)} <span class="why">— ${esc(m.why)}</span></span></li>`);
+  for (const id of a.unknownOffer) lines.push(`<li><span></span><span>Bénédiction inconnue (${esc(id)}) <span class="why">— pas de conseil</span></span></li>`);
+  return lines.length ? `<ol class="kt-todo" aria-label="Conseils">${lines.join('')}</ol>` : '';
+}
 
-  function ecoHtml(a) {
-    const e = a.eco;
-    let wall = '';
-    if (e.allIn) wall = e.lowHp ? ` Tout jouer : PV sous 40.` : ' Tout jouer : combat difficile.';
-    else if (e.nextWall) wall = ` À l’étage ${e.nextWall.floor} (${esc(KT.bossName(e.nextWall.boss))}, ${KT.pct(e.nextWall.win)}) : tout jouer.`;
-    return `<p class="kt-eco">Or <b>${e.gold}</b> · palier ${e.floor} (intérêts +${e.floor / 10}) → <b>${e.spend} à dépenser</b>.${wall}</p>`;
-  }
+function ecoHtml(a) {
+  const e = a.eco;
+  let wall = '';
+  if (e.allIn) wall = e.lowHp ? ` Tout jouer : PV sous 40.` : ' Tout jouer : combat difficile.';
+  else if (e.nextWall) wall = ` À l’étage ${e.nextWall.floor} (${esc(KT.bossName(e.nextWall.boss))}, ${KT.pct(e.nextWall.win)}) : tout jouer.`;
+  return `<p class="kt-eco">Or <b>${e.gold}</b> · palier ${e.floor} (intérêts +${e.floor / 10}) → <b>${e.spend} à dépenser</b>.${wall}</p>`;
+}
 
-  function planHtml(a) {
-    if (!a.target) return `<div class="kt-plan">${ecoHtml(a)}${todoHtml(a)}</div>`;
-    const t = a.target;
-    const bosses = t.stops.filter(s => s.boss !== 'elite').map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
-    const chip = (id, core) => {
-      const base = KT.baseLine(id);
-      return `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, base)}${KT.shinyLine(a.game, base) ? ' shiny' : ''}</span></li>`;
-    };
-    return `<div class="kt-plan"><p class="kt-label">Compo cible${bosses ? ` · ${esc(bosses)}` : ''}</p>
+function planHtml(a, ui) {
+  if (!a.target) return `<div class="kt-plan">${ecoHtml(a)}${todoHtml(a)}</div>`;
+  const t = a.target;
+  const bosses = t.stops.filter(s => s.boss !== 'elite').map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
+  const chip = (id, core) => {
+    const base = KT.baseLine(id);
+    return `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, base)}${KT.shinyLine(a.game, base) ? ' shiny' : ''}</span></li>`;
+  };
+  return `<div class="kt-plan"><p class="kt-label">Compo cible${bosses ? ` · ${esc(bosses)}` : ''}</p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${ecoHtml(a)}${todoHtml(a)}
 <div class="kt-actions"><button class="kt-copy" data-act="copy">Copier la formation</button>
 <button class="kt-btn kt-side" data-act="side" aria-label="Côté du porteur dans la formation">Porteur : ${ui.side === 'left' ? 'gauche' : 'droite'}</button></div></div>`;
-  }
+}
 
-  function bossHtml() {
-    if (!state.torre) return '';
-    const stop = KT.nextBossStop(state.torre.stops, state.floor);
-    if (!stop) {
-      return `<p class="kt-msg"><strong>Aucun boss connu après l’étage ${KT.lastBossFloor(state.torre.stops)}</strong>Les statistiques publiques s’arrêtent là.</p>`;
-    }
-    const dist = stop.floor - state.floor;
-    const lvl = KT.rateLevel(stop.win);
-    const names = KT.namer(state.lang);
-    const cores = KT.topCores(state.torre.cores, stop.stop);
-    const coresHtml = cores.length
-      ? `<ol class="kt-cores">${cores.map(c => {
-        const l = KT.rateLevel(c.win);
-        return `<li><span>${esc(c.core.map(names.line).join(' · '))}</span><span class="kt-rate ${l.cls}">${l.sym} ${KT.pct(c.win)}</span><span class="n">${c.n} combats</span></li>`;
-      }).join('')}</ol>`
-      : '<p class="kt-msg">Aucun trio n’a encore 20 combats sur ce boss.</p>';
-    return `<div><p class="kt-label">Prochain boss</p>
+function bossHtml(state, ui) {
+  if (!state.torre) return '';
+  const stop = KT.nextBossStop(state.torre.stops, state.floor);
+  if (!stop) {
+    return `<p class="kt-msg"><strong>Aucun boss connu après l’étage ${KT.lastBossFloor(state.torre.stops)}</strong>Les statistiques publiques s’arrêtent là.</p>`;
+  }
+  const dist = stop.floor - state.floor;
+  const lvl = KT.rateLevel(stop.win);
+  const names = KT.namer(state.lang);
+  const cores = KT.topCores(state.torre.cores, stop.stop);
+  const coresHtml = cores.length
+    ? `<ol class="kt-cores">${cores.map(c => {
+      const l = KT.rateLevel(c.win);
+      return `<li><span>${esc(c.core.map(names.line).join(' · '))}</span><span class="kt-rate ${l.cls}">${l.sym} ${KT.pct(c.win)}</span><span class="n">${c.n} combats</span></li>`;
+    }).join('')}</ol>`
+    : '<p class="kt-msg">Aucun trio n’a encore 20 combats sur ce boss.</p>';
+  return `<div><p class="kt-label">Prochain boss</p>
 <p class="kt-boss">${esc(KT.bossName(stop.boss))} <small>· étage ${stop.floor}, ${dist ? `dans ${dist}` : 'en cours'}</small></p>
 <p class="kt-stats"><span class="kt-rate ${lvl.cls}">${lvl.sym} ${KT.pct(stop.win)} victoires</span> 1er essai ${KT.pct(stop.first)} · ${stop.tries.toLocaleString('fr-FR')} essais</p></div>
-${state.advice ? planHtml(state.advice) : ''}${state.save && !onSaveFloor() ? `<p class="kt-msg">Conseils de partie masqués : ta partie est à l’étage ${KT.floorFromSave(state.lastRaw)}.</p>` : ''}
+${state.advice ? planHtml(state.advice, ui) : ''}${state.save && !onSaveFloor(state) ? `<p class="kt-msg">Conseils de partie masqués : ta partie est à l’étage ${KT.floorFromSave(state.lastRaw)}.</p>` : ''}
 <div><p class="kt-label">Meilleurs trios (≥ 20 combats)</p>${coresHtml}</div>`;
-  }
+}
 
-  function alertHtml() {
-    if (!state.error) return '';
-    const effect = state.failed.some(k => k !== 'lang')
-      ? 'Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées.'
-      : 'Les objets et les sceaux sont nommés par leur identifiant.';
-    return `<p class="kt-msg"><strong>Données indisponibles (${esc(state.error)})</strong>${effect} Recharge la page dans une heure.</p>`;
-  }
+function alertHtml(state) {
+  if (!state.error) return '';
+  const effect = state.failed.some(k => k !== 'lang')
+    ? 'Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées.'
+    : 'Les objets et les sceaux sont nommés par leur identifiant.';
+  return `<p class="kt-msg"><strong>Données indisponibles (${esc(state.error)})</strong>${effect} Recharge la page dans une heure.</p>`;
+}
 
-  function contentHtml() {
-    if (state.error && !state.torre) {
-      const more = state.floor ? '' : '<p class="kt-msg">Saisis l’étage pour afficher les règles d’or.</p>';
-      return `${state.advice ? planHtml(state.advice) : ''}${more}${state.floor ? guideHtml(state.floor) : ''}`;
-    }
-    if (!state.torre) return '<p class="kt-msg" role="status">Chargement des statistiques de la Tour…</p>';
-    if (!state.floor) return '<p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p>';
-    return `${bossHtml()}${guideHtml(state.floor)}`;
+function panelHtml(state, ui) {
+  if (state.error && !state.torre) {
+    const more = state.floor ? '' : '<p class="kt-msg">Saisis l’étage pour afficher les règles d’or.</p>';
+    return `${state.advice ? planHtml(state.advice, ui) : ''}${more}${state.floor ? guideHtml(state.floor, ui) : ''}`;
   }
+  if (!state.torre) return '<p class="kt-msg" role="status">Chargement des statistiques de la Tour…</p>';
+  if (!state.floor) return '<p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p>';
+  return `${bossHtml(state, ui)}${guideHtml(state.floor, ui)}`;
+}
 
-  // Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien).
-  let lastHtml = null;
-  let lastCopied = '';
-  let lastAlert = '';
-  let lastFoot = '';
+function footHtml(state) {
+  const cached = state.stale ? ` · copie du ${esc(new Date(state.stale).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))}` : '';
+  const uncached = state.uncached ? ' · non gardé en cache' : '';
+  return `Du ${esc(KT.shortDate(state.torre.from))} au ${esc(KT.shortDate(state.torre.to))}${cached}${uncached} · Data: <a href="https://einoow.com" target="_blank" rel="noopener">Kanto Tactics · einoow.com</a>`;
+}
+
+function copiedHtml(state) {
+  if (state.copied === null) return '';
+  return state.copied.ok ? 'Code copié : colle-le dans Planificateur → Coller un code.'
+    : `Copie refusée par le navigateur : sélectionne le code et copie-le.<br><code>${esc(state.advice?.code ?? '')}</code>`;
+}
+
+// Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien).
+function pinLayer(layer) {
   let lastPins = null;
   let pins = [];
-  function paint() {
-    const a = state.advice;
+  function paint(a) {
     const sig = JSON.stringify(a && Object.keys(TARGETS).map(g => a[g]));
     if (sig === lastPins) {
       position();
@@ -1256,20 +1226,99 @@ ${state.advice ? planHtml(state.advice) : ''}${state.save && !onSaveFloor() ? `<
     }
   }
 
+  return { paint, position };
+}
+
+// Sources indépendantes : sans data.json ou lang.json, le prochain boss et les trios restent affichés.
+async function loadSources(state) {
+  const sources = [
+    ['torre', 'campana.json', KT.SOURCES.torre, j => KT.isTowerData(j?.modes?.torre), j => j.modes.torre],
+    ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j],
+    ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j],
+  ];
+  const env = { caches: globalThis.caches, fetch: (...a) => fetch(...a), now: Date.now() };
+  const results = await Promise.allSettled(sources.map(([, , url, accept]) => KT.loadJson(url, accept, env)));
+  const errors = [];
+  const stale = [];
+  results.forEach((r, i) => {
+    const [key, file, , , pick] = sources[i];
+    if (r.status === 'rejected') {
+      state.failed.push(key);
+      errors.push(`${file} : ${r.reason.message}`);
+      return;
+    }
+    state[key] = pick(r.value.json);
+    if (r.value.stale) stale.push(r.value.at);
+    if (r.value.uncached) state.uncached = true;
+  });
+  state.error = errors.length ? errors.join(' ; ') : null;
+  state.stale = stale.length ? Math.min(...stale) : null;
+}
+
+function mount() {
+  const ui = { x: null, y: 16, collapsed: false, guide: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null };
+
+  const host = document.createElement('div');
+  const root = host.attachShadow({ mode: 'open' });
+  root.innerHTML = `<style>${CSS}</style>
+<div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
+  <div class="kt-bar">
+    <span class="kt-title">Étage</span>
+    <button class="kt-btn" data-act="dec" aria-label="Étage précédent">−</button>
+    <input class="kt-floor" inputmode="numeric" aria-label="Étage courant" placeholder="?">
+    <button class="kt-btn" data-act="inc" aria-label="Étage suivant">+</button>
+    <span class="kt-src"></span>
+    <button class="kt-btn" data-act="toggle"></button>
+  </div>
+  <div class="kt-alert" role="alert"></div>
+  <div class="kt-body"></div>
+  <p class="kt-copied" role="status"></p>
+  <div class="kt-foot"></div>
+</div>
+<div class="kp-layer"></div>`;
+  document.body.append(host);
+  const panel = root.querySelector('.kt');
+  const layer = root.querySelector('.kp-layer');
+  const input = root.querySelector('.kt-floor');
+  const body = root.querySelector('.kt-body');
+  const foot = root.querySelector('.kt-foot');
+  const toggle = root.querySelector('[data-act="toggle"]');
+  const src = root.querySelector('.kt-src');
+  const status = root.querySelector('.kt-copied');
+  const alertBox = root.querySelector('.kt-alert');
+  const pins = pinLayer(layer);
+
+  let lastHtml = null;
+  let lastCopied = '';
+  let lastAlert = '';
+  let lastFoot = '';
+
+  const saveUi = () => localStorage.setItem(KT.UI_KEY, JSON.stringify(ui));
+
+  // Ancré à droite tant que le panneau n'a pas été déplacé, puis gardé dans la fenêtre.
+  function place() {
+    panel.style.top = `${Math.max(0, Math.min(ui.y, window.innerHeight - 40))}px`;
+    if (ui.x === null) {
+      panel.style.left = '';
+      panel.style.right = '16px';
+      return;
+    }
+    panel.style.right = 'auto';
+    panel.style.left = `${Math.max(0, Math.min(ui.x, window.innerWidth - panel.offsetWidth))}px`;
+  }
+
   let frame = 0;
   const schedule = () => {
     if (!frame) frame = requestAnimationFrame(() => {
       frame = 0;
-      position();
+      pins.position();
     });
   };
 
-  // Conseils de partie seulement à l'étage de la sauvegarde : un étage saisi à la main ne sert qu'au prochain boss.
-  const onSaveFloor = () => state.save !== null && state.floor === KT.floorFromSave(state.lastRaw);
-
   function compute() {
     const code = state.advice?.code;
-    state.advice = state.save && onSaveFloor() && (state.torre || state.error)
+    state.advice = state.save && onSaveFloor(state) && (state.torre || state.error)
       ? KT.advise({ torre: state.torre, data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side })
       : null;
     if (state.advice?.code !== code) state.copied = null;
@@ -1289,35 +1338,31 @@ ${state.advice ? planHtml(state.advice) : ''}${state.save && !onSaveFloor() ? `<
     if (root.activeElement !== input) input.value = state.floor ?? '';
     input.classList.toggle('is-empty', !state.floor);
     // Réécrire seulement ce qui change : un focus ou une bulle ouverte survit aux réécritures de la sauvegarde.
-    const html = contentHtml();
+    const html = panelHtml(state, ui);
     if (html !== lastHtml) {
       body.innerHTML = html;
       lastHtml = html;
     }
-    const alert = alertHtml();
+    const alert = alertHtml(state);
     if (alert !== lastAlert) {
       alertBox.innerHTML = alert;
       lastAlert = alert;
     }
     foot.hidden = !state.torre;
     if (state.torre) {
-      const cached = state.stale ? ` · copie du ${esc(new Date(state.stale).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))}` : '';
-      const uncached = state.uncached ? ' · non gardé en cache' : '';
-      const footer = `Du ${esc(KT.shortDate(state.torre.from))} au ${esc(KT.shortDate(state.torre.to))}${cached}${uncached} · Data: <a href="https://einoow.com" target="_blank" rel="noopener">Kanto Tactics · einoow.com</a>`;
+      const footer = footHtml(state);
       if (footer !== lastFoot) {
         foot.innerHTML = footer;
         lastFoot = footer;
       }
     }
-    const copied = state.copied === null ? ''
-      : state.copied.ok ? 'Code copié : colle-le dans Planificateur → Coller un code.'
-        : `Copie refusée par le navigateur : sélectionne le code et copie-le.<br><code>${esc(state.advice?.code ?? '')}</code>`;
+    const copied = copiedHtml(state);
     if (copied !== lastCopied) {
       status.innerHTML = copied;
       lastCopied = copied;
     }
     place();
-    paint();
+    pins.paint(state.advice);
   }
 
   function setManual(floor) {
@@ -1444,29 +1489,7 @@ ${state.advice ? planHtml(state.advice) : ''}${state.save && !onSaveFloor() ? `<
   pollSave();
   setInterval(pollSave, 2000);
 
-  // Sources indépendantes : sans data.json ou lang.json, le prochain boss et les trios restent affichés.
-  const sources = [
-    ['torre', 'campana.json', KT.SOURCES.torre, j => KT.isTowerData(j?.modes?.torre), j => j.modes.torre],
-    ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j],
-    ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j],
-  ];
-  const env = { caches: globalThis.caches, fetch: (...a) => fetch(...a), now: Date.now() };
-  Promise.allSettled(sources.map(([, , url, accept]) => KT.loadJson(url, accept, env))).then(results => {
-    const errors = [];
-    const stale = [];
-    results.forEach((r, i) => {
-      const [key, file, , , pick] = sources[i];
-      if (r.status === 'rejected') {
-        state.failed.push(key);
-        errors.push(`${file} : ${r.reason.message}`);
-        return;
-      }
-      state[key] = pick(r.value.json);
-      if (r.value.stale) stale.push(r.value.at);
-      if (r.value.uncached) state.uncached = true;
-    });
-    state.error = errors.length ? errors.join(' ; ') : null;
-    state.stale = stale.length ? Math.min(...stale) : null;
+  loadSources(state).then(() => {
     compute();
     render();
   }).catch(err => {

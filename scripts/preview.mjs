@@ -54,9 +54,7 @@ function slim(s) {
     torre: {
       rules: torre.rules, from: torre.from, to: torre.to, stops, cores: [...new Map(cores.map(c => [`${c.stop}|${c.core}`, c])).values()],
       lines: torre.lines.filter(l => lines.has(KT.baseLine(l.line))),
-      holders: torre.holders.filter(h => lines.has(KT.baseLine(h.line)) && h.n >= 20 && data.items[h.id]?.k === 'full')
-        .sort((a, b) => b.lo - a.lo).filter((h, i, all) => all.findIndex(x => x.line === h.line && x.id === h.id) === i)
-        .filter((h, i, all) => all.filter(x => x.line === h.line).indexOf(h) < 3),
+      holders: [...new Set(torre.holders.map(h => h.line))].filter(l => lines.has(KT.baseLine(l))).flatMap(l => KT.topHolders(torre, data, l)),
     },
     data: {
       ...data, lines: Object.fromEntries([...lines].filter(b => data.lines[b]).map(b => [b, data.lines[b]])),
