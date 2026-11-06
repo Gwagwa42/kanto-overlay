@@ -554,7 +554,7 @@ const KT = (() => {
   // ne serait plus clair). Renvoie aussi cet état final, pour le choix de la récompense.
   function itemMarks(data, game, holders, book, target, names) {
     const marks = game.bag.map(() => null);
-    if (!target || !data) return { marks, holders: [] };
+    if (!target) return { marks, holders: [] };
     const kind = id => data.items[id]?.k;
     const hs = holders.map(h => {
       const on = [...(h.unit.items ?? [])];
