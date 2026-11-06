@@ -507,6 +507,9 @@ const KT = (() => {
     return list.slice(0, MAX_ITEMS).map(h => h.id);
   }
 
+  // Portée inconnue : mêlée.
+  const isRanged = (data, base) => (lineInfo(data, base)?.range ?? 1) > 1;
+
   // Porteurs : un Pokémon possédé par lignée de la compo cible (le plus étoilé, puis celui qui porte le plus d'objets, puis
   // posé). Porteur (cœur, objets offensifs), tank (mêlée aux PV max), puis les autres (★, puis lineLo) : offensifs à distance,
   // défensifs en mêlée.
@@ -516,7 +519,7 @@ const KT = (() => {
         || Number(y.cell !== undefined) - Number(x.cell !== undefined))[0])
       .filter(Boolean);
     const rank = (a, b) => b.star - a.star || lineLo(torre, b.line) - lineLo(torre, a.line);
-    const melee = u => lineInfo(data, baseLine(u.line))?.range === 1;
+    const melee = u => !isRanged(data, baseLine(u.line));
     const hp = u => lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0;
     const carry = own.filter(u => target.core.some(id => baseLine(id) === baseLine(u.line))).sort(rank)[0];
     const tank = own.filter(u => u !== carry && melee(u)).sort((a, b) => hp(b) - hp(a))[0];
@@ -740,58 +743,70 @@ const KT = (() => {
   const rowOf = cell => Math.floor(cell / 7);
   const colOf = cell => cell % 7;
 
-  // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord). Un Pokémon déjà bien placé garde sa case
-  // (tank au premier rang, porteur à distance au fond du côté choisi, mêlée devant, distance au fond) ; les autres prennent les
-  // cases libres : avant depuis le centre (tank d'abord), fond depuis le coin du porteur. from : cellule actuelle, 'bench', ou
-  // null si le Pokémon n'est pas possédé.
+  // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). Chaque Pokémon a ses cases
+  // par préférence : tank au premier rang puis devant, porteur à distance dans le coin choisi puis au fond, mêlée devant
+  // (depuis le centre), distance au fond (depuis le coin). Déjà sur une case de sa première liste, il la garde ; sinon il prend
+  // la première case libre. unit : l'unité possédée (porteur de holdersOf), from : sa cellule, 'bench', ou null s'il n'est
+  // pas possédé.
   function formation(target, game, data, holders, side) {
-    const core = [...target.core].sort((a, b) => bestStar(game, baseLine(b)) - bestStar(game, baseLine(a)));
-    const units = [...core, ...target.fillers].slice(0, game.level).map(id => {
+    const stars = id => bestStar(game, baseLine(id));
+    const kept = new Set([...[...target.core].sort((a, b) => stars(b) - stars(a)), ...target.fillers].slice(0, game.level));
+    const units = [...target.core, ...target.fillers].filter(id => kept.has(id)).map(id => {
       const base = baseLine(id);
       const h = holders.find(x => baseLine(x.unit.line) === base);
       return {
-        line: id, base, star: Math.max(1, bestStar(game, base)), items: h ? h.ideal : [], role: h?.role ?? null,
-        ranged: (lineInfo(data, base)?.range ?? 1) > 1, from: h ? boardCell(h.unit.cell) ?? 'bench' : null,
+        line: id, base, star: Math.max(1, stars(id)), items: h ? h.ideal : [], role: h?.role ?? null, ranged: isRanged(data, base),
+        unit: h?.unit ?? null, from: h ? boardCell(h.unit.cell) ?? 'bench' : null,
       };
     });
-    const corner = c => (side === 'right' ? colOf(c) >= 4 : colOf(c) <= 2);
-    const wellPlaced = u => {
-      if (typeof u.from !== 'number') return false;
-      if (u.role === 'tank') return rowOf(u.from) === 0;
-      if (u.role === 'carry' && u.ranged) return rowOf(u.from) >= 2 && corner(u.from);
-      return u.ranged ? rowOf(u.from) >= 2 : rowOf(u.from) <= 1;
-    };
-    const taken = new Set(units.filter(wellPlaced).map(u => u.from));
     const edge = side === 'right' ? [6, 4, 2, 0, 5, 1, 3] : [0, 2, 4, 6, 1, 5, 3];
-    const frontCells = [0, 1].flatMap(r => [3, 2, 4, 1, 5, 0, 6].map(c => r * 7 + c));
-    const backCells = [3, 2].flatMap(r => edge.map(c => r * 7 + c));
-    const free = cells => {
-      const c = cells.find(x => !taken.has(x));
-      taken.add(c);
-      return c;
+    const front = [0, 1].flatMap(r => [3, 2, 4, 1, 5, 0, 6].map(c => r * 7 + c));
+    const back = [3, 2].flatMap(r => edge.map(c => r * 7 + c));
+    const corner = back.filter(c => (side === 'right' ? colOf(c) >= 4 : colOf(c) <= 2));
+    const zones = u => {
+      if (u.role === 'tank') return [front.filter(c => rowOf(c) === 0), front];
+      if (u.role === 'carry' && u.ranged) return [corner, back];
+      return [u.ranged ? back : front];
     };
+    const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
+    const taken = new Set([...stay].map(u => u.from));
     const first = role => (a, b) => Number(b.role === role) - Number(a.role === role);
-    const front = units.filter(u => !u.ranged).sort(first('tank'));
-    const back = units.filter(u => u.ranged).sort(first('carry'));
+    const order = [...units.filter(u => !u.ranged).sort(first('tank')), ...units.filter(u => u.ranged).sort(first('carry'))];
+    for (const u of order) {
+      u.cell = stay.has(u) ? u.from : zones(u).flat().find(c => !taken.has(c));
+      taken.add(u.cell);
+    }
     // Doc de l'API : unités triées par cellule.
-    return [...front.map(u => [u, frontCells]), ...back.map(u => [u, backCells])]
-      .map(([u, cells]) => ({ ...u, cell: wellPlaced(u) ? u.from : free(cells) }))
-      .sort((a, b) => a.cell - b.cell);
+    return units.sort((a, b) => a.cell - b.cell);
   }
 
   const ROW_NAMES = ['avant', '2ᵉ rangée', '3ᵉ rangée', 'fond'];
   const spot = cell => `${ROW_NAMES[rowOf(cell)]}, colonne ${colOf(cell) + 1}`;
 
-  // Déplacements vers la formation (conseils du panneau seul) : poser un Pokémon du banc, à la place d'un Pokémon hors formation
-  // si le plateau est plein, ou déplacer un Pokémon mal placé.
+  // Déplacements vers la formation (conseils du panneau seul), dans l'ordre où les faire : d'abord les Pokémon posés mal placés
+  // (celui qui libère une case avant celui qui y va), puis les poses depuis le banc. Une pose sur la case d'un Pokémon hors
+  // formation le remplace ; faute de place libre, elle fait ranger un Pokémon hors formation au banc.
   function moveAdvice(units, game, names) {
     const onBoard = game.units.filter(u => boardCell(u.cell) !== null);
-    const spare = onBoard.length >= game.level ? onBoard.filter(u => !units.some(f => f.base === baseLine(u.line))) : [];
-    return units.filter(u => u.from !== null && u.from !== u.cell).map(u => {
-      if (u.from !== 'bench') return mark('do', '', `Déplace ${names.line(u.base)}`, `${spot(u.from)} → ${spot(u.cell)}`);
-      const out = spare.shift();
-      return mark('do', '', `Pose ${names.line(u.base)}`, `${spot(u.cell)}${out ? `, à la place de ${names.line(out.line)}` : ''}`);
+    const used = new Set(units.map(f => f.unit?.id));
+    const spare = onBoard.filter(u => !used.has(u.id));
+    let room = game.level - onBoard.length;
+    const movers = units.filter(u => typeof u.from === 'number' && u.from !== u.cell);
+    const moves = [];
+    while (movers.length) {
+      const k = movers.findIndex(u => !movers.some(v => v !== u && v.from === u.cell));
+      const [u] = movers.splice(Math.max(k, 0), 1);
+      moves.push(mark('do', '', `Déplace ${names.line(u.base)}`, `${spot(u.from)} → ${spot(u.cell)}`));
+    }
+    const poses = units.filter(u => u.from === 'bench').map(u => {
+      const there = spare.find(s => boardCell(s.cell) === u.cell);
+      const out = there ?? (room > 0 ? null : spare[0]);
+      if (out) spare.splice(spare.indexOf(out), 1);
+      else room -= 1;
+      const why = !out ? '' : out === there ? `, à la place de ${names.line(out.line)}` : ` ; range ${names.line(out.line)} au banc`;
+      return mark('do', '', `Pose ${names.line(u.base)}`, `${spot(u.cell)}${why}`);
     });
+    return [...moves, ...poses];
   }
 
   function kt1Code(units, rules) {

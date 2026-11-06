@@ -36,8 +36,10 @@ barre le remet en haut à droite.
   rôle : offensif au porteur puis aux attaquants, défensif au tank puis à la mêlée. 3 objets au plus par Pokémon ; « Garde »
   seulement quand toute la compo est pleine. La récompense d'objet se choisit d'après ce qui reste à compléter après ces conseils.
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
-- **Formation** : la compo cible dans la limite du niveau. Un Pokémon déjà bien placé garde sa case ; les autres vont devant pour la
-  mêlée (tank au centre), au fond et espacés pour la distance, porteur dans le coin choisi (bouton « Porteur »).
+- **Formation** : la compo cible dans la limite du niveau. Chaque Pokémon a sa zone : tank au premier rang, porteur à distance dans
+  le coin choisi (bouton « Porteur »), mêlée devant, distance au fond. Un Pokémon déjà dans sa zone garde sa case ; les autres
+  prennent la première case libre (avant depuis le centre, fond depuis le coin). Les déplacements sont listés dans l'ordre où les
+  faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors formation si le plateau est plein.
 
 ## Installation (Firefox)
 

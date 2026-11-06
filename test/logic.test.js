@@ -432,18 +432,52 @@ test('formation : une seule unité par cellule, niveaux 3 à 9, des deux côtés
   }
 });
 
-test('déplacements : poser depuis le banc, déplacer un mal placé, à la place d’un hors formation si le plateau est plein', () => {
-  const a = advise(S57);
-  assert.deepEqual(a.moves.map(m => `${m.title} — ${m.why}`), [
-    'Pose Caninos — avant, colonne 4', 'Déplace Goupix — avant, colonne 4 → fond, colonne 1',
-  ]);
-  assert.ok(a.moves.every(m => m.level === 'do' && m.label === ''));
-  // Niveau 3, plateau plein (Minidraco, Goupix, Rattata) : Caninos remplace Rattata, hors formation.
-  const full = advise({ ...S57, level: 3, board: { 29: 'a', 31: 'd', 30: 'e' }, bench: ['b', 'c', null, null, null, null, null, null, null] });
-  assert.match(full.moves.find(m => m.title === 'Pose Caninos').why, /, à la place de Rattata$/);
+const BENCH = ids => [...ids, ...Array(9 - ids.length).fill(null)];
+const moves = (save, extra) => advise(save, extra).moves.map(m => `${m.title} — ${m.why}`);
+
+test('déplacements : d’abord libérer la case, puis poser depuis le banc', () => {
+  // S57 : Goupix (distance) quitte la case avant-colonne 4 avant que Caninos (tank) y soit posé.
+  assert.deepEqual(moves(S57), ['Déplace Goupix — avant, colonne 4 → fond, colonne 1', 'Pose Caninos — avant, colonne 4']);
+  assert.ok(advise(S57).moves.every(m => m.level === 'do' && m.label === ''));
   // Déjà bien placé partout : aucun déplacement.
-  const placed = { ...S57, level: 2, board: { 29: 'a', 31: 'b' }, bench: ['c', 'd', 'e', null, null, null, null, null, null] };
-  assert.deepEqual(advise(placed).moves, []);
+  assert.deepEqual(moves({ ...S57, level: 2, board: { 29: 'a', 31: 'b' }, bench: BENCH(['c', 'd', 'e']) }), []);
+});
+
+test('déplacements : remplacer l’occupant hors formation, ranger au banc faute de place, copie en double comptée', () => {
+  // Niveau 3 (Minidraco, Caninos, Ptéra) : Goupix, hors formation, occupe la case du tank.
+  assert.deepEqual(moves({ ...S57, level: 3, board: { 29: 'a', 31: 'd', 30: 'e' }, bench: BENCH(['b', 'c']) }),
+    ['Pose Caninos — avant, colonne 4, à la place de Goupix']);
+  // Niveau 4, 3 posés : la 1ʳᵉ pose prend la place libre, la 2ᵉ fait ranger Rattata.
+  const f = { id: 'f', line: 'ekans', star: 1 };
+  assert.deepEqual(moves({ ...S57, level: 4, units: { ...S57.units, f }, board: { 29: 'a', 30: 'e', 32: 'f' }, bench: BENCH(['b', 'c', 'd']) }),
+    ['Pose Caninos — avant, colonne 4', 'Pose Goupix — fond, colonne 1 ; range Rattata au banc']);
+  // Caninos ★★ au banc, Caninos ★ posé : la copie posée n'est pas dans la formation, elle libère la place.
+  const twins = { ...S57, level: 2, units: { ...S57.units, c: { id: 'c', line: 'growlithe', star: 2 } }, board: { 29: 'a', 30: 'b' }, bench: BENCH(['c', 'd', 'e']) };
+  assert.deepEqual(moves(twins), ['Pose Caninos — avant, colonne 4 ; range Caninos au banc']);
+});
+
+test('formation : porteur à distance dans le coin du côté choisi, gardé s’il y est déjà', () => {
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const t = { ...torre, stops, cores: [{ stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 }] };
+  const at = (cell, side) => KT.advise({
+    torre: t, data, lang, side, previous: null,
+    save: { ...save, round: 1009, level: 3, units: { x: { id: 'x', line: 'abra', star: 2 } }, board: { [cell]: 'x' }, bench: [], shop: [] },
+  });
+  assert.deepEqual(at(29, 'left').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 1']);
+  assert.deepEqual(at(29, 'right').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 7']);
+  // Fond, colonne 3 : dans le coin gauche (gardé), hors du coin droit.
+  assert.deepEqual(at(51, 'left').moves, []);
+  assert.match(at(51, 'left').code, /abra:2:23/);
+  assert.deepEqual(at(51, 'right').moves.map(m => m.why), ['fond, colonne 3 → fond, colonne 7']);
+  // Onix et Goupix (distance) déjà au fond en colonnes 1 et 3 : le porteur reste dans le coin (colonne 2), pas en colonne 5.
+  const corner = KT.advise({
+    torre: { ...t, cores: [{ stop: '10:brock', core: ['abra', 'onix', 'vulpix'], n: 50, win: 90, lo: 80 }] }, data, lang, side: 'left', previous: null,
+    save: {
+      ...save, round: 1009, level: 3, shop: [], bench: ['x'], board: { 49: 'o', 51: 'v' },
+      units: { x: { id: 'x', line: 'abra', star: 2 }, o: { id: 'o', line: 'onix', star: 1 }, v: { id: 'v', line: 'vulpix', star: 1 } },
+    },
+  });
+  assert.deepEqual(corner.moves.map(m => `${m.title} — ${m.why}`), ['Pose Abra — fond, colonne 2']);
 });
 
 // Faux Cache Storage et faux fetch : la file `replies` donne les réponses (Error = rejet de fetch, textError = rejet de la
