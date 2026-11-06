@@ -21,8 +21,9 @@ const SHINY = {
   ...S57,
   units: {
     ...S57.units, a: { ...S57.units.a, shiny: true }, e: { ...S57.units.e, shiny: true },
-    f: { id: 'f', line: 'zubat', star: 1 }, g: { id: 'g', line: 'zubat', star: 1 }, h: { id: 'h', line: 'pidgey', star: 1 },
-    i: { id: 'i', line: 'pidgey', star: 1 }, j: { id: 'j', line: 'ekans', star: 1 },
+    // Lignées déjà dans la boutique : la page reste sous la limite d'une URL data:.
+    f: { id: 'f', line: 'magmar', star: 1 }, g: { id: 'g', line: 'magmar', star: 1 }, h: { id: 'h', line: 'aerodactyl', star: 1 },
+    i: { id: 'i', line: 'aerodactyl', star: 1 }, j: { id: 'j', line: 'ekans', star: 1 },
   },
   bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null],
 };
