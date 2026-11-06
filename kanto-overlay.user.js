@@ -40,10 +40,11 @@ const KT = (() => {
   const MIN_FIGHTS = 20;
   const HARD_WIN = 45;
   const LOW_HP = 40;
-  // Compo cible : combats vus d'avance (≈ 25 étages, élites comprises) et gain minimal pour changer de trio.
+  // Compo cible : combats vus d'avance (≈ 20 étages, élites comprises) et gain minimal pour changer de trio.
   const HORIZON = 9;
   const INERTIA = 30;
-  const OWNED_BONUS = 5;
+  // Par Pokémon possédé (+10, puis +10 à ★★) : un trio monté en ★★ (+60) l'emporte sur l'inertie.
+  const OWNED_BONUS = 10;
   // Règles de la Tour v41 lues dans le code du jeu (route-*.js) : absentes de l'API publique.
   const XP_TO_NEXT = [0, 2, 4, 8, 12, 16, 24, 40, 96, 120];
   const XP_COST = 4;
@@ -347,7 +348,7 @@ const KT = (() => {
     return gain;
   }
 
-  function targetComp(torre, data, game, previous) {
+  function targetComp(torre, data, game, previousKey) {
     const stops = nextStops(torre.stops, game.floor, HORIZON);
     if (!stops.length) return null;
     const coresByStop = new Map(stops.map(st => [st.stop, new Map(torre.cores
@@ -358,19 +359,20 @@ const KT = (() => {
     if (!candidates.size) return null;
     let best = null;
     for (const [key, core] of candidates) {
-      const score = coreScore(core, stops, coresByStop, game) + (key === previous ? INERTIA : 0);
+      const score = coreScore(core, stops, coresByStop, game) + (key === previousKey ? INERTIA : 0);
       if (!best || score > best.score) best = { key, core: [...core], score };
     }
     const chosen = best.core.map(baseLine);
     const pool = [...new Set([...game.units.map(u => baseLine(u.line)), ...game.shop.filter(Boolean)])].filter(b => lineInfo(data, b));
     // Remplissage jusqu'au niveau : lignées qui apportent un type à la compo, les unités possédées d'abord ; la boutique ne
     // complète que les places restantes.
+    const owned = b => Number(bestStar(game, b) > 0);
     const fillers = [];
     while (chosen.length < game.level) {
       const next = pool
         .filter(b => !chosen.includes(b) && traitGain(data, chosen, b) > 0)
-        .sort((a, b) => bestStar(game, b) - bestStar(game, a) || traitGain(data, chosen, b) - traitGain(data, chosen, a)
-          || lineLo(torre, b) - lineLo(torre, a) || a.localeCompare(b))[0];
+        .sort((a, b) => owned(b) - owned(a) || traitGain(data, chosen, b) - traitGain(data, chosen, a)
+          || bestStar(game, b) - bestStar(game, a) || lineLo(torre, b) - lineLo(torre, a) || a.localeCompare(b))[0];
       if (!next) break;
       chosen.push(next);
       fillers.push(next);

@@ -176,6 +176,20 @@ test('compléments : unités possédées avant la boutique, stables quand la bou
   assert.deepEqual(fill(['doduo', 'ekans']), ['rattata']);
   assert.deepEqual(fill(['zubat', 'meowth']), ['rattata']);
   assert.deepEqual(KT.targetComp(t, data, KT.readGame({ ...base, units: {}, board: {}, shop: ['doduo'] }), null).fillers, ['doduo']);
+  // Entre unités possédées, le gain de type passe avant les étoiles : Doduo ★ (gain 2) avant Rattata ★★ (gain 1).
+  const both = { ...base, units: { r: { id: 'r', line: 'rattata', star: 2 }, d: { id: 'd', line: 'doduo', star: 1 } }, board: { 0: 'r', 1: 'd' }, shop: [] };
+  assert.deepEqual(KT.targetComp(t, data, KT.readGame(both), null).fillers, ['doduo']);
+});
+
+test('compo cible : un trio monté en ★★ l’emporte sur l’inertie d’un trio non possédé', () => {
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const cores = [
+    { stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 50 },
+    { stop: '10:brock', core: ['pidgey', 'rattata', 'spearow'], n: 50, win: 90, lo: 50 },
+  ];
+  const units = Object.fromEntries(['pidgey', 'rattata', 'spearow'].map(line => [line, { id: line, line, star: 2 }]));
+  const game = KT.readGame({ ...save, round: 1009, level: 3, units, board: { 0: 'pidgey', 1: 'rattata', 2: 'spearow' }, bench: [], shop: [] });
+  assert.equal(KT.targetComp({ ...torre, stops, cores }, data, game, 'abra+onix+zubat').key, 'pidgey+rattata+spearow');
 });
 
 test('achat d’une carte ★ : les autres pastilles de la boutique ne changent pas', () => {
@@ -194,7 +208,7 @@ test('boutique : ★ 3ᵉ copie et cœur, ◆ si l’or, ✕ hors compo', () => 
   const a = advise(S57);
   // Caninos et Ptéra (★, 8 pièces) laissent 30 : Magmar (3) ferait passer sous le palier.
   assert.deepEqual(a.shop.map(brief), ['do Achète', 'do Achète', 'no Ignore', 'no Ignore', 'no Ignore']);
-  assert.match(a.shop[2].why, /garde 30 pièces/);
+  assert.match(a.shop[2].why, /^complément de la compo ; garde 30 pièces/);
   assert.equal(brief(advise({ ...S57, gold: 41 }).shop[2]), 'opt Si l’or');
   assert.match(a.shop[0].why, /3ᵉ copie/);
   assert.match(a.shop[1].why, /cœur/);
