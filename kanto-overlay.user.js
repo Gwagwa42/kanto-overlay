@@ -547,10 +547,9 @@ const KT = (() => {
   // et fusionne avec le prochain composant posé sur ce Pokémon. Chaque objet du sac est conseillé une fois ; l'état de chaque
   // porteur (objets, places, composant seul) suit les conseils, et une seule paire par Pokémon et par passage (l'ordre de pose
   // ne serait plus clair). Renvoie aussi cet état final, pour le choix de la récompense.
-  function itemMarks(data, game, holders, target, names) {
+  function itemMarks(data, game, holders, book, target, names) {
     const marks = game.bag.map(() => null);
     if (!target || !data) return { marks, holders: [] };
-    const book = recipeBook(data);
     const kind = id => data.items[id]?.k;
     const hs = holders.map(h => {
       const on = [...(h.unit.items ?? [])];
@@ -672,9 +671,8 @@ const KT = (() => {
   }
 
   // Récompense : d'après l'état des porteurs après les conseils du sac (composants seuls et places restantes).
-  function offerMarks(data, game, hs, names) {
+  function offerMarks(book, game, hs, names) {
     if (!hs.length || !game.reward.length) return game.reward.map(() => null);
-    const book = recipeBook(data);
     const value = id => hs.flatMap(h => h.ideal.filter(f => !h.on.includes(f)).map(f => {
       const ab = book.parts.get(f) ?? [];
       if (f === id) return h.slots > 0 && { s: 3, why: `${BEST} pour ${h.who}` };
@@ -853,7 +851,8 @@ const KT = (() => {
     });
     const choice = offerChoiceMarks(data, game, eco, names);
     const holders = target ? holdersOf(torre, data, game, target) : [];
-    const items = itemMarks(data, game, holders, target, names);
+    const book = target ? recipeBook(data) : null;
+    const items = itemMarks(data, game, holders, book, target, names);
     const units = target ? formation(target, game, data, holders, side) : [];
     return {
       game, eco, target, names, run,
@@ -862,7 +861,7 @@ const KT = (() => {
       xp: xp.mark,
       bench: sellMarks(game, target, names, shop.short),
       bag: items.marks,
-      reward: offerMarks(data, game, items.holders, names),
+      reward: offerMarks(book, game, items.holders, names),
       offer: choice.marks,
       unknownOffer: choice.unknown,
       anchor: anchorAdvice(target, game, names),
