@@ -304,7 +304,7 @@ test('shiny : « s » après l’étoile dans le code KT1', () => {
 });
 
 test('shiny : départage le porteur, le tank et le remplissage', () => {
-  // Minidraco et Caninos à 2★ : le shiny porte (fond), l'autre tient le centre de la première rangée (case 3).
+  // Minidraco et Caninos à 2★ : le shiny devient porteur ; l'autre, tank, prend le centre de la première rangée (case 3).
   const lay = { board: { ...S57.board, 30: 'b' }, bench: [null, 'c', 'e', null, null, null, null, null, null] };
   const g2 = { b: { ...S57.units.b, star: 2 } };
   assert.match(advise(withUnits(g2, lay)).code, /;growlithe:2:3:/);
@@ -329,7 +329,8 @@ test('shiny : pas de « Vends » jusqu’à l’étage 120, boutique sans raison
   assert.equal(advise({ ...full, round: 1199 }).bench[3].title, 'Vends Abo');
   const owned = withUnits({ m: { id: 'm', line: 'magmar', star: 1, shiny: true } },
     { shopShiny: [false, false, true, false, false], bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
-  assert.doesNotMatch(advise(owned).shop[2].why, /\+10 %/);
+  // Magmar reste dans la compo : seule la raison shiny disparaît.
+  assert.deepEqual([brief(advise(owned).shop[2]), advise(owned).shop[2].why], ['no Ignore', 'garde 30 pièces pour les intérêts']);
 });
 
 // Faux Cache Storage et faux fetch : la file `replies` donne les réponses (Error = rejet de fetch, textError = rejet de la

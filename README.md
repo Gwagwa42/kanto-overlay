@@ -32,8 +32,8 @@ barre le remet en haut à droite.
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
 - **Formation** : mêlée devant (tank au centre), distance au fond et espacée, porteur dans le coin choisi (bouton « Porteur »).
 - **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny » dans la compo cible,
-  ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, n'est pas proposée à la vente jusqu'à l'étage 120 et
-  s'écrit `ligne:2s:…` dans le code KT1.
+  ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, et s'écrit `ligne:2s:…` dans le code KT1. Une
+  unité shiny n'est pas proposée à la vente jusqu'à l'étage 120.
 
 ## Installation (Firefox)
 
