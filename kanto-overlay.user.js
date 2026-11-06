@@ -45,7 +45,7 @@ const KT = (() => {
   // Shiny : +10 % de PV, dégâts et défenses (makeUnit du jeu) ; bonus de trio sous l'inertie et sous une copie possédée.
   const SHINY_BONUS = 2;
   const SHINY_HP = 1.1;
-  // Dernier étage où le guide conseille encore de ramasser les shinies : pas de « Vends » jusque-là.
+  // Pas de « Vends » pour un shiny jusqu'à cet étage (choix de jeu : tranches du guide où on les ramasse sans condition d'économie).
   const SHINY_KEEP_TO = 120;
   // Règles de la Tour v41 lues dans le code du jeu (route-*.js) : absentes de l'API publique.
   const XP_TO_NEXT = [0, 2, 4, 8, 12, 16, 24, 40, 96, 120];
@@ -306,8 +306,8 @@ const KT = (() => {
 
   const unitsOf = (game, base) => game.units.filter(u => baseLine(u.line) === base);
   const bestStar = (game, base) => Math.max(0, ...unitsOf(game, base).map(u => u.star));
-  // La fusion transmet le shiny : la lignée l'est dès qu'une copie l'est.
-  const shinyLine = (game, base) => unitsOf(game, base).some(u => u.shiny);
+  // Lignée shiny : sa copie de meilleure étoile l'est (celle que décrivent la progression et le code KT1).
+  const shinyLine = (game, base) => unitsOf(game, base).some(u => u.shiny && u.star === bestStar(game, base));
   const ones = (game, base) => unitsOf(game, base).filter(u => u.star === 1).length;
   const pathCount = (boons, path) => boons.filter(b => boonPath(b) === path).length;
 
@@ -514,7 +514,7 @@ const KT = (() => {
       || lineLo(torre, b.line) - lineLo(torre, a.line))[0];
     const hp = u => (lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0) * (u.shiny ? SHINY_HP : 1);
     const tank = game.units
-      .filter(u => u !== carry && targetBases(target).includes(baseLine(u.line)) && lineInfo(data, baseLine(u.line))?.range === 1)
+      .filter(u => baseLine(u.line) !== (carry && baseLine(carry.line)) && targetBases(target).includes(baseLine(u.line)) && lineInfo(data, baseLine(u.line))?.range === 1)
       .sort((a, b) => hp(b) - hp(a))[0];
     return [['carry', carry], ['tank', tank]].filter(([, u]) => u).map(([role, u]) => ({ role, unit: u, ideal: idealItems(torre, data, u.line) }));
   }

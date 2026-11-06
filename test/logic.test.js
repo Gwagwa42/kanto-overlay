@@ -286,10 +286,14 @@ test('formation : code KT1 (rangée 0 = avant, porteur côté choisi)', () => {
 // Unités de S57 remplacées ou ajoutées ; shiny : +10 % (makeUnit du jeu), transmis par la fusion.
 const withUnits = (units, extra = {}) => ({ ...S57, units: { ...S57.units, ...units }, ...extra });
 
-test('shiny : lignée shiny dès qu’une copie l’est, +2 points au trio', () => {
+test('shiny : lignée shiny si sa copie de meilleure étoile l’est, +2 points au trio', () => {
   const shiny = withUnits({ b: { ...S57.units.b, shiny: true } });
   assert.equal(KT.shinyLine(KT.readGame(shiny), 'growlithe'), true);
   assert.equal(KT.shinyLine(KT.readGame(S57), 'growlithe'), false);
+  // Minidraco 2★ normal et 1★ shiny : pas de 2★ shiny annoncé (ni « s » dans le code KT1).
+  const lower = withUnits({ x: { id: 'x', line: 'dratini', star: 1, shiny: true } }, { bench: ['b', 'c', 'e', 'x', null, null, null, null, null] });
+  assert.equal(KT.shinyLine(KT.readGame(lower), 'dratini'), false);
+  assert.match(advise(lower).code, /;dratini:2:4:/);
   const stops = KT.nextStops(torre.stops, 57);
   const core = ['aerodactyl', 'dratini', 'growlithe'];
   assert.equal(KT.coreScore(core, stops, new Map(), KT.readGame(shiny)) - KT.coreScore(core, stops, new Map(), KT.readGame(S57)), 2);
