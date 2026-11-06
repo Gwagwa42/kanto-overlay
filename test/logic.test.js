@@ -278,7 +278,8 @@ test('vendre : unité du banc hors compo et sans paire, banc presque plein', () 
   const kept = { ...full, units: { ...full.units, f: { id: 'f', line: 'chansey', star: 1 } } };
   assert.equal(advise(kept).next.key, 'chansey+dratini+lapras');
   assert.equal(advise(kept).bench[3], null);
-  assert.equal(brief(advise({ ...kept, gold: 3 }).bench[3]), 'no Vends');
+  const sold = advise({ ...kept, gold: 3 }).bench[3];
+  assert.deepEqual([brief(sold), sold.why], ['no Vends', 'il manque de l’or pour un achat conseillé']);
 });
 
 // Combats aux étages 10 à 27 : la compo cible se joue sur 10–18, la compo suivante sur 19–27.
@@ -333,6 +334,10 @@ test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamai
   assert.equal(roll.shop[0].why, 'compo des étages 80–100 ; l’or va d’abord à l’actualisation pour la compo cible');
   assert.equal(brief(roll.reroll), 'do Actualise');
   assert.equal(brief(advise({ ...S57, gold: 36, shop: ['chansey', 'rattata', 'ekans', null, null] }).shop[0]), 'opt Si l’or');
+  // Actualisation non conseillée (31 pièces) : rien n'est réservé pour elle, Chenipan (1) garde le palier.
+  const cheap = advise({ ...EMPTY10, gold: 31, shop: ['caterpie', null, null, null, null] },
+    { torre: twoWindows([[['caterpie', 'pidgey', 'rattata'], 80]]) });
+  assert.deepEqual([brief(cheap.shop[0]), brief(cheap.reroll)], ['opt Si l’or', 'no Garde l’or']);
 });
 
 // S57 : porteur Minidraco ★★ (idéal Bandeau Choix, Ceinture Force, Lentilscope), tank Caninos (idéal Lentilscope, Cuiller

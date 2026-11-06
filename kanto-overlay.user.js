@@ -423,8 +423,8 @@ const KT = (() => {
   const proofText = (p, names) => (p ? `${p.c.core.map(names.line).join(' · ')} : ${pct(p.c.win)} contre ${bossName(p.st.boss)} ${p.st.floor} (${p.c.n} combats, au moins ${pct(p.c.lo)})` : '');
 
   // Marques de la boutique et or restant. Priorités : ★ (de gauche à droite), puis l'or réservé par reserve(or restant)
-  // (l'XP conseillée), puis les ◆ de la compo cible, puis ceux de la compo suivante (hors tout jouer). short : un ★ a été
-  // rétrogradé faute d'or (déclenche « Vends »).
+  // (l'XP conseillée), puis les ◆ de la compo cible, puis l'actualisation, puis les ◆ de la compo suivante (hors tout jouer).
+  // short : un ★ a été rétrogradé faute d'or (déclenche « Vends »).
   function shopMarks(game, target, next, data, eco, names, reserve) {
     const core = target ? target.core.map(baseLine) : [];
     const wanted = targetBases(target);
@@ -468,8 +468,8 @@ const KT = (() => {
         marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, c.triple ? '3ᵉ copie hors compo' : 'renforce le plateau de la compo');
       }
     });
-    // L'actualisation qui cherche les copies de la compo cible passe avant la compo suivante.
-    const reroll = target && targetIncomplete(game, target) ? REROLL_COST : 0;
+    // L'actualisation conseillée (voir rerollMark) passe avant la compo suivante.
+    const reroll = target && targetIncomplete(game, target) && left - REROLL_COST >= eco.floor ? REROLL_COST : 0;
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
       if (c.inNext && !c.inTarget) {
@@ -531,7 +531,8 @@ const KT = (() => {
       const base = baseLine(u.line);
       const paired = game.units.some(x => x.id !== u.id && baseLine(x.line) === base && x.star === u.star);
       if (wanted.includes(base) || paired || (u.shiny && game.floor <= SHINY_KEEP_TO) || (free > 1 && !short)) return null;
-      return mark('no', 'Vends', `Vends ${names.line(u.line)}`, free > 1 ? 'il manque de l’or pour un achat conseillé' : 'hors compo, libère le banc');
+      const forGold = free > 1 || nextBases(next).includes(base);
+      return mark('no', 'Vends', `Vends ${names.line(u.line)}`, forGold ? 'il manque de l’or pour un achat conseillé' : 'hors compo, libère le banc');
     });
   }
 
