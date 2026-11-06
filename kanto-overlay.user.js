@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      1.1.0
+// @version      1.4.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -40,9 +40,12 @@ const KT = (() => {
   const MIN_FIGHTS = 20;
   const HARD_WIN = 45;
   const LOW_HP = 40;
-  const INERTIA = 5;
-  const OWNED_BONUS = 5;
-  // Shiny : +10 % de PV, dégâts et défenses (makeUnit du jeu) ; bonus de trio sous l'inertie et sous une copie possédée.
+  // Compo cible : combats vus d'avance (≈ 20 étages, élites comprises) et gain minimal pour changer de trio.
+  const HORIZON = 9;
+  const INERTIA = 30;
+  // Par Pokémon possédé (+10, puis +10 à ★★) : un trio monté en ★★ (+60) l'emporte sur l'inertie.
+  const OWNED_BONUS = 10;
+  // Shiny : +10 % de PV, dégâts et défenses (makeUnit du jeu) ; bonus de trio bien sous une copie possédée et sous l'inertie.
   const SHINY_BONUS = 2;
   const SHINY_HP = 1.1;
   // Pas de « Vends » pour un shiny jusqu'à cet étage (choix de jeu : tranches du guide où on les ramasse sans condition d'économie).
@@ -55,6 +58,8 @@ const KT = (() => {
   const FORTUNE_INTEREST = 2;
   const PATH_SIZE = 3;
   const MAX_ITEMS = 3;
+  // Stats offensives des objets (data.items[id].stat) ; les autres (hp, def, spd, shield) sont défensives.
+  const OFFENSE = ['atk', 'spa', 'as', 'crit', 'mana', 'vamp'];
   // Bénédictions de la Tour v41 (absentes de l'API) → voie (null : hors voie) et nom ; ordre = préférence à égalité.
   const BOONS = {
     coincase: ['fortune', 'Boîte Jetons'], nugget: ['fortune', 'Maxi Pépite'], fbag: ['fortune', 'Sac de Jetons'],
@@ -263,6 +268,7 @@ const KT = (() => {
       line,
       stage: (base, n) => LINES[base]?.[n] ?? base,
       item: id => lang?.items[id]?.name ?? id,
+      effect: id => lang?.items[id]?.short ?? null,
       seal: id => lang?.seals[id]?.name ?? id,
     };
   }
@@ -352,8 +358,8 @@ const KT = (() => {
     return gain;
   }
 
-  function targetComp(torre, data, game, previous) {
-    const stops = nextStops(torre.stops, game.floor);
+  function targetComp(torre, data, game, previousKey) {
+    const stops = nextStops(torre.stops, game.floor, HORIZON);
     if (!stops.length) return null;
     const coresByStop = new Map(stops.map(st => [st.stop, new Map(torre.cores
       .filter(c => c.stop === st.stop && c.n >= MIN_FIGHTS)
@@ -363,17 +369,19 @@ const KT = (() => {
     if (!candidates.size) return null;
     let best = null;
     for (const [key, core] of candidates) {
-      const score = coreScore(core, stops, coresByStop, game) + (key === previous ? INERTIA : 0);
+      const score = coreScore(core, stops, coresByStop, game) + (key === previousKey ? INERTIA : 0);
       if (!best || score > best.score) best = { key, core: [...core], score };
     }
     const chosen = best.core.map(baseLine);
     const pool = [...new Set([...game.units.map(u => baseLine(u.line)), ...game.shop.filter(Boolean)])].filter(b => lineInfo(data, b));
-    // Remplissage jusqu'au niveau : lignées qui apportent un type à la compo ; les unités possédées départagent.
+    // Remplissage jusqu'au niveau : lignées qui apportent un type à la compo, les unités possédées d'abord ; la boutique ne
+    // complète que les places restantes.
+    const owned = b => Number(bestStar(game, b) > 0);
     const fillers = [];
     while (chosen.length < game.level) {
       const next = pool
         .filter(b => !chosen.includes(b) && traitGain(data, chosen, b) > 0)
-        .sort((a, b) => traitGain(data, chosen, b) - traitGain(data, chosen, a)
+        .sort((a, b) => owned(b) - owned(a) || traitGain(data, chosen, b) - traitGain(data, chosen, a)
           || bestStar(game, b) - bestStar(game, a) || Number(shinyLine(game, b)) - Number(shinyLine(game, a))
           || lineLo(torre, b) - lineLo(torre, a) || a.localeCompare(b))[0];
       if (!next) break;
@@ -442,7 +450,7 @@ const KT = (() => {
         marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, c.triple ? '3ᵉ copie hors compo' : 'renforce le plateau de la compo');
         return;
       }
-      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `garde ${eco.floor} pièces pour les intérêts` : 'hors compo cible');
+      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `complément de la compo ; garde ${eco.floor} pièces pour les intérêts` : 'hors compo cible');
     });
     return { marks, left, short };
   }
@@ -508,88 +516,176 @@ const KT = (() => {
     return list.slice(0, MAX_ITEMS).map(h => h.id);
   }
 
-  // Porteur (objets offensifs) et tank (portée 1, PV max) parmi les unités possédées de la compo cible.
+  // Portée inconnue : mêlée.
+  const isRanged = (data, base) => (lineInfo(data, base)?.range ?? 1) > 1;
+
+  // Porteurs : un Pokémon possédé par lignée de la compo cible (le plus étoilé, puis celui qui porte le plus d'objets, puis
+  // posé). Porteur (cœur, objets offensifs), tank (mêlée aux PV max), puis les autres (★, puis lineLo) : offensifs à distance,
+  // défensifs en mêlée.
   function holdersOf(torre, data, game, target) {
-    const coreUnits = game.units.filter(u => target.core.some(id => baseLine(id) === baseLine(u.line)));
-    const carry = [...coreUnits].sort((a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny)
-      || lineLo(torre, b.line) - lineLo(torre, a.line))[0];
+    const own = targetBases(target)
+      .map(b => unitsOf(game, b).sort((x, y) => y.star - x.star || Number(!!y.shiny) - Number(!!x.shiny) || (y.items?.length ?? 0) - (x.items?.length ?? 0)
+        || Number(y.cell !== undefined) - Number(x.cell !== undefined))[0])
+      .filter(Boolean);
+    const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || lineLo(torre, b.line) - lineLo(torre, a.line);
+    const melee = u => !isRanged(data, baseLine(u.line));
     const hp = u => (lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0) * (u.shiny ? SHINY_HP : 1);
-    const tank = game.units
-      .filter(u => baseLine(u.line) !== (carry && baseLine(carry.line)) && targetBases(target).includes(baseLine(u.line)) && lineInfo(data, baseLine(u.line))?.range === 1)
-      .sort((a, b) => hp(b) - hp(a))[0];
-    return [['carry', carry], ['tank', tank]].filter(([, u]) => u).map(([role, u]) => ({ role, unit: u, ideal: idealItems(torre, data, u.line) }));
+    const carry = own.filter(u => target.core.some(id => baseLine(id) === baseLine(u.line))).sort(rank)[0];
+    const tank = own.filter(u => u !== carry && melee(u)).sort((a, b) => hp(b) - hp(a))[0];
+    const rest = own.filter(u => u !== carry && u !== tank).sort(rank).map(u => [melee(u) ? 'front' : 'atk', u]);
+    return [['carry', carry], ['tank', tank], ...rest].filter(([, u]) => u)
+      .map(([role, u]) => ({ role, unit: u, ideal: idealItems(torre, data, u.line) }));
   }
 
-  function itemMarks(torre, data, game, target, eco, names) {
+  const BEST = 'meilleur objet de sa lignée en Tour';
+  const ROLE_WHY = {
+    carry: 'objet offensif pour ton porteur', atk: 'objet offensif pour un attaquant',
+    tank: 'objet défensif pour ton tank', front: 'objet défensif pour ta mêlée',
+  };
+
+  // Tout objet complet ou composant va tout de suite sur un Pokémon de la compo : un composant posé seul donne déjà son effet
+  // et fusionne avec le prochain composant posé sur ce Pokémon. Chaque objet du sac est conseillé une fois ; l'état de chaque
+  // porteur (objets, places, composant seul) suit les conseils, et une seule paire par Pokémon et par passage (l'ordre de pose
+  // ne serait plus clair). Renvoie aussi cet état final, pour le choix de la récompense.
+  function itemMarks(data, game, holders, target, names) {
     const marks = game.bag.map(() => null);
-    if (!target || !data) return marks;
+    if (!target || !data) return { marks, holders: [] };
     const book = recipeBook(data);
-    const holders = holdersOf(torre, data, game, target);
-    const bagCount = id => game.bag.filter(x => x === id).length;
-    game.bag.forEach((id, i) => {
-      const item = data.items[id];
-      const name = names.item(id);
-      if (id === 'magnet') {
-        const wanted = targetBases(target);
-        const off = game.units.find(u => u.items?.length && !wanted.includes(baseLine(u.line)));
-        if (off) marks[i] = mark('do', `Retire de ${names.line(off.line)}`, `Aimant sur ${names.line(off.line)}`, 'récupère ses objets : il sort de la compo');
-        return;
-      }
-      for (const h of holders) {
-        const on = h.unit.items ?? [];
-        if (on.length >= MAX_ITEMS && item?.k !== 'part') continue;
-        const who = names.line(h.unit.line);
-        if (item?.k === 'full' && h.ideal.includes(id) && !on.includes(id)) {
-          marks[i] = mark('do', `→ ${who}`, `${name} → ${who}`, 'meilleur objet de sa lignée en Tour');
-          return;
-        }
-        if (item?.k !== 'part') continue;
-        for (const full of h.ideal.filter(f => !on.includes(f))) {
-          const [a, b] = book.parts.get(full) ?? [];
-          if (a !== id && b !== id) continue;
-          const partner = a === id ? b : a;
-          const ready = on.includes(partner) || bagCount(partner) >= (partner === id ? 2 : 1);
-          if (ready) {
-            marks[i] = mark('do', `→ ${who}`, `${names.item(a)} + ${names.item(b)} → ${who}`, `${names.item(full)}, meilleur objet de sa lignée en Tour`);
-            return;
-          }
-        }
-      }
-      const carry = holders.find(h => h.role === 'carry');
-      if (eco.allIn && item?.k === 'part' && carry) {
-        const partner = game.bag.find((p, j) => j !== i && book.make.has(`${id}+${p}`));
-        if (partner) {
-          const who = names.line(carry.unit.line);
-          marks[i] = mark('do', `→ ${who}`, `${name} → ${who}`, `tout jouer : ${names.item(book.make.get(`${id}+${partner}`))} tout de suite`);
-          return;
-        }
-      }
-      marks[i] = mark('opt', 'Garde', `Garde ${name}`, 'en attendant sa recette idéale');
+    const kind = id => data.items[id]?.k;
+    const hs = holders.map(h => {
+      const on = [...(h.unit.items ?? [])];
+      const lone = on.find(id => kind(id) === 'part') ?? null;
+      // loneAt : case du sac du composant seul conseillé dans ce passage ; after : paire à poser avant.
+      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, after: null };
     });
-    return marks;
+    const fits = (h, id) => {
+      const stat = data.items[id]?.stat;
+      return stat !== undefined && OFFENSE.includes(stat) === (h.role === 'carry' || h.role === 'atk');
+    };
+    const ideal = (h, full) => h.ideal.includes(full) && !h.on.includes(full);
+    const fused = (h, id) => book.make.get(`${h.lone}+${id}`);
+    const pending = k => game.bag.map((id, i) => ({ id, i })).filter(x => marks[x.i] === null && kind(x.id) === k);
+    const after = h => (h.after ? ` (après ${h.after})` : '');
+    const put = (i, h, title, why) => {
+      marks[i] = mark('do', `→ ${h.who}`, title, why);
+    };
+    const full = (i, h, id, why) => {
+      put(i, h, `${names.item(id)} → ${h.who}`, why);
+      h.slots -= 1;
+      h.on.push(id);
+    };
+    const pair = (i, j, h, a, b, why) => {
+      const both = `${names.item(a)} + ${names.item(b)}`;
+      put(i, h, `${both} → ${h.who}`, why + after(h));
+      put(j, h, `${both} → ${h.who}`, why + after(h));
+      h.after = both;
+    };
+    const alone = (i, h, id, why) => {
+      put(i, h, `${names.item(id)} → ${h.who}`, why + after(h));
+      h.slots -= 1;
+      h.on.push(id);
+      Object.assign(h, { lone: id, loneAt: i });
+    };
+    // Fusion avec le composant seul du Pokémon : s'il a été conseillé dans ce passage, les deux bulles annoncent la paire.
+    const fuse = (i, h, id, why) => {
+      const made = fused(h, id);
+      if (h.loneAt !== null) pair(h.loneAt, i, h, h.lone, id, why);
+      else put(i, h, `${names.item(id)} → ${h.who}`, `fusionne avec ${names.item(h.lone)} : ${why}`);
+      h.on[h.on.indexOf(h.lone)] = made;
+      Object.assign(h, { lone: null, loneAt: null });
+    };
+
+    game.bag.forEach((id, i) => {
+      if (id !== 'magnet') return;
+      const off = game.units.find(u => u.items?.length && !targetBases(target).includes(baseLine(u.line)));
+      if (off) marks[i] = mark('do', `Retire de ${names.line(off.line)}`, `Aimant sur ${names.line(off.line)}`, 'récupère ses objets : il sort de la compo');
+    });
+    // Objets complets : recettes idéales d'abord (rang le plus haut), puis par rôle, en évitant un doublon sur un Pokémon.
+    for (const { id, i } of pending('full')) {
+      const h = hs.filter(x => x.slots > 0 && ideal(x, id)).sort((a, b) => a.ideal.indexOf(id) - b.ideal.indexOf(id))[0];
+      if (h) full(i, h, id, BEST);
+    }
+    for (const { id, i } of pending('full')) {
+      const free = hs.filter(x => x.slots > 0);
+      const fresh = free.filter(x => !x.on.includes(id));
+      const h = fresh.find(x => fits(x, id)) ?? fresh[0] ?? free[0];
+      if (h) full(i, h, id, fits(h, id) ? ROLE_WHY[h.role] : 'place libre dans la compo');
+    }
+    // Composants, dans l'ordre : complète une recette idéale, paire idéale du sac, entame une recette idéale, fusion utile au
+    // rôle, recette doublée utile au rôle, fusion utile au rôle d'un composant réservé, toute place, toute fusion.
+    for (const { id, i } of pending('part')) {
+      if (marks[i] !== null) continue;
+      const done = hs.find(h => h.lone && ideal(h, fused(h, id)));
+      if (done) {
+        fuse(i, done, id, `${names.item(fused(done, id))}, ${BEST}`);
+        continue;
+      }
+      const free = hs.filter(h => h.slots > 0 && !h.lone);
+      const duo = free.filter(h => !h.after)
+        .flatMap(h => h.ideal.filter(f => ideal(h, f) && book.parts.get(f)?.includes(id)).map(f => ({ h, f, ab: book.parts.get(f) })))
+        .map(x => ({ ...x, j: pending('part').find(p => p.i !== i && p.id === (x.ab[0] === id ? x.ab[1] : x.ab[0]))?.i }))
+        .find(x => x.j !== undefined);
+      if (duo) {
+        pair(i, duo.j, duo.h, ...duo.ab, `${names.item(duo.f)}, ${BEST}`);
+        duo.h.slots -= 1;
+        duo.h.on.push(duo.f);
+        continue;
+      }
+      const effect = `${names.effect(id) ?? 'son effet'} tout de suite`;
+      const begun = free.map(h => ({ h, f: h.ideal.find(f => ideal(h, f) && book.parts.get(f)?.includes(id)) })).find(x => x.f);
+      if (begun) {
+        const [a, b] = book.parts.get(begun.f);
+        alone(i, begun.h, id, `${effect} ; plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
+        continue;
+      }
+      // Un composant seul qui entre dans une recette idéale encore à faire (porté ou conseillé) n'est détourné que faute de
+      // place utile au rôle : le conseil reste le même une fois le composant posé.
+      const kept = h => h.ideal.some(f => ideal(h, f) && book.parts.get(f)?.includes(h.lone));
+      const useful = list => list.find(h => fits(h, fused(h, id)) && !h.on.includes(fused(h, id)));
+      const roleFuse = h => fuse(i, h, id, `${names.item(fused(h, id))}, ${ROLE_WHY[h.role]}`);
+      const open = useful(hs.filter(h => h.lone && !kept(h)));
+      if (open) {
+        roleFuse(open);
+        continue;
+      }
+      const twin = book.make.get(`${id}+${id}`);
+      const double = free.find(h => fits(h, twin) && !h.on.includes(twin));
+      if (double) {
+        alone(i, double, id, `${effect} ; plus tard avec ${names.item(id)} : ${names.item(twin)}, ${ROLE_WHY[double.role]}`);
+        continue;
+      }
+      const diverted = useful(hs.filter(h => h.lone && kept(h)));
+      if (diverted) {
+        roleFuse(diverted);
+        continue;
+      }
+      if (free[0]) {
+        alone(i, free[0], id, effect);
+        continue;
+      }
+      const any = hs.find(h => h.lone);
+      if (any) fuse(i, any, id, names.item(fused(any, id)));
+    }
+    const why = hs.length ? 'toute la compo a 3 objets' : 'aucun Pokémon de la compo possédé';
+    for (const { id, i } of [...pending('full'), ...pending('part')]) marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, why);
+    return { marks, holders: hs };
   }
 
-  function offerMarks(torre, data, game, target, names) {
-    if (!target || !data || !game.reward.length) return game.reward.map(() => null);
+  // Récompense : d'après l'état des porteurs après les conseils du sac (composants seuls et places restantes).
+  function offerMarks(data, game, hs, names) {
+    if (!hs.length || !game.reward.length) return game.reward.map(() => null);
     const book = recipeBook(data);
-    const holders = holdersOf(torre, data, game, target);
-    const have = id => game.bag.includes(id) || holders.some(h => h.unit.items?.includes(id));
-    const score = id => {
-      let s = 0;
-      for (const h of holders) {
-        for (const full of h.ideal) {
-          if (full === id) s = Math.max(s, 3);
-          const [a, b] = book.parts.get(full) ?? [];
-          if (a === id || b === id) s = Math.max(s, have(a === id ? b : a) ? 2 : 1);
-        }
-      }
-      return s;
-    };
-    const scores = game.reward.map(score);
-    const best = Math.max(...scores);
-    return game.reward.map((id, i) => (best > 0 && scores[i] === best && scores.indexOf(best) === i
-      ? mark('do', 'Prends', `Prends ${names.item(id)}`, best === 2 ? 'complète une recette idéale' : 'sert la recette idéale de ton porteur')
-      : null));
+    const value = id => hs.flatMap(h => h.ideal.filter(f => !h.on.includes(f)).map(f => {
+      const ab = book.parts.get(f) ?? [];
+      if (f === id) return h.slots > 0 && { s: 3, why: `${BEST} pour ${h.who}` };
+      if (!ab.includes(id)) return null;
+      if (h.lone === (ab[0] === id ? ab[1] : ab[0])) return { s: 2, why: `complète ${names.item(f)} sur ${h.who}` };
+      return h.slots > 0 && !h.lone && { s: 1, why: `entame ${names.item(f)} pour ${h.who}` };
+    })).filter(Boolean).sort((a, b) => b.s - a.s)[0] ?? { s: 0 };
+    const values = game.reward.map(value);
+    const best = Math.max(...values.map(v => v.s));
+    const first = values.findIndex(v => v.s === best);
+    return game.reward.map((id, i) => (best > 0 && i === first ? mark('do', 'Prends', `Prends ${names.item(id)}`, values[i].why) : null));
   }
 
   function boonScore(id, game) {
@@ -649,57 +745,129 @@ const KT = (() => {
     });
   }
 
-  // Formation KT1 : cellule = rangée × 7 + colonne, rangée 0 = avant (doc de l'API).
-  function formation(target, game, data, torre, side) {
-    const ids = [...target.core, ...target.fillers];
-    const holders = holdersOf(torre, data, game, target);
-    const roleBase = role => {
-      const h = holders.find(x => x.role === role);
-      return h && baseLine(h.unit.line);
-    };
-    const carry = roleBase('carry');
-    const tank = roleBase('tank');
-    const units = ids.map(id => {
+  // La sauvegarde indexe le plateau sur 8 rangées × 7 : les 4 rangées ennemies (cases 0-27), puis les tiennes de l'avant au fond
+  // (28-55). La cellule KT1 (0-27, rangée × 7 + colonne, rangée 0 = avant, doc de l'API) est donc la case de la sauvegarde − 28.
+  const ENEMY_CELLS = 28;
+  const boardCell = cell => (Number.isInteger(cell) && cell >= ENEMY_CELLS && cell < 2 * ENEMY_CELLS ? cell - ENEMY_CELLS : null);
+  const rowOf = cell => Math.floor(cell / 7);
+  const colOf = cell => cell % 7;
+
+  // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). Chaque Pokémon a ses cases
+  // par préférence : tank au premier rang puis devant, porteur à distance dans le coin choisi puis au fond, mêlée devant
+  // (depuis le centre), distance au fond (depuis le coin). Déjà sur une case de sa première liste, il la garde ; sinon il prend
+  // la première case libre. unit : l'unité possédée (porteur de holdersOf), from : sa cellule, 'bench', ou null s'il n'est
+  // pas possédé.
+  function formation(target, game, data, holders, side) {
+    const stars = id => bestStar(game, baseLine(id));
+    const kept = new Set([...[...target.core].sort((a, b) => stars(b) - stars(a)), ...target.fillers].slice(0, game.level));
+    const units = [...target.core, ...target.fillers].filter(id => kept.has(id)).map(id => {
       const base = baseLine(id);
       const h = holders.find(x => baseLine(x.unit.line) === base);
-      return { line: id, base, star: Math.max(1, bestStar(game, base)), shiny: shinyLine(game, base), items: h ? h.ideal : [], ranged: (lineInfo(data, base)?.range ?? 1) > 1 };
+      return {
+        line: id, base, star: Math.max(1, stars(id)), shiny: shinyLine(game, base), items: h ? h.ideal : [], role: h?.role ?? null, ranged: isRanged(data, base),
+        unit: h?.unit ?? null, from: h ? boardCell(h.unit.cell) ?? 'bench' : null,
+      };
     });
-    const front = units.filter(u => !u.ranged).sort((a, b) => Number(b.base === tank) - Number(a.base === tank));
-    const back = units.filter(u => u.ranged).sort((a, b) => Number(b.base === carry) - Number(a.base === carry));
     const edge = side === 'right' ? [6, 4, 2, 0, 5, 1, 3] : [0, 2, 4, 6, 1, 5, 3];
-    const place = (list, rows, cols) => list.map((u, i) => ({ ...u, cell: rows[Math.floor(i / 7)] * 7 + cols[i % 7] }));
-    return [...place(front, [0, 1], [3, 2, 4, 1, 5, 0, 6]), ...place(back, [3, 2], edge)];
+    const front = [0, 1].flatMap(r => [3, 2, 4, 1, 5, 0, 6].map(c => r * 7 + c));
+    const back = [3, 2].flatMap(r => edge.map(c => r * 7 + c));
+    const corner = back.filter(c => (side === 'right' ? colOf(c) >= 4 : colOf(c) <= 2));
+    const zones = u => {
+      if (u.role === 'tank') return [front.filter(c => rowOf(c) === 0), front];
+      if (u.role === 'carry' && u.ranged) return [corner, back];
+      return [u.ranged ? back : front];
+    };
+    const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
+    const taken = new Set([...stay].map(u => u.from));
+    const first = role => (a, b) => Number(b.role === role) - Number(a.role === role);
+    const order = [...units.filter(u => !u.ranged).sort(first('tank')), ...units.filter(u => u.ranged).sort(first('carry'))];
+    for (const u of order) {
+      u.cell = stay.has(u) ? u.from : zones(u).flat().find(c => !taken.has(c));
+      taken.add(u.cell);
+    }
+    // Doc de l'API : unités triées par cellule.
+    return units.sort((a, b) => a.cell - b.cell);
   }
 
+  const ROW_NAMES = ['avant', '2ᵉ rangée', '3ᵉ rangée', 'fond'];
+  const spot = cell => `${ROW_NAMES[rowOf(cell)]}, colonne ${colOf(cell) + 1}`;
+
+  // Déplacements vers la formation (conseils du panneau seul), dans l'ordre où les faire, rejoués sur une table case → occupant :
+  // le jeu échange deux Pokémon quand on en pose un sur l'autre, si bien qu'un Pokémon arrivé par échange n'a plus de consigne.
+  // D'abord les Pokémon posés mal placés (celui dont la case cible est libre avant les autres), puis les poses depuis le banc :
+  // sur la case d'un Pokémon hors formation, elle le remplace ; faute de place libre, elle fait ranger au banc un Pokémon hors
+  // formation qui n'est la cible d'aucune pose.
+  function moveAdvice(units, game, names) {
+    const onBoard = game.units.filter(u => boardCell(u.cell) !== null);
+    const at = new Map(onBoard.map(u => [boardCell(u.cell), u]));
+    const cellOf = unit => [...at].find(([, v]) => v === unit)?.[0];
+    const mine = new Set(units.map(f => f.unit).filter(Boolean));
+    const marks = [];
+    const pending = () => units.filter(f => typeof f.from === 'number' && cellOf(f.unit) !== f.cell);
+    for (let left = pending(); left.length; left = pending()) {
+      const u = left.find(f => !left.some(g => g !== f && cellOf(g.unit) === f.cell)) ?? left[0];
+      const from = cellOf(u.unit);
+      const other = at.get(u.cell);
+      const swap = other && mine.has(other) ? ` (échange avec ${names.line(other.line)})` : '';
+      marks.push(mark('do', '', `Déplace ${names.line(u.base)}`, `${spot(from)} → ${spot(u.cell)}${swap}`));
+      at.set(u.cell, u.unit);
+      if (other) at.set(from, other);
+      else at.delete(from);
+    }
+    let room = game.level - onBoard.length;
+    const poses = units.filter(f => f.from === 'bench').sort((a, b) => Number(at.has(b.cell)) - Number(at.has(a.cell)));
+    const targets = new Set(poses.map(f => f.cell));
+    for (const u of poses) {
+      const there = at.get(u.cell);
+      let why = '';
+      if (there) why = `, à la place de ${names.line(there.line)}`;
+      else if (room > 0) room -= 1;
+      else {
+        const spare = [...at].filter(([, v]) => !mine.has(v));
+        const [cell, out] = spare.find(([c]) => !targets.has(c)) ?? spare[0];
+        why = ` ; range ${names.line(out.line)} au banc`;
+        at.delete(cell);
+      }
+      at.set(u.cell, u.unit);
+      marks.push(mark('do', '', `Pose ${names.line(u.base)}`, `${spot(u.cell)}${why}`));
+    }
+    return marks;
+  }
   function kt1Code(units, rules) {
     const parts = units.map(u => `${u.line}:${u.star}${u.shiny ? 's' : ''}:${u.cell}${u.items.length ? `:${u.items.join('.')}` : ''}`);
     return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent('Plan kanto-overlay')}`, ...parts].join(';');
   }
 
+  // previous : { key, run } du dernier trio choisi ; l'inertie ne vaut que dans la même partie (runSeed).
   function advise({ torre, data, lang, save, previous, side }) {
     const names = namer(lang);
     const game = readGame(save);
+    const run = save.runSeed ?? null;
     const stops = torre ? nextStops(torre.stops, game.floor) : [];
     const eco = economy(game, stops);
-    const target = torre && data ? targetComp(torre, data, game, previous) : null;
+    const target = torre && data ? targetComp(torre, data, game, previous?.run === run ? previous.key : null) : null;
     let xp;
     const shop = shopMarks(game, target, data, eco, names, left => {
       xp = xpMark(game, eco, left);
       return xp.cost;
     });
     const choice = offerChoiceMarks(data, game, eco, names);
+    const holders = target ? holdersOf(torre, data, game, target) : [];
+    const items = itemMarks(data, game, holders, target, names);
+    const units = target ? formation(target, game, data, holders, side) : [];
     return {
-      game, eco, target, names,
+      game, eco, target, names, run,
       shop: shop.marks,
       reroll: rerollMark(game, target, eco, shop.left),
       xp: xp.mark,
       bench: sellMarks(game, target, names, shop.short),
-      bag: itemMarks(torre, data, game, target, eco, names),
-      reward: offerMarks(torre, data, game, target, names),
+      bag: items.marks,
+      reward: offerMarks(data, game, items.holders, names),
       offer: choice.marks,
       unknownOffer: choice.unknown,
       anchor: anchorAdvice(target, game, names),
-      code: target ? kt1Code(formation(target, game, data, torre, side), torre.rules) : null,
+      moves: moveAdvice(units, game, names),
+      code: target ? kt1Code(units, torre.rules) : null,
     };
   }
 
@@ -778,6 +946,7 @@ const KT = (() => {
     SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
+    boardCell,
   };
 })();
 
@@ -951,7 +1120,7 @@ function mount() {
 <p>${shinies}</p><ul>${KT.GOLD_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>`;
   }
 
-  const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor].filter(Boolean);
+  const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
 
   function todoHtml(a) {
     const order = { do: 0, opt: 1, no: 2 };
@@ -973,12 +1142,12 @@ function mount() {
   function planHtml(a) {
     if (!a.target) return `<div class="kt-plan">${ecoHtml(a)}${todoHtml(a)}</div>`;
     const t = a.target;
-    const stops = t.stops.map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
+    const bosses = t.stops.filter(s => s.boss !== 'elite').map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
     const chip = (id, core) => {
       const base = KT.baseLine(id);
       return `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, base)}${KT.shinyLine(a.game, base) ? ' shiny' : ''}</span></li>`;
     };
-    return `<div class="kt-plan"><p class="kt-label">Compo cible · ${esc(stops)}</p>
+    return `<div class="kt-plan"><p class="kt-label">Compo cible${bosses ? ` · ${esc(bosses)}` : ''}</p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${ecoHtml(a)}${todoHtml(a)}
 <div class="kt-actions"><button class="kt-copy" data-act="copy">Copier la formation</button>
@@ -1104,9 +1273,9 @@ ${state.advice ? planHtml(state.advice) : ''}${state.save && !onSaveFloor() ? `<
       ? KT.advise({ torre: state.torre, data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side })
       : null;
     if (state.advice?.code !== code) state.copied = null;
-    const key = state.advice?.target?.key ?? ui.target;
-    if (key !== ui.target) {
-      ui.target = key;
+    const a = state.advice;
+    if (a?.target && (a.target.key !== ui.target?.key || a.run !== ui.target?.run)) {
+      ui.target = { key: a.target.key, run: a.run };
       saveUi();
     }
   }

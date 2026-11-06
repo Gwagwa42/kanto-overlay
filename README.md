@@ -3,10 +3,11 @@
 Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](https://einoow.com/playables/kanto-tactics/) :
 - prochain boss (nom, étage, taux de victoire, taux au premier essai, nombre moyen d'essais) ;
 - les 3 meilleurs trios contre ce boss (au moins 20 combats) ;
-- une **compo cible** choisie pour les 3 prochains combats en partant de ton équipe, et des **conseils lus sur ta partie** : quoi
-  acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, quelle récompense et quelle
-  bénédiction prendre, quand ancrer une forme ;
-- un bouton **Copier la formation** : code `KT1;…` à coller dans le Planificateur du jeu (Planificateur → Coller un code) ;
+- une **compo cible** choisie pour les 9 prochains combats (environ 20 étages) en partant de ton équipe, et des **conseils lus sur
+  ta partie** : quoi acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, quelle
+  récompense et quelle bénédiction prendre, quand ancrer une forme ;
+- un bouton **Copier la formation** : code `KT1;…` à coller dans le Planificateur du jeu (Planificateur → Coller un code), qui
+  affiche la compo cible sur le plateau ; le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos — avant, colonne 4 ») ;
 - les règles d'or (intérêts, actualisation, shinies) pour la tranche d'étages en cours.
 
 Les conseils apparaissent aussi en **pastilles** sur le jeu : ★ fais-le, ◆ si l'or le permet, ✕ évite. Survoler une pastille (ou la
@@ -22,18 +23,26 @@ barre le remet en haut à droite.
 
 ## Comment les conseils sont choisis
 
-- **Compo cible** : parmi les trios d'au moins 20 combats des 3 prochains combats (élites comprises), celui dont la borne basse du taux
-  de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat, avec un bonus pour les Pokémon que tu
-  possèdes déjà. Elle ne change que pour un gain d'au moins 5 points. Le reste du plateau est rempli par les lignées qui renforcent ses
-  types, puis par tes unités.
+- **Compo cible** : parmi les trios d'au moins 20 combats des 9 prochains combats (élites comprises, environ 20 étages), celui dont la
+  borne basse du taux de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat, avec un bonus pour
+  les Pokémon que tu possèdes déjà. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
+  Le reste du plateau est rempli par les lignées qui renforcent ses types : tes unités d'abord, puis la boutique pour les places
+  restantes.
 - **Économie** : intérêts plafonnés à +3 en Tour, donc palier de 30 pièces (50 avec la voie Fortune complète). On ne dépense que le
   surplus, sauf en **tout jouer** : combat de l'étage sous 45 % de victoires, ou PV sous 40.
-- **Objets** : recette idéale du porteur et du tank (meilleurs couples Pokémon/objet de la Tour) ; fusion immédiate en tout jouer.
+- **Objets** : tout objet complet ou composant du sac va tout de suite sur un Pokémon de la compo. Un composant seul donne déjà son
+  effet et fusionne sur le Pokémon avec le suivant ; deux composants du sac pour le même Pokémon sont donnés en paire, avec l'ordre
+  de pose quand il compte. Priorité à la recette idéale de chaque lignée (meilleurs couples Pokémon/objet de la Tour), sinon par
+  rôle : offensif au porteur puis aux attaquants, défensif au tank puis à la mêlée. 3 objets au plus par Pokémon ; « Garde »
+  seulement quand toute la compo est pleine. La récompense d'objet se choisit d'après ce qui reste à compléter après ces conseils.
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
-- **Formation** : mêlée devant (tank au centre), distance au fond et espacée, porteur dans le coin choisi (bouton « Porteur »).
-- **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny » dans la compo cible,
-  ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, et s'écrit `ligne:2s:…` dans le code KT1. Une
-  unité shiny n'est pas proposée à la vente jusqu'à l'étage 120.
+- **Formation** : la compo cible dans la limite du niveau. Chaque Pokémon a sa zone : tank au premier rang, porteur à distance dans
+  le coin choisi (bouton « Porteur »), mêlée devant, distance au fond. Un Pokémon déjà dans sa zone garde sa case ; les autres
+  prennent la première case libre (avant depuis le centre, fond depuis le coin). Les déplacements sont listés dans l'ordre où les
+  faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors formation si le plateau est plein.
+- **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny »
+  dans la compo cible, ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, et s'écrit `ligne:2s:…` dans
+  le code KT1. Une unité shiny n'est pas proposée à la vente jusqu'à l'étage 120.
 
 ## Installation (Firefox)
 
@@ -44,7 +53,7 @@ barre le remet en haut à droite.
 ## Données
 
 Data: Kanto Tactics · [einoow.com](https://einoow.com) — API publique `https://einoow.com/api/meta/kanto/` : `campana.json`
-(statistiques de la Tour), `data.json` (lignées, objets, recettes, types, sceaux), `lang.json?lang=fr` (noms des objets, sceaux,
+(statistiques de la Tour), `data.json` (lignées, objets, recettes, types, sceaux), `lang.json?lang=fr` (noms et effets des objets, sceaux,
 types). Conformément à ses conditions, chaque source est gardée **une heure** dans le Cache Storage du navigateur, puis revalidée
 (`ETag`) ; en cas d'erreur, la dernière copie sert et le pied du panneau en donne la date.
 

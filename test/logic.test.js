@@ -133,7 +133,7 @@ test('compo cible : meilleur trio pondéré, remplissage par les lignées qui re
   assert.equal(KT.progress(a.game, 'aerodactyl'), '0/3');
 });
 
-test('compo cible : inertie de 5 points', () => {
+test('compo cible : inertie de 30 points', () => {
   const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
   const cores = lo => [
     { stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 },
@@ -141,16 +141,75 @@ test('compo cible : inertie de 5 points', () => {
   ];
   const game = KT.readGame({ ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [] });
   const t = lo => ({ ...torre, stops, cores: cores(lo) });
-  assert.equal(KT.targetComp(t(77), data, game, null).key, 'abra+onix+zubat');
-  assert.equal(KT.targetComp(t(77), data, game, 'pidgey+rattata+spearow').key, 'pidgey+rattata+spearow');
-  assert.equal(KT.targetComp(t(70), data, game, 'pidgey+rattata+spearow').key, 'abra+onix+zubat');
+  assert.equal(KT.targetComp(t(51), data, game, null).key, 'abra+onix+zubat');
+  assert.equal(KT.targetComp(t(51), data, game, 'pidgey+rattata+spearow').key, 'pidgey+rattata+spearow');
+  assert.equal(KT.targetComp(t(49), data, game, 'pidgey+rattata+spearow').key, 'abra+onix+zubat');
+});
+
+test('compo cible : 9 prochains combats, élites comprises', () => {
+  assert.deepEqual(advise(S57).target.stops.map(s => s.stop),
+    ['59:elite', '60:zapdos', '64:elite', '65:erika', '69:elite', '70:gengar', '74:elite', '75:koga', '79:elite']);
+});
+
+test('compo cible : inertie seulement dans la même partie (runSeed)', () => {
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const cores = [
+    { stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 },
+    { stop: '10:brock', core: ['pidgey', 'rattata', 'spearow'], n: 50, win: 90, lo: 60 },
+  ];
+  const s = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
+  const at = previous => KT.advise({ torre: { ...torre, stops, cores }, data, lang, save: s, previous, side: 'left' }).target.key;
+  assert.equal(at({ key: 'pidgey+rattata+spearow', run: 7 }), 'pidgey+rattata+spearow');
+  assert.equal(at({ key: 'pidgey+rattata+spearow', run: 8 }), 'abra+onix+zubat');
+  // Valeur des versions précédentes (clé seule) : rattachée à aucune partie.
+  assert.equal(at('pidgey+rattata+spearow'), 'abra+onix+zubat');
+  assert.equal(KT.advise({ torre, data, lang, save: s, previous: null, side: 'left' }).run, 7);
+});
+
+test('compléments : unités possédées avant la boutique, stables quand la boutique change', () => {
+  // Niveau 4 : une place après le trio. Rattata (possédé, Normal) apporte moins que Doduo (boutique, Normal 2) mais passe avant.
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const cores = [{ stop: '10:brock', core: ['pidgey', 'spearow', 'abra'], n: 50, win: 90, lo: 80 }];
+  const t = { ...torre, stops, cores };
+  const base = { ...save, round: 1009, level: 4, units: { r: { id: 'r', line: 'rattata', star: 1 } }, board: { 0: 'r' }, bench: [] };
+  const fill = shop => KT.targetComp(t, data, KT.readGame({ ...base, shop }), null).fillers;
+  assert.deepEqual(fill(['doduo', 'ekans']), ['rattata']);
+  assert.deepEqual(fill(['zubat', 'meowth']), ['rattata']);
+  assert.deepEqual(KT.targetComp(t, data, KT.readGame({ ...base, units: {}, board: {}, shop: ['doduo'] }), null).fillers, ['doduo']);
+  // Entre unités possédées, le gain de type passe avant les étoiles : Doduo ★ (gain 2) avant Rattata ★★ (gain 1).
+  const both = { ...base, units: { r: { id: 'r', line: 'rattata', star: 2 }, d: { id: 'd', line: 'doduo', star: 1 } }, board: { 0: 'r', 1: 'd' }, shop: [] };
+  assert.deepEqual(KT.targetComp(t, data, KT.readGame(both), null).fillers, ['doduo']);
+});
+
+test('compo cible : un trio monté en ★★ l’emporte sur l’inertie d’un trio non possédé', () => {
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const cores = [
+    // Inertie : abra 70 + 30 = 100 ; possession : pidgey 50 + 60 = 110 (80 avec l'ancien bonus de 5).
+    { stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 70 },
+    { stop: '10:brock', core: ['pidgey', 'rattata', 'spearow'], n: 50, win: 90, lo: 50 },
+  ];
+  const units = Object.fromEntries(['pidgey', 'rattata', 'spearow'].map(line => [line, { id: line, line, star: 2 }]));
+  const game = KT.readGame({ ...save, round: 1009, level: 3, units, board: { 0: 'pidgey', 1: 'rattata', 2: 'spearow' }, bench: [], shop: [] });
+  assert.equal(KT.targetComp({ ...torre, stops, cores }, data, game, 'abra+onix+zubat').key, 'pidgey+rattata+spearow');
+});
+
+test('achat d’une carte ★ : les autres pastilles de la boutique ne changent pas', () => {
+  const before = advise(S57);
+  assert.equal(brief(before.shop[0]), 'do Achète');
+  const bought = {
+    ...S57, gold: S57.gold - KT.lineInfo(data, 'growlithe').c, shop: [null, ...S57.shop.slice(1)],
+    units: { ...S57.units, z: { id: 'z', line: 'growlithe', star: 1 } }, bench: ['b', 'c', 'e', 'z', null, null, null, null, null],
+  };
+  const after = advise(bought, { previous: { key: before.target.key, run: before.run } });
+  assert.equal(after.target.key, before.target.key);
+  assert.deepEqual(after.shop.slice(1).map(brief), before.shop.slice(1).map(brief));
 });
 
 test('boutique : ★ 3ᵉ copie et cœur, ◆ si l’or, ✕ hors compo', () => {
   const a = advise(S57);
   // Caninos et Ptéra (★, 8 pièces) laissent 30 : Magmar (3) ferait passer sous le palier.
   assert.deepEqual(a.shop.map(brief), ['do Achète', 'do Achète', 'no Ignore', 'no Ignore', 'no Ignore']);
-  assert.match(a.shop[2].why, /garde 30 pièces/);
+  assert.match(a.shop[2].why, /^complément de la compo ; garde 30 pièces/);
   assert.equal(brief(advise({ ...S57, gold: 41 }).shop[2]), 'opt Si l’or');
   assert.match(a.shop[0].why, /3ᵉ copie/);
   assert.match(a.shop[1].why, /cœur/);
@@ -215,23 +274,92 @@ test('vendre : unité du banc hors compo et sans paire, banc presque plein', () 
   assert.equal(marks[4], null);
 });
 
-test('objets : recette idéale, sinon garder ; fusion immédiate en tout jouer', () => {
+// S57 : porteur Minidraco ★★ (idéal Bandeau Choix, Ceinture Force, Lentilscope), tank Caninos (idéal Lentilscope, Cuiller
+// Tordue, Veste de Combat), attaquant Goupix ★★.
+const withItems = (items, held = {}) => ({
+  ...S57, items, units: Object.fromEntries(Object.entries(S57.units).map(([k, u]) => [k, held[k] ? { ...u, items: held[k] } : u])),
+});
+const FULL3 = ['leftovers', 'life-orb', 'eviolite'];
+
+test('objets : paire idéale, et composant seul équipé tout de suite vers sa recette', () => {
   const a = advise(S57);
-  assert.deepEqual(a.bag.map(brief), ['opt Garde', 'do → Caninos', 'do → Caninos']);
+  assert.deepEqual(a.bag.map(brief), ['do → Minidraco', 'do → Caninos', 'do → Caninos']);
+  assert.match(a.bag[0].why, /PV tout de suite ; plus tard avec Carbone : Ceinture Force, meilleur objet de sa lignée en Tour$/);
   assert.match(a.bag[1].why, /Cuiller Tordue/);
   assert.equal(a.bag[1].title, a.bag[2].title);
-  const allIn = advise({ ...S57, round: 1059 });
-  assert.deepEqual(allIn.bag.map(brief), ['do → Minidraco', 'do → Caninos', 'do → Caninos']);
-  const impossible = advise({ ...S57, round: 1059, items: ['iron'] });
-  assert.notEqual(impossible.bag[0].level, 'do');
+  assert.equal(brief(advise(withItems(['iron'])).bag[0]), 'do → Caninos');
+  assert.deepEqual(advise(withItems(['emblem-fire'])).bag, [null]);
   const magnet = advise({ ...S57, level: 4, items: ['magnet'], units: { ...S57.units, e: { id: 'e', line: 'ekans', star: 1, items: ['leftovers'] } } });
   assert.equal(brief(magnet.bag[0]), 'do Retire de Abo');
+});
+
+test('objets : complet hors liste idéale vers le rôle (défensif au tank, offensif au porteur)', () => {
+  const a = advise(withItems(['eviolite', 'life-orb']));
+  assert.deepEqual(a.bag.map(m => [brief(m), m.why]), [
+    ['do → Caninos', 'objet défensif pour ton tank'], ['do → Minidraco', 'objet offensif pour ton porteur'],
+  ]);
+  // Idéal d'abord, quel que soit l'ordre du sac ; pas deux fois le même objet sur un Pokémon.
+  const last = advise(withItems(['life-orb', 'choice-band'], { a: ['leftovers', 'eviolite'] }));
+  assert.deepEqual(last.bag.map(brief), ['do → Goupix', 'do → Minidraco']);
+  assert.deepEqual(advise(withItems(['leftovers', 'leftovers'])).bag.map(brief), ['do → Caninos', 'do → Minidraco']);
+});
+
+test('objets : porteur et tank pleins, l’objet va à un 3ᵉ Pokémon de la compo', () => {
+  const m = advise(withItems(['choice-band'], { a: FULL3, b: FULL3 })).bag[0];
+  assert.deepEqual([brief(m), m.why], ['do → Goupix', 'objet offensif pour un attaquant']);
+});
+
+test('objets : chaque composant conseillé pour une seule recette ; après une paire, l’ordre de pose est donné', () => {
+  const a = advise(withItems(['protein', 'hp-up', 'carbos']));
+  assert.deepEqual(a.bag.map(m => m.title), ['Protéine + Carbone → Minidraco', 'PV Plus → Minidraco', 'Protéine + Carbone → Minidraco']);
+  assert.match(a.bag[1].why, /\(après Protéine \+ Carbone\)$/);
+});
+
+test('objets : jamais de 4ᵉ objet ; « Garde » seulement quand toute la compo est pleine', () => {
+  const full = advise(withItems(['protein', 'carbos'], { a: FULL3 }));
+  assert.ok(full.bag.every(m => m.label !== '→ Minidraco'));
+  assert.deepEqual(full.bag.map(brief), ['do → Caninos', 'do → Caninos']);
+  const none = advise(withItems(['protein'], { a: FULL3, b: FULL3, d: FULL3 }));
+  assert.deepEqual([brief(none.bag[0]), none.bag[0].why], ['opt Garde', 'toute la compo a 3 objets']);
+  // Composant seul sur un Pokémon déjà à 3 objets : la fusion ne prend pas de place.
+  const fuse = advise(withItems(['carbos'], { a: ['protein', 'leftovers', 'eviolite'], b: FULL3, d: FULL3 })).bag[0];
+  assert.deepEqual([fuse.title, fuse.why], ['Carbone → Minidraco', 'fusionne avec Protéine : Lentilscope, meilleur objet de sa lignée en Tour']);
+  const nobody = advise({ ...S57, items: ['protein'], units: {}, board: {}, bench: [] }).bag[0];
+  assert.deepEqual([brief(nobody), nobody.why], ['opt Garde', 'aucun Pokémon de la compo possédé']);
+});
+
+test('objets : composant porté réservé à une recette idéale, recette doublée annoncée, 2ᵉ paire après la 1ʳᵉ', () => {
+  // Goupix porte Carbone (Lentilscope, Vive Griffe à faire) : Fer n’y fusionne pas en Pic Venin, il va seul au tank pour
+  // Protecteur (Caninos a déjà Cuiller Tordue, sa seule recette idéale avec du Fer).
+  const fer = advise(withItems(['iron'], { b: ['twisted-spoon'], d: ['carbos'] })).bag[0];
+  assert.deepEqual([fer.title, fer.why], ['Fer → Caninos', '+20 % Défense tout de suite ; plus tard avec Fer : Protecteur, objet défensif pour ton tank']);
+  const two = advise(withItems(['protein', 'hp-up', 'carbos', 'carbos'])).bag;
+  assert.deepEqual(two.map(m => m.title), ['Protéine + Carbone → Minidraco', 'PV Plus + Carbone → Minidraco', 'Protéine + Carbone → Minidraco', 'PV Plus + Carbone → Minidraco']);
+  assert.match(two[3].why, /^Ceinture Force, meilleur objet de sa lignée en Tour \(après Protéine \+ Carbone\)$/);
+});
+
+test('objets : composant qui fusionne avec celui déjà porté en objet idéal, copie qui porte des objets prioritaire', () => {
+  const a = advise(withItems(['carbos'], { a: ['protein'] }));
+  assert.deepEqual([a.bag[0].title, a.bag[0].why], ['Carbone → Minidraco', 'fusionne avec Protéine : Lentilscope, meilleur objet de sa lignée en Tour']);
+  // Deux Caninos ★ au banc : celui qui porte la Protéine est le porteur retenu.
+  assert.equal(advise(withItems(['carbos'], { c: ['protein'] })).bag[0].title, 'Carbone → Caninos');
+});
+
+test('objets : deux composants du sac qui fusionnent sur le même Pokémon annoncent la paire', () => {
+  // Caninos garde une place après Restes et Protecteur : Fer y entame Cuiller Tordue, mais Zinc fusionne avec lui (Poudre Métal).
+  const a = advise(withItems(['leftovers', 'protector', 'iron', 'zinc']));
+  assert.deepEqual(a.bag.slice(2).map(m => [m.title, m.why]), [
+    ['Fer + Zinc → Caninos', 'Poudre Métal, objet défensif pour ton tank'], ['Fer + Zinc → Caninos', 'Poudre Métal, objet défensif pour ton tank'],
+  ]);
 });
 
 test('récompense d’objet : prendre ce qui complète la recette idéale', () => {
   const a = advise({ ...S57, itemReward: ['protein', 'carbos', 'zinc'] });
   assert.deepEqual(a.reward.map(brief), [null, 'do Prends', null]);
-  assert.match(a.reward[1].why, /complète/);
+  assert.equal(a.reward[1].why, 'complète Ceinture Force sur Minidraco');
+  // Lu après les conseils du sac : le Fer part dans Poudre Métal, le Calcium ne complète plus Cuiller Tordue.
+  const after = advise({ ...withItems(['leftovers', 'protector', 'iron', 'zinc']), itemReward: ['calcium'] });
+  assert.equal(after.reward[0].why, 'entame Lunettes Choix pour Goupix');
 });
 
 test('bénédictions : PV bas, puis Fortune jusqu’à 3, puis voie la plus avancée', () => {
@@ -276,44 +404,134 @@ test('ancrage : conseillé si la compo vise une forme ancrée non encore choisie
   assert.deepEqual(KT.anchorAdvice(target, KT.readGame({ ...S57, units: {}, board: {}, bench: [] }), names), []);
 });
 
-test('formation : code KT1 (rangée 0 = avant, porteur côté choisi)', () => {
+test('formation : code KT1 trié par cellule, Pokémon bien placé gardé, porteur côté choisi', () => {
+  // S57 : Minidraco (case 29 → cellule 1, mêlée au premier rang) garde sa case ; Goupix (31 → 3, distance au premier rang) part
+  // au fond ; Caninos (tank, au banc) prend le centre de l'avant, Ptéra la case suivante.
   assert.equal(advise(S57).code,
-    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;growlithe:1:3:scope-lens.twisted-spoon.assault-vest;aerodactyl:1:2;'
-    + 'dratini:2:4:choice-band.focus-sash.scope-lens;vulpix:2:21;magmar:1:23');
-  assert.match(advise(S57, { side: 'right' }).code, /vulpix:2:27;magmar:1:25$/);
+    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;dratini:2:1:choice-band.focus-sash.scope-lens;aerodactyl:1:2;'
+    + 'growlithe:1:3:scope-lens.twisted-spoon.assault-vest;vulpix:2:21:choice-specs.scope-lens.quick-claw;magmar:1:23');
+  assert.match(advise(S57, { side: 'right' }).code, /magmar:1:25;vulpix:2:27:choice-specs.scope-lens.quick-claw$/);
+});
+
+test('formation : case de la sauvegarde → cellule KT1 (côté joueur = cases 28 à 55)', () => {
+  assert.deepEqual([38, 28, 55, 27, 56, undefined].map(KT.boardCell), [10, 0, 27, null, null, null]);
+});
+
+test('formation : dans la limite du niveau, cœur possédé d’abord', () => {
+  const units = advise({ ...S57, level: 2 }).code.split(';').slice(4).map(u => u.split(':')[0]);
+  assert.deepEqual(units.sort(), ['dratini', 'growlithe']);
+});
+
+test('formation : une seule unité par cellule, niveaux 3 à 9, des deux côtés', () => {
+  for (const side of ['left', 'right']) {
+    for (let level = 3; level <= 9; level++) {
+      const cells = advise({ ...S57, level }, { side }).code.split(';').slice(4).map(u => Number(u.split(':')[2]));
+      assert.equal(new Set(cells).size, cells.length, `niveau ${level}, ${side}`);
+      assert.ok(cells.every(c => c >= 0 && c <= 27));
+    }
+  }
+});
+
+const BENCH = ids => [...ids, ...Array(9 - ids.length).fill(null)];
+const moves = (save, extra) => advise(save, extra).moves.map(m => `${m.title} — ${m.why}`);
+
+test('déplacements : d’abord libérer la case, puis poser depuis le banc', () => {
+  // S57 : Goupix (distance) quitte la case avant-colonne 4 avant que Caninos (tank) y soit posé.
+  assert.deepEqual(moves(S57), ['Déplace Goupix — avant, colonne 4 → fond, colonne 1', 'Pose Caninos — avant, colonne 4']);
+  assert.ok(advise(S57).moves.every(m => m.level === 'do' && m.label === ''));
+  // Déjà bien placé partout : aucun déplacement.
+  assert.deepEqual(moves({ ...S57, level: 2, board: { 29: 'a', 31: 'b' }, bench: BENCH(['c', 'd', 'e']) }), []);
+});
+
+test('déplacements : remplacer l’occupant hors formation, ranger au banc faute de place, copie en double comptée', () => {
+  // Niveau 3 (Minidraco, Caninos, Ptéra) : Goupix, hors formation, occupe la case du tank.
+  assert.deepEqual(moves({ ...S57, level: 3, board: { 29: 'a', 31: 'd', 30: 'e' }, bench: BENCH(['b', 'c']) }),
+    ['Pose Caninos — avant, colonne 4, à la place de Goupix']);
+  // Niveau 4, 3 posés : la 1ʳᵉ pose prend la place libre, la 2ᵉ fait ranger Rattata.
+  const f = { id: 'f', line: 'ekans', star: 1 };
+  assert.deepEqual(moves({ ...S57, level: 4, units: { ...S57.units, f }, board: { 29: 'a', 30: 'e', 32: 'f' }, bench: BENCH(['b', 'c', 'd']) }),
+    ['Pose Caninos — avant, colonne 4', 'Pose Goupix — fond, colonne 1 ; range Rattata au banc']);
+  // Caninos ★★ au banc, Caninos ★ posé : la copie posée n'est pas dans la formation, elle libère la place.
+  const twins = { ...S57, level: 2, units: { ...S57.units, c: { id: 'c', line: 'growlithe', star: 2 } }, board: { 29: 'a', 30: 'b' }, bench: BENCH(['c', 'd', 'e']) };
+  assert.deepEqual(moves(twins), ['Pose Caninos — avant, colonne 4 ; range Caninos au banc']);
+});
+
+test('déplacements rejoués comme le jeu : échange, occupant déplacé, Pokémon rangé hors des cases visées', () => {
+  // Nosferapti (mêlée, fond colonne 1) et Abra (distance, avant colonne 4) échangent leurs cases : une seule consigne.
+  const t = { ...torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }],
+    cores: [{ stop: '10:brock', core: ['zubat', 'abra', 'pidgey'], n: 50, win: 90, lo: 80 }] };
+  const swap = KT.advise({ torre: t, data, lang, side: 'left', previous: null, save: {
+    ...save, round: 1009, level: 2, shop: [], bench: [], board: { 49: 'z', 31: 'x' },
+    units: { z: { id: 'z', line: 'zubat', star: 1 }, x: { id: 'x', line: 'abra', star: 1 } },
+  } });
+  assert.deepEqual(swap.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Nosferapti — fond, colonne 1 → avant, colonne 4 (échange avec Abra)']);
+  // Goupix va sur la case de Rattata, qui passe sur l'ancienne case de Goupix : Caninos y est posé à la place de Rattata.
+  assert.deepEqual(moves({ ...S57, level: 4, board: { 29: 'a', 31: 'd', 49: 'e' }, bench: BENCH(['b', 'c']) }),
+    ['Déplace Goupix — avant, colonne 4 → fond, colonne 1', 'Pose Caninos — avant, colonne 4, à la place de Rattata']);
+  // Plateau plein : Goupix prend la case de Rattata ; Caninos fait ranger Abo, pas un Pokémon dont la case sert à une pose.
+  const units = { ...S57.units, f: { id: 'f', line: 'ekans', star: 1 }, h: { id: 'h', line: 'pidgey', star: 1 } };
+  assert.deepEqual(moves({ ...S57, level: 4, units, board: { 29: 'a', 49: 'e', 30: 'f', 50: 'h' }, bench: BENCH(['b', 'c', 'd']) }),
+    ['Pose Goupix — fond, colonne 1, à la place de Rattata', 'Pose Caninos — avant, colonne 4 ; range Abo au banc']);
+});
+
+test('formation : porteur à distance dans le coin du côté choisi, gardé s’il y est déjà', () => {
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const t = { ...torre, stops, cores: [{ stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 }] };
+  const at = (cell, side) => KT.advise({
+    torre: t, data, lang, side, previous: null,
+    save: { ...save, round: 1009, level: 3, units: { x: { id: 'x', line: 'abra', star: 2 } }, board: { [cell]: 'x' }, bench: [], shop: [] },
+  });
+  assert.deepEqual(at(29, 'left').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 1']);
+  assert.deepEqual(at(29, 'right').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 7']);
+  // Fond, colonne 3 : dans le coin gauche (gardé), hors du coin droit.
+  assert.deepEqual(at(51, 'left').moves, []);
+  assert.match(at(51, 'left').code, /abra:2:23/);
+  assert.deepEqual(at(51, 'right').moves.map(m => m.why), ['fond, colonne 3 → fond, colonne 7']);
+  // Onix et Goupix (distance) déjà au fond en colonnes 1 et 3 : le porteur reste dans le coin (colonne 2), pas en colonne 5.
+  const corner = KT.advise({
+    torre: { ...t, cores: [{ stop: '10:brock', core: ['abra', 'onix', 'vulpix'], n: 50, win: 90, lo: 80 }] }, data, lang, side: 'left', previous: null,
+    save: {
+      ...save, round: 1009, level: 3, shop: [], bench: ['x'], board: { 49: 'o', 51: 'v' },
+      units: { x: { id: 'x', line: 'abra', star: 2 }, o: { id: 'o', line: 'onix', star: 1 }, v: { id: 'v', line: 'vulpix', star: 1 } },
+    },
+  });
+  assert.deepEqual(corner.moves.map(m => `${m.title} — ${m.why}`), ['Pose Abra — fond, colonne 2']);
 });
 
 // Unités de S57 remplacées ou ajoutées ; shiny : +10 % (makeUnit du jeu), transmis par la fusion.
 const withUnits = (units, extra = {}) => ({ ...S57, units: { ...S57.units, ...units }, ...extra });
+// Rôles lus sur les objets : Poudre Métal (défensif) va au tank, Orbe Vie (offensif) au porteur.
+const roles = s => advise({ ...s, items: ['eviolite', 'life-orb'] }).bag.map(m => m.title);
 
 test('shiny : lignée shiny si sa copie de meilleure étoile l’est, +2 points au trio', () => {
   const shiny = withUnits({ b: { ...S57.units.b, shiny: true } });
   assert.equal(KT.shinyLine(KT.readGame(shiny), 'growlithe'), true);
   assert.equal(KT.shinyLine(KT.readGame(S57), 'growlithe'), false);
   // Minidraco 2★ normal et 1★ shiny : pas de 2★ shiny annoncé (ni « s » dans le code KT1), et le 1★ shiny, de la lignée du
-  // porteur, n'est pas pris pour tank (Minidraco reste en case 4, pas au centre).
+  // porteur, n'est pas pris pour tank.
   const lower = withUnits({ x: { id: 'x', line: 'dratini', star: 1, shiny: true } }, { bench: ['b', 'c', 'e', 'x', null, null, null, null, null] });
   assert.equal(KT.shinyLine(KT.readGame(lower), 'dratini'), false);
-  assert.match(advise(lower).code, /;dratini:2:4:/);
+  assert.match(advise(lower).code, /;dratini:2:\d+:/);
+  assert.deepEqual(roles(lower), ['Poudre Métal → Caninos', 'Orbe Vie → Minidraco']);
   const stops = KT.nextStops(torre.stops, 57);
   const core = ['aerodactyl', 'dratini', 'growlithe'];
   assert.equal(KT.coreScore(core, stops, new Map(), KT.readGame(shiny)) - KT.coreScore(core, stops, new Map(), KT.readGame(S57)), 2);
 });
 
 test('shiny : « s » après l’étoile dans le code KT1', () => {
-  assert.match(advise(withUnits({ a: { ...S57.units.a, shiny: true } })).code, /;dratini:2s:4:choice-band\.focus-sash\.scope-lens;/);
+  assert.match(advise(withUnits({ a: { ...S57.units.a, shiny: true } })).code, /;dratini:2s:\d+:choice-band\.focus-sash\.scope-lens;/);
 });
 
 test('shiny : départage le porteur, le tank et le remplissage', () => {
-  // Minidraco et Caninos à 2★ : le shiny devient porteur ; l'autre, tank, prend le centre de la première rangée (case 3).
+  // Minidraco et Caninos à 2★ : le shiny devient porteur, l'autre tank.
   const lay = { board: { ...S57.board, 30: 'b' }, bench: [null, 'c', 'e', null, null, null, null, null, null] };
   const g2 = { b: { ...S57.units.b, star: 2 } };
-  assert.match(advise(withUnits(g2, lay)).code, /;growlithe:2:3:/);
-  assert.match(advise(withUnits({ b: { ...g2.b, shiny: true } }, lay)).code, /;dratini:2:3:.*;growlithe:2s:4:/);
-  // Tank : Minidraco 1★ shiny (2062 × 1,1 PV) passe devant Caninos 1★ (2215 PV).
+  assert.deepEqual(roles(withUnits(g2, lay)), ['Poudre Métal → Caninos', 'Orbe Vie → Minidraco']);
+  assert.deepEqual(roles(withUnits({ b: { ...g2.b, shiny: true } }, lay)), ['Poudre Métal → Minidraco', 'Orbe Vie → Caninos']);
+  // Tank : Minidraco 1★ shiny (2062 × 1,1 PV) passe devant Caninos 1★ (2215 PV) ; Ptéra 2★ porte.
   const tank = shiny => withUnits({ a: { id: 'a', line: 'dratini', star: 1, shiny }, x: { id: 'x', line: 'aerodactyl', star: 2 } }, { board: { ...S57.board, 30: 'x' } });
-  assert.match(advise(tank(false)).code, /;growlithe:1:3:/);
-  assert.match(advise(tank(true)).code, /;dratini:1s:3:/);
+  assert.deepEqual(roles(tank(false)), ['Poudre Métal → Caninos', 'Orbe Vie → Ptéra']);
+  assert.deepEqual(roles(tank(true)), ['Poudre Métal → Minidraco', 'Orbe Vie → Ptéra']);
   // Remplissage : Goupix et Magmar 1★ apportent le même type ; le shiny passe devant.
   const fill = shiny => withUnits({ d: { id: 'd', line: 'vulpix', star: 1, shiny }, m: { id: 'm', line: 'magmar', star: 1 } },
     { level: 4, bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
@@ -334,7 +552,7 @@ test('shiny : pas de « Vends » jusqu’à l’étage 120, boutique sans raison
   const owned = withUnits({ m: { id: 'm', line: 'magmar', star: 1, shiny: true } },
     { shopShiny: [false, false, true, false, false], bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
   // Magmar reste dans la compo : seule la raison shiny disparaît.
-  assert.deepEqual([brief(advise(owned).shop[2]), advise(owned).shop[2].why], ['no Ignore', 'garde 30 pièces pour les intérêts']);
+  assert.deepEqual([brief(advise(owned).shop[2]), advise(owned).shop[2].why], ['no Ignore', 'complément de la compo ; garde 30 pièces pour les intérêts']);
 });
 
 // Faux Cache Storage et faux fetch : la file `replies` donne les réponses (Error = rejet de fetch, textError = rejet de la
