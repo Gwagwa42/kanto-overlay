@@ -39,7 +39,7 @@ const STATES = {
   'a-eviter-ouvert': { save: S57, api: 'ok', ui: { avoid: true } },
   options: { save: S57, api: 'ok', menu: true, ui: { pins: { no: false } } },
   replie: { save: S57, api: 'ok', tip: true, ui: { collapsed: true } },
-  'large-grand-80': { save: S57, api: 'ok', ui: { width: 'wide', text: 'large', alpha: '80' } },
+  'large-grand-85': { save: S57, api: 'ok', ui: { width: 'wide', text: 'large', alpha: '85' } },
   modales: { save: MODALS, api: 'ok', modal: true },
   'boss-difficile': { save: { ...S57, round: 1195 }, api: 'ok', ui: { tab: 'boss' } },
   'sans-sauvegarde': { save: null, api: 'ok' },
