@@ -39,9 +39,10 @@ barre le remet en haut à droite.
   rôle : offensif au porteur puis aux attaquants, défensif au tank puis à la mêlée. 3 objets au plus par Pokémon ; « Garde »
   seulement quand toute la compo est pleine. La récompense d'objet se choisit d'après ce qui reste à compléter après ces conseils.
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
-- **Formation** : la compo cible dans la limite du niveau. Chaque Pokémon a sa zone : tank au premier rang, porteur à distance dans
-  le coin choisi (bouton « Porteur »), mêlée devant, distance au fond. Un Pokémon déjà dans sa zone garde sa case ; les autres
-  prennent la première case libre (avant depuis le centre, fond depuis le coin). Les déplacements sont listés dans l'ordre où les
+- **Formation** : la compo cible dans la limite du niveau. Chaque Pokémon a sa zone : tank au premier rang, porteur à distance au
+  fond, dans la zone choisie (bouton « Porteur » : coin gauche, centre ou coin droit ; aucune statistique publique ne départage
+  ces placements), mêlée devant, distance au fond. Un Pokémon déjà dans sa zone garde sa case ; les autres prennent la première
+  case libre (avant depuis le centre, fond depuis la zone du porteur). Les déplacements sont listés dans l'ordre où les
   faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors formation si le plateau est plein.
 - **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny »
   dans la compo cible, ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, et s'écrit `ligne:2s:…` dans

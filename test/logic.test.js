@@ -499,8 +499,8 @@ test('formation : dans la limite du niveau, cœur possédé d’abord', () => {
   assert.deepEqual(units.sort(), ['dratini', 'growlithe']);
 });
 
-test('formation : une seule unité par cellule, niveaux 3 à 9, des deux côtés', () => {
-  for (const side of ['left', 'right']) {
+test('formation : une seule unité par cellule, niveaux 3 à 9, pour chaque zone du porteur', () => {
+  for (const side of ['left', 'center', 'right']) {
     for (let level = 3; level <= 9; level++) {
       const cells = advise({ ...S57, level }, { side }).code.split(';').slice(4).map(u => Number(u.split(':')[2]));
       assert.equal(new Set(cells).size, cells.length, `niveau ${level}, ${side}`);
@@ -564,6 +564,9 @@ test('formation : porteur à distance dans le coin du côté choisi, gardé s’
   assert.deepEqual(at(51, 'left').moves, []);
   assert.match(at(51, 'left').code, /abra:2:23/);
   assert.deepEqual(at(51, 'right').moves.map(m => m.why), ['fond, colonne 3 → fond, colonne 7']);
+  // Centre : colonnes 3 à 5 du fond, colonne 4 d'abord ; fond colonne 3 est dans la zone, gardé.
+  assert.deepEqual(at(29, 'center').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 4']);
+  assert.deepEqual(at(51, 'center').moves, []);
   // Onix et Goupix (distance) déjà au fond en colonnes 1 et 3 : le porteur reste dans le coin (colonne 2), pas en colonne 5.
   const corner = KT.advise({
     torre: { ...t, cores: [{ stop: '10:brock', core: ['abra', 'onix', 'vulpix'], n: 50, win: 90, lo: 80 }] }, data, lang, side: 'left', previous: null,
@@ -573,6 +576,12 @@ test('formation : porteur à distance dans le coin du côté choisi, gardé s’
     },
   });
   assert.deepEqual(corner.moves.map(m => `${m.title} — ${m.why}`), ['Pose Abra — fond, colonne 2']);
+  // Centre : Onix et Goupix (distance) prennent ensuite les cases libres les plus proches du centre, colonnes 3 puis 5.
+  const center = KT.advise({
+    torre: { ...t, cores: [{ stop: '10:brock', core: ['abra', 'onix', 'vulpix'], n: 50, win: 90, lo: 80 }] }, data, lang, side: 'center', previous: null,
+    save: { ...save, round: 1009, level: 3, shop: [], bench: ['x', 'v'], board: {}, units: { x: { id: 'x', line: 'abra', star: 2 }, v: { id: 'v', line: 'vulpix', star: 1 } } },
+  });
+  assert.deepEqual(center.moves.map(m => `${m.title} — ${m.why}`), ['Pose Abra — fond, colonne 4', 'Pose Goupix — fond, colonne 5']);
 });
 
 // Unités de S57 remplacées ou ajoutées ; shiny : +10 % (makeUnit du jeu), transmis par la fusion.
