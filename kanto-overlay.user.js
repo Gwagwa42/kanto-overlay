@@ -1271,7 +1271,8 @@ const CSS = `
 .kt-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--kt-s0); margin: 0 var(--kt-s3); padding: var(--kt-s0); border-radius: var(--kt-r-card); background: var(--kt-raised); }
 .kt-tabs button { height: var(--kt-h-ctl); display: flex; align-items: center; justify-content: center; gap: var(--kt-s1); border: 0; border-radius: var(--kt-r-in); background: none; color: var(--kt-muted); font-size: var(--kt-fs-m); font-weight: 600; cursor: pointer; }
 .kt-tabs button[aria-selected="true"] { background: var(--kt-accent); color: var(--kt-accent-fg); }
-.kt-tabs .count { min-width: var(--kt-h-icon); height: var(--kt-h-icon); padding: 0 var(--kt-s1); border-radius: 999px; background: var(--kt-raised-2); font-size: var(--kt-fs-xs); display: inline-grid; place-items: center; }
+/* Chiffre en --kt-text : en --kt-muted sur --kt-raised-2, il tomberait à 4,3:1 au fond 85 %. */
+.kt-tabs .count { min-width: var(--kt-h-icon); height: var(--kt-h-icon); padding: 0 var(--kt-s1); border-radius: 999px; background: var(--kt-raised-2); color: var(--kt-text); font-size: var(--kt-fs-xs); display: inline-grid; place-items: center; }
 .kt-tabs button[aria-selected="true"] .count { background: var(--kt-scrim); }
 .kt-panel { display: grid; align-content: start; gap: var(--kt-s3); min-height: 0; overflow: auto; padding: var(--kt-s0) var(--kt-s3); }
 .kt-label { display: flex; justify-content: space-between; gap: var(--kt-s2); font-size: var(--kt-fs-s); color: var(--kt-muted); }
@@ -1446,7 +1447,7 @@ function tourHtml(state, ui) {
   for (const id of a.unknownOffer) lines.push(`<li><span></span><span><span class="t">Bénédiction inconnue (${esc(id)})</span><span class="why">pas de conseil</span></span></li>`);
   const avoid = marks.filter(m => m.level === 'no');
   const todo = lines.length ? `<ol class="kt-todo" aria-label="Conseils">${lines.join('')}</ol>` : '<p class="kt-msg">Rien à faire pour l’instant.</p>';
-  return `${todo}${avoid.length ? `<details class="kt-avoid"${ui.avoid ? ' open' : ''}><summary><span class="k">${avoid.length} à éviter</span>
+  return `${todo}${avoid.length ? `<details class="kt-avoid"${ui.avoid ? ' open' : ''}><summary id="kt-avoid-sum"><span class="k">${avoid.length} à éviter</span>
 <span class="l">${esc(avoid.map(m => m.title).join(' · '))}</span></summary><ol class="kt-todo">${avoid.map(markHtml).join('')}</ol></details>` : ''}`;
 }
 
@@ -1460,7 +1461,7 @@ function aimsHtml(a, ui) {
     });
     return `<li><span class="who">${esc(a.names.line(x.unit.line))}</span><ul>${items.join('')}</ul></li>`;
   });
-  return rows.length ? `<details class="kt-aims"${ui.aims ? ' open' : ''}><summary>Objets visés</summary><ul>${rows.join('')}</ul></details>` : '';
+  return rows.length ? `<details class="kt-aims"${ui.aims ? ' open' : ''}><summary id="kt-aims-sum">Objets visés</summary><ul>${rows.join('')}</ul></details>` : '';
 }
 
 function compoHtml(state, ui) {
@@ -1545,12 +1546,12 @@ function tabsHtml(state, ui) {
     // Nom accessible sur l'onglet (aria-label ignoré sur un span) ; il commence par le texte visible (WCAG 2.5.3).
     const counted = id === 'tour' && count;
     const badge = counted ? ` <span class="count" aria-hidden="true">${count}</span>` : '';
-    const label = counted ? ` aria-label="${name} ${count} conseils"` : '';
+    const label = counted ? ` aria-label="${name} ${count} conseil${count > 1 ? 's' : ''}"` : '';
     return `<button role="tab" id="kt-tab-${id}" data-act="tab" data-tab="${id}" aria-selected="${on}" aria-controls="kt-tabpanel" tabindex="${on ? 0 : -1}"${label}>${name}${badge}</button>`;
   }).join('')}</div>`;
 }
 
-const TAB_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', ' ']);
+const TAB_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End']);
 const TAB_HTML = { tour: tourHtml, compo: compoHtml, boss: bossTabHtml, rules: state => rulesHtml(state.floor) };
 
 function panelHtml(state, ui) {
@@ -1907,11 +1908,15 @@ function mount() {
     // Réécrire seulement ce qui change : un focus ou une bulle ouverte survit aux réécritures de la sauvegarde.
     const html = panelHtml(state, ui);
     if (html !== lastHtml) {
-      // Le focus clavier (onglet, bouton Copier) survit à la réécriture, qui suit chaque changement de la sauvegarde.
+      // Le focus clavier (onglet, sections repliables, bouton Copier) et le défilement de l'onglet survivent à la réécriture,
+      // qui suit chaque changement de la sauvegarde.
       const focused = body.contains(root.activeElement) ? root.activeElement.id : '';
+      const scrolled = body.querySelector('.kt-panel')?.scrollTop ?? 0;
       body.innerHTML = html;
       lastHtml = html;
       if (focused) root.getElementById(focused)?.focus();
+      const panelEl = body.querySelector('.kt-panel');
+      if (panelEl) panelEl.scrollTop = scrolled;
     }
     const sum = summaryHtml(state);
     if (sum !== lastSummary) {
@@ -2013,13 +2018,16 @@ function mount() {
     saveUi();
     render();
   }
-  // Échap dans le menu le ferme et rend le focus au bouton ⚙.
-  opts.addEventListener('keydown', e => {
-    if (e.key !== 'Escape') return;
-    menuOpen = false;
-    render();
-    menu.focus();
-  });
+  // Échap dans le menu ou sur le bouton ⚙ le ferme et rend le focus au bouton.
+  for (const el of [opts, menu]) {
+    el.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' || !menuOpen) return;
+      e.stopPropagation();
+      menuOpen = false;
+      render();
+      menu.focus();
+    });
+  }
   // Onglet choisi gardé entre deux sessions.
   function showTab(tab) {
     ui.tab = tab;
@@ -2132,5 +2140,5 @@ function mount() {
 }
 
 // Les tests reçoivent aussi le pilote du Planificateur, joué sur un faux DOM.
-if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, PlannerError };
+if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, PlannerError };
 else mount();

@@ -905,6 +905,14 @@ test('options du panneau : valeurs inconnues ramenées aux défauts, valeurs con
   const ok = { theme: 'light', width: 'compact', text: 'small', alpha: '85', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true } };
   KT.checkUi(ok);
   assert.deepEqual(ok, { theme: 'light', width: 'compact', text: 'small', alpha: '85', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true } });
+  // Compteur de l'onglet Tour : conseils ★ et ◆ plus bénédictions inconnues, nom accessible accordé.
+  const a = advise(S57);
+  const count = n => KT.tabsHtml({ advice: n }, { tab: 'tour' }).match(/aria-label="Tour (\d+) conseils?"/)?.[1];
+  const base = Number(count(a));
+  assert.ok(base > 1);
+  assert.equal(Number(count({ ...a, unknownOffer: ['x', 'y'] })), base + 2);
+  const one = { ...a, shop: [], reroll: null, xp: null, bench: [], bag: [], reward: [], offer: [], anchor: [], moves: [], unknownOffer: ['x'] };
+  assert.match(KT.tabsHtml({ advice: one }, { tab: 'tour' }), /aria-label="Tour 1 conseil"/);
   // Chaque zone du porteur a son option, dans l'ordre de la table des zones.
   assert.deepEqual(KT.OPTIONS.find(o => o.key === 'side').values, [['left', 'Coin gauche'], ['center', 'Centre'], ['right', 'Coin droit']]);
 });
