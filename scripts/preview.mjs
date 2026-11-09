@@ -60,7 +60,8 @@ function slim(s) {
     torre: {
       rules: torre.rules, from: torre.from, to: torre.to, stops, cores: [...new Map(cores.map(c => [`${c.stop}|${c.core}`, c])).values()],
       lines: torre.lines.filter(l => lines.has(KT.baseLine(l.line))),
-      holders: [...new Set(torre.holders.map(h => h.line))].filter(l => lines.has(KT.baseLine(l))).flatMap(l => KT.topHolders(torre, data, l)),
+      // Tous les objets portés par ces lignées : le profil de chaque lignée (lineProfiles) se lit sur eux.
+      holders: torre.holders.filter(h => lines.has(KT.baseLine(h.line))),
     },
     data: {
       ...data, lines: Object.fromEntries([...lines].filter(b => data.lines[b]).map(b => [b, data.lines[b]])),

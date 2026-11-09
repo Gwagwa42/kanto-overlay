@@ -60,8 +60,11 @@ const KT = (() => {
   const FORTUNE_INTEREST = 2;
   const PATH_SIZE = 3;
   const MAX_ITEMS = 3;
-  // Stats offensives des objets (data.items[id].stat) ; les autres (hp, def, spd, shield) sont défensives.
-  const OFFENSE = ['atk', 'spa', 'as', 'crit', 'mana', 'vamp'];
+  // Composants défensifs ; Protéine (Attaque), Calcium (Atq. Spé.) et Carbone (vitesse d'attaque) sont offensifs.
+  const DEFENSE = ['hp-up', 'iron', 'zinc'];
+  // Part de composants défensifs dans les objets qu'une lignée porte en Tour à partir de laquelle elle est un tank : Ronflex 0,94,
+  // Machop 0,56, Caninos 0,48, Minidraco 0,40 (campana.json, novembre 2026).
+  const TANK_SHARE = 0.5;
   // Bénédictions de la Tour v41 (absentes de l'API) → voie (null : hors voie) et nom ; ordre = préférence à égalité.
   const BOONS = {
     coincase: ['fortune', 'Boîte Jetons'], nugget: ['fortune', 'Maxi Pépite'], fbag: ['fortune', 'Sac de Jetons'],
@@ -531,8 +534,13 @@ const KT = (() => {
       const u = id && game.units.find(x => x.id === id);
       if (!u) return null;
       const base = baseLine(u.line);
+      const shinyKept = u.shiny && game.floor <= SHINY_KEEP_TO;
+      // Vendu, il rend ses objets au sac : seulement s'il ne sert ni à la compo cible ni à la suivante.
+      if (u.items?.length && !shinyKept && ![...targetBases(target), ...nextBases(next)].includes(base)) {
+        return mark('no', 'Vends', `Vends ${names.line(u.line)}`, 'hors des compos : il rend ses objets au sac');
+      }
       const paired = game.units.some(x => x.id !== u.id && baseLine(x.line) === base && x.star === u.star);
-      if (wanted.includes(base) || paired || (u.shiny && game.floor <= SHINY_KEEP_TO) || (free > 1 && !short)) return null;
+      if (wanted.includes(base) || paired || shinyKept || (free > 1 && !short)) return null;
       const forGold = free > 1 || nextBases(next).includes(base);
       return mark('no', 'Vends', `Vends ${names.line(u.line)}`, forGold ? 'il manque de l’or pour un achat conseillé' : 'hors compo, libère le banc');
     });
@@ -549,63 +557,123 @@ const KT = (() => {
     return { make, parts };
   }
 
-  // Meilleurs objets complets portés en Tour par cette lignée exacte : une forme ancrée (-aN) ne compte que pour elle-même ; le
-  // repli sur la lignée de base est dans idealItems.
-  function topHolders(torre, data, line) {
-    return torre.holders.filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full')
+  // Composants qui donnent ses stats à un objet : inherits de l'API, qui diffère parfois de la recette (Casque Brut : PV Plus +
+  // Fer, recette PV Plus + Protéine) ; vide pour les objets Choix, dont la recette porte la stat.
+  function itemParts(data, id) {
+    const item = data.items[id];
+    if (item?.k === 'part') return [id];
+    if (item?.k !== 'full') return [];
+    return item.inherits?.length ? item.inherits.flatMap(x => Array(x.n).fill(x.part)) : item.recipe ?? [];
+  }
+
+  // Profil de chaque lignée de base, lu sur les objets qu'elle porte en Tour (pondérés par le nombre de combats) : tank si la
+  // part de composants défensifs atteint TANK_SHARE, spéciale si le Calcium l'emporte sur la Protéine. Les stats de data.json
+  // ne séparent pas tanks et attaquants, et data.json ne connaît pas toutes les lignées de la Tour.
+  function lineProfiles(torre, data) {
+    const sums = new Map();
+    for (const h of torre.holders) {
+      const parts = itemParts(data, h.id);
+      if (!parts.length) continue;
+      const base = baseLine(h.line);
+      const sum = sums.get(base) ?? { n: 0, def: 0, atk: 0, spa: 0 };
+      const count = list => parts.filter(p => list.includes(p)).length;
+      sum.n += h.n;
+      sum.def += (h.n * count(DEFENSE)) / parts.length;
+      sum.atk += h.n * count(['protein']);
+      sum.spa += h.n * count(['calcium']);
+      sums.set(base, sum);
+    }
+    return new Map([...sums].map(([base, x]) => [base, { tank: x.def / x.n >= TANK_SHARE, special: x.spa > x.atk }]));
+  }
+
+  // Objet complet qui convient au profil : jamais la stat d'attaque contraire sans la sienne (Orbe Vie, Lentilscope restent
+  // mixtes), au moins la moitié de composants défensifs pour un tank, offensifs pour un attaquant. Sans profil, tout convient.
+  function suits(data, profile, id) {
+    if (!profile) return true;
+    const parts = itemParts(data, id);
+    if (!parts.length) return false;
+    const [own, other] = profile.special ? ['calcium', 'protein'] : ['protein', 'calcium'];
+    if (parts.includes(other) && !parts.includes(own)) return false;
+    const def = parts.filter(p => DEFENSE.includes(p)).length;
+    return profile.tank ? def * 2 >= parts.length : def * 2 <= parts.length;
+  }
+
+  // Ce qu'un objet porté contraire au profil a de faux, pour le conseil d'Aimant.
+  function misfit(data, profile, id) {
+    const parts = itemParts(data, id);
+    const [own, other] = profile.special ? ['calcium', 'protein'] : ['protein', 'calcium'];
+    if (parts.includes(other) && !parts.includes(own)) return profile.special ? 'physique sur un spécial' : 'spécial sur un physique';
+    return profile.tank ? 'offensif sur un tank' : 'défensif sur un attaquant';
+  }
+
+  // Meilleurs objets complets portés en Tour par cette lignée exacte et qui conviennent à son profil : une forme ancrée (-aN)
+  // ne compte que pour elle-même ; le repli sur la lignée de base est dans idealItems.
+  function topHolders(torre, data, line, profile) {
+    return torre.holders.filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full' && suits(data, profile, h.id))
       .sort((a, b) => b.lo - a.lo).slice(0, MAX_ITEMS);
   }
 
-  function idealItems(torre, data, line) {
-    const own = topHolders(torre, data, line);
-    return (own.length ? own : topHolders(torre, data, baseLine(line))).map(h => h.id);
+  function idealItems(torre, data, line, profile) {
+    const own = topHolders(torre, data, line, profile);
+    return (own.length ? own : topHolders(torre, data, baseLine(line), profile)).map(h => h.id);
   }
 
   // Portée inconnue : mêlée.
   const isRanged = (data, base) => (lineInfo(data, base)?.range ?? 1) > 1;
 
   // Porteurs : un Pokémon possédé par lignée de la compo cible (le plus étoilé, puis celui qui porte le plus d'objets, puis
-  // posé). Porteur (cœur, objets offensifs), tank (mêlée aux PV max), puis les autres (★, puis lineLo) : offensifs à distance,
-  // défensifs en mêlée.
-  function holdersOf(torre, data, game, target) {
+  // posé). Rôles lus sur le profil de la lignée : porteur (attaquant du cœur le mieux classé), tanks (aux PV max d'abord),
+  // puis les autres attaquants (★, puis lineLo).
+  function holdersOf(torre, data, game, target, profiles) {
     const own = targetBases(target)
       .map(b => unitsOf(game, b).sort((x, y) => y.star - x.star || Number(!!y.shiny) - Number(!!x.shiny) || (y.items?.length ?? 0) - (x.items?.length ?? 0)
         || Number(y.cell !== undefined) - Number(x.cell !== undefined))[0])
       .filter(Boolean);
+    const profile = u => profiles.get(baseLine(u.line)) ?? null;
     const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || lineLo(torre, b.line) - lineLo(torre, a.line);
-    const melee = u => !isRanged(data, baseLine(u.line));
     const hp = u => (lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0) * (u.shiny ? SHINY_HP : 1);
-    const carry = own.filter(u => target.core.some(id => baseLine(id) === baseLine(u.line))).sort(rank)[0];
-    const tank = own.filter(u => u !== carry && melee(u)).sort((a, b) => hp(b) - hp(a))[0];
-    const rest = own.filter(u => u !== carry && u !== tank).sort(rank).map(u => [melee(u) ? 'front' : 'atk', u]);
-    return [['carry', carry], ['tank', tank], ...rest].filter(([, u]) => u)
-      .map(([role, u]) => ({ role, unit: u, ideal: idealItems(torre, data, u.line) }));
+    const tanks = own.filter(u => profile(u)?.tank).sort((a, b) => hp(b) - hp(a));
+    const attackers = own.filter(u => !tanks.includes(u)).sort(rank);
+    const carry = attackers.find(u => target.core.some(id => baseLine(id) === baseLine(u.line)));
+    return [['carry', carry], ...tanks.map(u => ['tank', u]), ...attackers.filter(u => u !== carry).map(u => ['atk', u])]
+      .filter(([, u]) => u)
+      .map(([role, u]) => ({ role, unit: u, profile: profile(u), ideal: idealItems(torre, data, u.line, profile(u)) }));
+  }
+
+  // Lignées du cœur cible non possédées et du cœur de la compo suivante : leurs recettes idéales se préparent au sac.
+  function futureLines(torre, data, target, next, holders, profiles, names) {
+    const owned = new Set(holders.map(h => baseLine(h.unit.line)));
+    return [...target.core, ...(next?.core ?? [])].filter(id => !owned.has(baseLine(id)) && owned.add(baseLine(id)))
+      .map(id => ({ base: baseLine(id), who: names.line(baseLine(id)), ideal: idealItems(torre, data, id, profiles.get(baseLine(id)) ?? null) }));
   }
 
   const BEST = 'meilleur objet de sa lignée en Tour';
   const ROLE_WHY = {
-    carry: 'objet offensif pour ton porteur', atk: 'objet offensif pour un attaquant',
-    tank: 'objet défensif pour ton tank', front: 'objet défensif pour ta mêlée',
+    carry: 'objet offensif pour ton porteur', tank: 'objet défensif pour un tank', atk: 'objet offensif pour un attaquant',
   };
 
-  // Tout objet complet ou composant va tout de suite sur un Pokémon de la compo : un composant posé seul donne déjà son effet
-  // et fusionne avec le prochain composant posé sur ce Pokémon. Chaque objet du sac est conseillé une fois ; l'état de chaque
-  // porteur (objets, places, composant seul) suit les conseils, et une seule paire par Pokémon et par passage (l'ordre de pose
-  // ne serait plus clair). Renvoie aussi cet état final, pour le choix de la récompense.
-  function itemMarks(data, game, holders, book, target, names) {
+  // Tout objet complet ou composant va tout de suite sur un Pokémon de la compo à qui il convient : un composant posé seul donne
+  // déjà son effet et fusionne avec le prochain composant posé sur ce Pokémon. Chaque objet du sac est conseillé une fois ;
+  // l'état de chaque porteur (objets, places, composant seul) suit les conseils, et une seule paire par Pokémon et par passage
+  // (l'ordre de pose ne serait plus clair). future : lignées à venir (futureLines), pour qui un composant reste au sac.
+  // Renvoie aussi cet état final, pour le choix de la récompense.
+  function itemMarks(data, game, holders, book, target, future, names) {
     const marks = game.bag.map(() => null);
-    if (!target) return { marks, holders: [] };
+    if (!target) return { marks, holders: [], reserved: new Set() };
     const kind = id => data.items[id]?.k;
     const hs = holders.map(h => {
       const on = [...(h.unit.items ?? [])];
       const lone = on.find(id => kind(id) === 'part') ?? null;
       // loneAt : case du sac du composant seul conseillé dans ce passage ; after : paire à poser avant.
-      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, after: null };
+      // held : objets du sac gardés pour lui après l'Aimant.
+      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, after: null, held: [] };
     });
-    const fits = (h, id) => {
-      const stat = data.items[id]?.stat;
-      return stat !== undefined && OFFENSE.includes(stat) === (h.role === 'carry' || h.role === 'atk');
-    };
+    // Cases du sac gardées pour un Pokémon précis (après l'Aimant) ou pour une lignée à venir.
+    const reserved = new Set();
+    // Un composant convient s'il entre dans un objet complet qui convient.
+    const fits = (h, id) => (kind(id) === 'part'
+      ? [...book.parts].some(([f, ab]) => ab.includes(id) && suits(data, h.profile, f))
+      : kind(id) === 'full' && suits(data, h.profile, id));
     const ideal = (h, full) => h.ideal.includes(full) && !h.on.includes(full);
     const fused = (h, id) => book.make.get(`${h.lone}+${id}`);
     const pending = k => game.bag.map((id, i) => ({ id, i })).filter(x => marks[x.i] === null && kind(x.id) === k);
@@ -654,8 +722,11 @@ const KT = (() => {
     // Un composant seul qui entre dans une recette idéale encore à faire (porté ou conseillé) n'est détourné que faute de
     // place utile au rôle : le conseil reste le même une fois le composant posé.
     const kept = h => h.ideal.some(f => ideal(h, f) && book.parts.get(f)?.includes(h.lone));
+    // Composants encore à réunir pour chaque recette idéale des lignées à venir : une copie gardée par composant demandé.
+    const needs = future.flatMap(x => x.ideal.map(f => ({ x, f, left: [...(book.parts.get(f) ?? [])] })));
     // Composant, première règle qui s'applique : complète une recette idéale, paire idéale du sac, entame une recette idéale,
-    // fusion utile au rôle, recette doublée utile au rôle, fusion utile au rôle d'un composant réservé, toute place, toute fusion.
+    // reste au sac pour la recette idéale d'une lignée à venir, fusion utile au rôle, recette doublée utile au rôle, fusion
+    // utile au rôle d'un composant réservé, place sur un Pokémon à qui il convient.
     const placePart = (id, i) => {
       const done = hs.find(h => h.lone && ideal(h, fused(h, id)));
       if (done) return fuse(i, done, id, `${names.item(fused(done, id))}, ${BEST}`);
@@ -667,11 +738,20 @@ const KT = (() => {
         duo.h.on.push(duo.f);
         return;
       }
-      const effect = `${names.effect(id) ?? 'son effet'} tout de suite`;
+      // L'effet du composant seul n'est pas annoncé quand c'est la stat d'attaque contraire (Protéine seule sur un spécial).
+      const contrary = h => h.profile !== null && id === (h.profile.special ? 'protein' : 'calcium');
+      const now = h => (contrary(h) ? '' : `${names.effect(id) ?? 'son effet'} tout de suite ; `);
       const begun = free.map(h => ({ h, f: h.ideal.find(f => ideal(h, f) && book.parts.get(f)?.includes(id)) })).find(x => x.f);
       if (begun) {
         const [a, b] = book.parts.get(begun.f);
-        return alone(i, begun.h, id, `${effect} ; plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
+        return alone(i, begun.h, id, `${now(begun.h)}plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
+      }
+      const later = needs.find(n => n.left.includes(id));
+      if (later) {
+        later.left.splice(later.left.indexOf(id), 1);
+        reserved.add(i);
+        marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, `${names.item(later.f)} pour ${later.x.who}, à venir`);
+        return;
       }
       const useful = list => list.find(h => fits(h, fused(h, id)) && !h.on.includes(fused(h, id)));
       const roleFuse = h => fuse(i, h, id, `${names.item(fused(h, id))}, ${ROLE_WHY[h.role]}`);
@@ -679,46 +759,124 @@ const KT = (() => {
       if (open) return roleFuse(open);
       const twin = book.make.get(`${id}+${id}`);
       const double = free.find(h => fits(h, twin) && !h.on.includes(twin));
-      if (double) return alone(i, double, id, `${effect} ; plus tard avec ${names.item(id)} : ${names.item(twin)}, ${ROLE_WHY[double.role]}`);
+      if (double) return alone(i, double, id, `${now(double)}plus tard avec ${names.item(id)} : ${names.item(twin)}, ${ROLE_WHY[double.role]}`);
       const diverted = useful(hs.filter(h => h.lone && kept(h)));
       if (diverted) return roleFuse(diverted);
-      if (free[0]) return alone(i, free[0], id, effect);
-      const any = hs.find(h => h.lone);
-      if (any) fuse(i, any, id, names.item(fused(any, id)));
+      const any = free.find(h => fits(h, id) && !contrary(h));
+      if (any) alone(i, any, id, now(any).replace(/ ; $/, ''));
     };
 
-    game.bag.forEach((id, i) => {
-      if (id !== 'magnet') return;
-      const off = game.units.find(u => u.items?.length && !targetBases(target).includes(baseLine(u.line)));
-      if (off) marks[i] = mark('do', `Retire de ${names.line(off.line)}`, `Aimant sur ${names.line(off.line)}`, 'récupère ses objets : il sort de la compo');
-    });
+    // Aimant : sur un Pokémon de la compo qui porte un objet contraire à son profil, puis sur un Pokémon plein dont un objet
+    // idéal attend au sac (complet, ou ses deux composants), enfin sur un Pokémon posé hors des deux compos qui porte des objets
+    // (au banc, la vente les rend : sellMarks). Il rend tous ses objets au sac : le Pokémon ne reçoit plus rien dans ce passage,
+    // les conseils suivent au passage d'après.
+    const count = id => pending(kind(id)).filter(x => x.id === id).length;
+    const inBag = f => {
+      const [a, b] = book.parts.get(f) ?? [];
+      return count(f) > 0 || (a !== undefined && (a === b ? count(a) >= 2 : count(a) > 0 && count(b) > 0));
+    };
+    const wrong = h => h.on.find(id => ['part', 'full'].includes(kind(id)) && !fits(h, id));
+    const swap = h => {
+      const bad = wrong(h);
+      if (bad) return { why: `retire ${names.item(bad)} (${misfit(data, h.profile, bad)})`, ready: null };
+      // Une recette que le composant seul porté complète par fusion avec un composant du sac n'a pas besoin de place.
+      const fusable = x => {
+        const ab = h.lone ? book.parts.get(x) ?? [] : [];
+        return ab.includes(h.lone) && count(ab[0] === h.lone ? ab[1] : ab[0]) > 0;
+      };
+      const f = h.slots === 0 && h.ideal.find(x => !h.on.includes(x) && !fusable(x) && inBag(x));
+      const out = f && h.on.find(x => ['part', 'full'].includes(kind(x)) && !h.ideal.includes(x));
+      return out ? { why: `retire ${names.item(out)} ; ${names.item(f)} prêt au sac`, ready: f } : null;
+    };
+    const wanted = [...targetBases(target), ...future.map(x => x.base)];
+    const strays = game.units.filter(u => u.items?.length && boardCell(u.cell) !== null && !wanted.includes(baseLine(u.line)));
+    const targets = [...hs.filter(wrong), ...hs.filter(h => !wrong(h))];
+    for (const { i } of game.bag.map((id, j) => ({ id, i: j })).filter(x => x.id === 'magnet')) {
+      // Calculé à chaque Aimant : l'objet réservé par le précédent n'est plus au sac.
+      const s = targets.map(h => ({ h, ...swap(h) })).find(x => x.why);
+      if (!s) {
+        const u = strays.shift();
+        if (u) marks[i] = mark('do', `Retire de ${names.line(u.line)}`, `Aimant sur ${names.line(u.line)}`, 'hors des compos : récupère ses objets');
+        continue;
+      }
+      targets.splice(targets.indexOf(s.h), 1);
+      marks[i] = mark('do', `Retire de ${s.h.who}`, `Aimant sur ${s.h.who}`, s.why);
+      Object.assign(s.h, { slots: 0, lone: null });
+      // L'objet prêt attend l'Aimant au sac : le complet s'il y est, sinon ses deux composants.
+      if (!s.ready) continue;
+      const keep = id => {
+        const j = pending(kind(id)).find(x => x.id === id).i;
+        marks[j] = mark('opt', 'Garde', `Garde ${names.item(id)}`, `pour ${s.h.who}, après l’Aimant`);
+        reserved.add(j);
+        s.h.held.push(id);
+      };
+      if (count(s.ready) > 0) keep(s.ready);
+      else book.parts.get(s.ready).forEach(keep);
+    }
     // Objets complets : recettes idéales d'abord (rang le plus haut), puis par rôle, en évitant un doublon sur un Pokémon.
     for (const { id, i } of pending('full')) {
       const h = hs.filter(x => x.slots > 0 && ideal(x, id)).sort((a, b) => a.ideal.indexOf(id) - b.ideal.indexOf(id))[0];
       if (h) full(i, h, id, BEST);
     }
     for (const { id, i } of pending('full')) {
-      const free = hs.filter(x => x.slots > 0);
-      const fresh = free.filter(x => !x.on.includes(id));
-      const h = fresh.find(x => fits(x, id)) ?? fresh[0] ?? free[0];
-      if (h) full(i, h, id, fits(h, id) ? ROLE_WHY[h.role] : 'place libre dans la compo');
+      const free = hs.filter(x => x.slots > 0 && fits(x, id));
+      const h = free.find(x => !x.on.includes(id)) ?? free[0];
+      if (h) full(i, h, id, ROLE_WHY[h.role]);
     }
     for (const { id, i } of pending('part')) if (marks[i] === null) placePart(id, i);
-    const why = hs.length ? 'toute la compo a 3 objets' : 'aucun Pokémon de la compo possédé';
-    for (const { id, i } of [...pending('full'), ...pending('part')]) marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, why);
-    return { marks, holders: hs };
+    for (const { id, i } of [...pending('full'), ...pending('part')]) {
+      const later = future.find(x => x.ideal.includes(id));
+      let why = 'aucun Pokémon de la compo possédé';
+      if (later) why = `pour ${later.who}, à venir`;
+      else if (hs.length) why = hs.some(h => h.slots > 0) ? 'aucun Pokémon de la compo n’en profite' : 'toute la compo a 3 objets';
+      marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, why);
+    }
+    return { marks, holders: hs, reserved };
   }
 
-  // Récompense : d'après l'état des porteurs après les conseils du sac (composants seuls et places restantes).
-  function offerMarks(book, game, hs, names) {
-    if (!hs.length || !game.reward.length) return game.reward.map(() => null);
-    const value = id => hs.flatMap(h => h.ideal.filter(f => !h.on.includes(f)).map(f => {
+  // Objets visés par Pokémon de la compo : ceux qu'il porte et qui conviennent, puis ses objets idéaux, 3 au plus. Lu sur l'état
+  // final des porteurs (itemMarks) : porté (worn), prêt (ready) ou composants manquants (missing). Prêt : posé ou fusionné par
+  // les conseils de ce passage, gardé pour lui après l'Aimant, ou réunissable avec ses composants seuls et le sac libre (ni posé
+  // ni réservé), partagé dans l'ordre des porteurs.
+  function aimsOf(data, game, items, book) {
+    const pool = game.bag.filter((id, i) => items.marks[i]?.level !== 'do' && !items.reserved.has(i));
+    const take = (list, id) => {
+      const k = list.indexOf(id);
+      if (k >= 0) list.splice(k, 1);
+      return k >= 0;
+    };
+    return items.holders.map(h => {
+      const on = h.unit.items ?? [];
+      const own = [...h.held, ...h.on.filter(id => data.items[id]?.k === 'part')];
+      const worn = on.filter(id => data.items[id]?.k === 'full' && suits(data, h.profile, id));
+      const aims = [...new Set([...worn, ...h.ideal])].slice(0, MAX_ITEMS).map(id => {
+        if (on.includes(id)) return { id, state: 'worn', missing: [] };
+        if (h.on.includes(id) || take(own, id) || take(pool, id)) return { id, state: 'ready', missing: [] };
+        // Composants pris seulement si l'objet est réunissable : un objet incomplet ne prive pas le Pokémon suivant.
+        const [o, p] = [[...own], [...pool]];
+        const missing = (book.parts.get(id) ?? []).filter(x => !take(o, x) && !take(p, x));
+        if (missing.length) return { id, state: 'missing', missing };
+        own.splice(0, own.length, ...o);
+        pool.splice(0, pool.length, ...p);
+        return { id, state: 'ready', missing };
+      });
+      return { unit: h.unit, aims };
+    });
+  }
+
+  // Récompense : d'après l'état des porteurs après les conseils du sac (composants seuls et places restantes), puis les
+  // recettes idéales des lignées à venir.
+  function offerMarks(book, game, hs, future, names) {
+    if (!game.reward.length) return [];
+    const value = id => [...hs.flatMap(h => h.ideal.filter(f => !h.on.includes(f)).map(f => {
       const ab = book.parts.get(f) ?? [];
       if (f === id) return h.slots > 0 && { s: 3, why: `${BEST} pour ${h.who}` };
       if (!ab.includes(id)) return null;
       if (h.lone === (ab[0] === id ? ab[1] : ab[0])) return { s: 2, why: `complète ${names.item(f)} sur ${h.who}` };
       return h.slots > 0 && !h.lone && { s: 1, why: `entame ${names.item(f)} pour ${h.who}` };
-    })).filter(Boolean).sort((a, b) => b.s - a.s)[0] ?? { s: 0 };
+    })), ...future.flatMap(x => x.ideal.filter(f => f === id || book.parts.get(f)?.includes(id))
+      .map(f => ({ s: 0.5, why: `${names.item(f)} pour ${x.who}, à venir` })))]
+      .filter(Boolean).sort((a, b) => b.s - a.s)[0] ?? { s: 0 };
     const values = game.reward.map(value);
     const best = Math.max(...values.map(v => v.s));
     const first = values.findIndex(v => v.s === best);
@@ -816,8 +974,10 @@ const KT = (() => {
     };
     const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
     const taken = new Set([...stay].map(u => u.from));
-    const first = role => (a, b) => Number(b.role === role) - Number(a.role === role);
-    const order = [...units.filter(u => !u.ranged).sort(first('tank')), ...units.filter(u => u.ranged).sort(first('carry'))];
+    // Tanks d'abord, à distance compris (leur zone est l'avant), puis la mêlée, puis la distance porteur en tête.
+    const tanks = units.filter(u => u.role === 'tank');
+    const others = units.filter(u => u.role !== 'tank');
+    const order = [...tanks, ...others.filter(u => !u.ranged), ...others.filter(u => u.ranged).sort((a, b) => Number(b.role === 'carry') - Number(a.role === 'carry'))];
     for (const u of order) {
       u.cell = stay.has(u) ? u.from : zones(u).flat().find(c => !taken.has(c));
       taken.add(u.cell);
@@ -892,9 +1052,11 @@ const KT = (() => {
       return xp.cost;
     });
     const choice = offerChoiceMarks(data, game, eco, names);
-    const holders = target ? holdersOf(torre, data, game, target) : [];
+    const profiles = target ? lineProfiles(torre, data) : null;
+    const holders = target ? holdersOf(torre, data, game, target, profiles) : [];
     const book = target ? recipeBook(data) : null;
-    const items = itemMarks(data, game, holders, book, target, names);
+    const future = target ? futureLines(torre, data, target, next, holders, profiles, names) : [];
+    const items = itemMarks(data, game, holders, book, target, future, names);
     const units = target ? formation(target, game, data, holders, side) : [];
     return {
       game, eco, target, next, names, run,
@@ -903,7 +1065,8 @@ const KT = (() => {
       xp: xp.mark,
       bench: sellMarks(game, target, next, names, shop.short),
       bag: items.marks,
-      reward: offerMarks(book, game, items.holders, names),
+      reward: offerMarks(book, game, items.holders, future, names),
+      aims: target ? aimsOf(data, game, items, book) : [],
       offer: choice.marks,
       unknownOffer: choice.unknown,
       anchor: anchorAdvice(target, game, names),
@@ -987,7 +1150,7 @@ const KT = (() => {
     SOURCES, SAVE_KEY, UI_KEY, PLAN_NAME, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
-    boardCell, topHolders, floorRange,
+    boardCell, topHolders, lineProfiles, suits, floorRange,
   };
 })();
 
@@ -1036,6 +1199,14 @@ const CSS = `
 .kt-guide summary { font-weight: 600; cursor: pointer; min-height: 24px; }
 .kt-guide p, .kt-guide ul { margin: var(--kt-space-1) 0 0; font-size: 12px; }
 .kt-guide ul { padding-left: var(--kt-space-4); }
+.kt-aims { border-top: 1px solid var(--kt-border); padding-top: var(--kt-space-2); font-size: 12px; }
+.kt-aims summary { font-weight: 600; cursor: pointer; min-height: 24px; }
+.kt-aims > ul { list-style: none; margin: var(--kt-space-1) 0 0; padding: 0; display: grid; gap: var(--kt-space-2); }
+.kt-aims .who { font-weight: 700; }
+.kt-aims ul ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.kt-aims ul ul li { display: grid; grid-template-columns: 16px 1fr; gap: var(--kt-space-1); }
+.kt-aims .st { text-align: center; }
+.kt-aims .why { color: var(--kt-muted); }
 .kt-msg { padding: var(--kt-space-2) var(--kt-space-3); border-radius: 8px; background: var(--kt-surface-2); }
 .kt-msg strong { display: block; }
 .kt-foot { padding: var(--kt-space-2) var(--kt-space-3); font-size: 12px; color: var(--kt-muted); border-top: 1px solid var(--kt-border); }
@@ -1136,6 +1307,19 @@ function todoHtml(a) {
   return lines.length ? `<ol class="kt-todo" aria-label="Conseils">${lines.join('')}</ol>` : '';
 }
 
+// Objets visés (maquette 2026-11-09-objets-vises) : symbole décoratif, l'état est dit par le libellé.
+const AIM_SYM = { worn: '✓', ready: '●', missing: '○' };
+function aimsHtml(a, ui) {
+  const rows = a.aims.filter(x => x.aims.length).map(x => {
+    const items = x.aims.map(y => {
+      const state = { worn: 'porté', ready: 'prêt au sac' }[y.state] ?? `manque ${y.missing.map(a.names.item).join(', ')}`;
+      return `<li><span class="st" aria-hidden="true">${AIM_SYM[y.state]}</span><span>${esc(a.names.item(y.id))} <span class="why">— ${esc(state)}</span></span></li>`;
+    });
+    return `<li><span class="who">${esc(a.names.line(x.unit.line))}</span><ul>${items.join('')}</ul></li>`;
+  });
+  return rows.length ? `<details class="kt-aims"${ui.aims ? ' open' : ''}><summary>Objets visés</summary><ul>${rows.join('')}</ul></details>` : '';
+}
+
 function ecoHtml(a) {
   const e = a.eco;
   let wall = '';
@@ -1155,7 +1339,7 @@ function planHtml(a, ui) {
   return `<div class="kt-plan"><p class="kt-label">Compo cible${bosses ? ` · ${esc(bosses)}` : ''}</p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${a.next ? `<p class="kt-label">Ensuite · ${esc(KT.floorRange(a.next.stops))}</p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
-${ecoHtml(a)}${todoHtml(a)}
+${ecoHtml(a)}${todoHtml(a)}${aimsHtml(a, ui)}
 <div class="kt-actions"><button class="kt-copy" data-act="copy">Copier la formation</button>
 <button class="kt-btn kt-side" data-act="side" aria-label="Côté du porteur dans la formation">Porteur : ${ui.side === 'left' ? 'gauche' : 'droite'}</button></div></div>`;
 }
@@ -1410,7 +1594,7 @@ async function loadSources(state) {
 }
 
 function mount() {
-  const ui = { x: null, y: 16, collapsed: false, guide: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
+  const ui = { x: null, y: 16, collapsed: false, guide: true, aims: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
   const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
 
   const host = document.createElement('div');
@@ -1597,9 +1781,12 @@ function mount() {
       if (!(e.altKey && e.code === 'KeyK')) e.stopPropagation();
     });
   }
+  // Sections repliables : état gardé entre deux rendus et deux sessions.
+  const FOLDS = { 'kt-guide': 'guide', 'kt-aims': 'aims' };
   root.addEventListener('toggle', e => {
-    if (!e.target.matches('.kt-guide') || ui.guide === e.target.open) return;
-    ui.guide = e.target.open;
+    const key = FOLDS[Object.keys(FOLDS).find(c => e.target.classList?.contains(c))];
+    if (!key || ui[key] === e.target.open) return;
+    ui[key] = e.target.open;
     saveUi();
   }, true);
   // Échap ferme la bulle (WCAG 1.4.13) ; sur une pastille sélectionnée, la touche ne remonte pas au jeu (modales).
