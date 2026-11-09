@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      1.5.0
+// @version      1.6.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -35,6 +35,8 @@ const KT = (() => {
   const CACHE_MAX_AGE = 3600 * 1000;
   const SAVE_KEY = 'kanto-tactics-save-tower';
   const UI_KEY = 'kt-overlay:ui';
+  // Nom du plan dans le Planificateur du jeu : il distingue le plan du panneau des plans du joueur.
+  const PLAN_NAME = 'Plan kanto-overlay';
   // Le jeu numérote les manches de la Tour à partir de 1000 : étage = round − 1000 + 1 (assets/route-*.js).
   const ROUND_BASE = 1000;
   const MIN_FIGHTS = 20;
@@ -870,7 +872,7 @@ const KT = (() => {
   }
   function kt1Code(units, rules) {
     const parts = units.map(u => `${u.line}:${u.star}${u.shiny ? 's' : ''}:${u.cell}${u.items.length ? `:${u.items.join('.')}` : ''}`);
-    return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent('Plan kanto-overlay')}`, ...parts].join(';');
+    return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent(PLAN_NAME)}`, ...parts].join(';');
   }
 
   // previous : { key, run, next } des derniers trios choisis (compo cible, compo suivante) ; l'inertie ne vaut que dans la même
@@ -982,7 +984,7 @@ const KT = (() => {
   const shortDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
   return {
-    SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
+    SOURCES, SAVE_KEY, UI_KEY, PLAN_NAME, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, topHolders, floorRange,
@@ -1205,10 +1207,79 @@ function footHtml(state) {
   return `Du ${esc(KT.shortDate(state.torre.from))} au ${esc(KT.shortDate(state.torre.to))}${cached}${uncached} · Data: <a href="https://einoow.com" target="_blank" rel="noopener">Kanto Tactics · einoow.com</a>`;
 }
 
-function copiedHtml(state) {
-  if (state.copied === null) return '';
-  return state.copied.ok ? 'Code copié : colle-le dans Planificateur → Coller un code.'
-    : `Copie refusée par le navigateur : sélectionne le code et copie-le.<br><code>${esc(state.advice?.code ?? '')}</code>`;
+function statusHtml(state) {
+  if (state.copied !== null) {
+    return state.copied.ok ? 'Code copié : colle-le dans Planificateur → Coller un code.'
+      : `Copie refusée par le navigateur : sélectionne le code et copie-le.<br><code>${esc(state.advice?.code ?? '')}</code>`;
+  }
+  const p = state.planner;
+  if (!state.advice?.code || p.code !== state.advice.code) return '';
+  return p.error ? `Planificateur non mis à jour (${esc(p.error)}) : copie le code et colle-le dans Planificateur → Coller un code.`
+    : `Planificateur à jour : « ${esc(KT.PLAN_NAME)} » est le plan actif.`;
+}
+
+// Planificateur du jeu. La CSP du site (script-src 'self') oblige Violentmonkey à injecter le script en contexte content,
+// d'où le store des plans est hors d'atteinte : le plan passe par l'interface, comme à la main (Coller un code). Chaque
+// collage crée un plan actif ; les anciens plans du panneau (même nom) sont ensuite supprimés, sinon la limite de 10 plans
+// par mode effacerait ceux du joueur. Sélecteurs relevés dans le code du jeu (règles 41).
+const PLANNER = {
+  chip: '.pln-inbar .pln-chip',
+  veil: '.pln-veil',
+  input: '.pln-paste input',
+  paste: '.pln-paste button',
+  error: '.pln-err',
+  item: '.pln-list li',
+  name: '.pln-name',
+  del: '.pln-btn.del',
+};
+const PLANNER_WAIT_MS = 3000;
+// Interface du jeu différente de celle relevée : affichée dans le panneau, le bouton Copier reste le recours.
+class PlannerError extends Error {}
+
+// Attend que test() rende une valeur vraie, vérifiée à chaque image ; rejette après PLANNER_WAIT_MS.
+function waitFor(test, what) {
+  const start = performance.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      const v = test();
+      if (v) resolve(v);
+      else if (performance.now() - start > PLANNER_WAIT_MS) reject(new PlannerError(`${what} introuvable`));
+      else requestAnimationFrame(tick);
+    };
+    tick();
+  });
+}
+
+// Colle code dans le Planificateur de la partie Tour affichée. Rend false sans rien toucher quand ce n'est pas le moment :
+// pas de partie Tour à l'écran, Planificateur déjà ouvert (le joueur s'en sert), ou écran portrait (le bouton y ouvre un
+// menu). Rejette si l'interface du jeu ne répond pas comme prévu ; le Planificateur est refermé dans tous les cas.
+async function pastePlan(code) {
+  const chip = document.querySelector(PLANNER.chip);
+  if (!document.querySelector(TOWER_HUD) || !chip || document.querySelector(PLANNER.veil)
+    || document.documentElement.dataset.layout === 'portrait') return false;
+  chip.click();
+  const veil = await waitFor(() => document.querySelector(PLANNER.veil), 'Planificateur');
+  try {
+    const field = await waitFor(() => veil.querySelector(PLANNER.input), 'champ Coller un code');
+    // Setter natif : React suit la valeur du champ par son propre setter, et ne verrait pas de changement sans celui-ci.
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, code);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    const button = await waitFor(() => !veil.querySelector(PLANNER.paste)?.disabled && veil.querySelector(PLANNER.paste), 'bouton Coller un code');
+    button.click();
+    const pasted = await waitFor(() => (veil.querySelector(PLANNER.error) ? 'refusé' : field.value === '' && 'collé'), 'résultat du collage');
+    if (pasted === 'refusé') throw new PlannerError('code refusé par le jeu');
+    const stale = () => [...veil.querySelectorAll(PLANNER.item)]
+      .find(li => !li.classList.contains('on') && li.querySelector(PLANNER.name)?.textContent === KT.PLAN_NAME);
+    for (let li = stale(); li; li = stale()) {
+      const old = li;
+      old.querySelector(PLANNER.del).click();
+      await waitFor(() => !old.isConnected, 'suppression de l’ancien plan');
+    }
+  } finally {
+    // Un clic sur le voile lui-même ferme le Planificateur.
+    veil.click();
+  }
+  return true;
 }
 
 // Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien).
@@ -1299,7 +1370,7 @@ async function loadSources(state) {
 
 function mount() {
   const ui = { x: null, y: 16, collapsed: false, guide: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
-  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
@@ -1399,13 +1470,33 @@ function mount() {
         lastFoot = footer;
       }
     }
-    const copied = copiedHtml(state);
+    const copied = statusHtml(state);
     if (copied !== lastCopied) {
       status.innerHTML = copied;
       lastCopied = copied;
     }
     place();
     pins.paint(state.advice);
+  }
+
+  // Un code n'est tenté qu'une fois, même en échec : l'erreur reste affichée jusqu'au prochain changement de compo.
+  async function syncPlanner() {
+    const p = state.planner;
+    const code = state.advice?.code;
+    if (!code || code === p.code || p.running) return;
+    p.running = true;
+    try {
+      if (!await pastePlan(code)) return;
+      p.error = null;
+    } catch (e) {
+      if (!(e instanceof PlannerError)) throw e;
+      console.warn('kanto-overlay : Planificateur', e);
+      p.error = e.message;
+    } finally {
+      p.running = false;
+    }
+    p.code = code;
+    render();
   }
 
   function setManual(floor) {
@@ -1530,7 +1621,10 @@ function mount() {
 
   render();
   pollSave();
-  setInterval(pollSave, 2000);
+  setInterval(() => {
+    pollSave();
+    syncPlanner();
+  }, 2000);
 
   loadSources(state).then(() => {
     compute();
