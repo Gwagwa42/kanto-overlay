@@ -31,10 +31,17 @@ const SHINY = {
 const STATES = {
   conseils: { save: S57, api: 'ok', tip: true },
   // Leveinard et Lokhlass (compo suivante) en boutique : ◆ « prépare » sur le surplus, ✕ au-delà.
-  'compo-suivante': { save: { ...S57, gold: 40, shop: ['chansey', 'lapras', 'magmar', 'rattata', 'ekans'] }, api: 'ok', tip: true },
-  shiny: { save: SHINY, api: 'ok' },
+  'compo-suivante': { save: { ...S57, gold: 40, shop: ['chansey', 'lapras', 'magmar', 'rattata', 'ekans'] }, api: 'ok', tip: true, ui: { tab: 'compo' } },
+  shiny: { save: SHINY, api: 'ok', ui: { tab: 'compo' } },
+  // Onglets, menu ⚙ et panneau replié (maquette 2026-11-09-refonte).
+  'onglet-boss': { save: S57, api: 'ok', ui: { tab: 'boss' } },
+  'onglet-regles': { save: S57, api: 'ok', ui: { tab: 'rules' } },
+  'a-eviter-ouvert': { save: S57, api: 'ok', ui: { avoid: true } },
+  options: { save: S57, api: 'ok', menu: true, ui: { pins: { no: false } } },
+  replie: { save: S57, api: 'ok', tip: true, ui: { collapsed: true } },
+  'large-grand-80': { save: S57, api: 'ok', ui: { width: 'wide', text: 'large', alpha: '80' } },
   modales: { save: MODALS, api: 'ok', modal: true },
-  'boss-difficile': { save: { ...S57, round: 1195 }, api: 'ok' },
+  'boss-difficile': { save: { ...S57, round: 1195 }, api: 'ok', ui: { tab: 'boss' } },
   'sans-sauvegarde': { save: null, api: 'ok' },
   'sans-donnee': { save: { ...S57, round: 1998 }, api: 'ok' },
   'donnees-partielles': { save: S57, api: 'partial' },
@@ -100,7 +107,7 @@ for (const [name, s] of Object.entries(STATES)) {
   const api = slim(s.save ?? S57);
   const payload = { [KT.SOURCES.torre]: { v: 1, modes: { torre: api.torre } }, [KT.SOURCES.data]: api.data, [KT.SOURCES.lang]: api.lang };
   const stub = `
-const store = new Map(${JSON.stringify(s.save ? [[KT.SAVE_KEY, JSON.stringify(s.save)]] : [])});
+const store = new Map(${JSON.stringify([...(s.save ? [[KT.SAVE_KEY, JSON.stringify(s.save)]] : []), ...(s.ui ? [[KT.UI_KEY, JSON.stringify(s.ui)]] : [])])});
 Object.defineProperty(window, 'localStorage', { configurable: true, value: {
   getItem: k => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) } });
 const cacheStore = new Map();
@@ -112,6 +119,7 @@ const payload = ${JSON.stringify(payload)};
 const served = url => api === 'ok' || (api === 'partial' && url !== ${JSON.stringify(KT.SOURCES.data)});
 window.fetch = url => api === 'pending' ? new Promise(() => {})
   : Promise.resolve(new Response(served(url) ? JSON.stringify(payload[url]) : '', { status: served(url) ? 200 : 429 }));
+${s.menu ? `setTimeout(() => [...document.body.children].find(e => e.shadowRoot)?.shadowRoot.querySelector('[data-act="menu"]').click(), 50);` : ''}
 ${s.tip ? `setTimeout(() => { const r = [...document.body.children].find(e => e.shadowRoot)?.shadowRoot;
   r?.append(Object.assign(document.createElement('style'), { textContent: '.kp:nth-child(1) { z-index: 1; } .kp:nth-child(1) .kp-tip { display: block; }' })); }, 50);` : ''}
 `;

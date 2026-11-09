@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      1.8.0
+// @version      2.0.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -950,9 +950,9 @@ const KT = (() => {
   // Zones du porteur à distance : colonnes préférées au fond, et ordre de remplissage du fond (une colonne sur deux d'abord, pour
   // espacer les unités à distance face aux attaques de zone).
   const CARRY_ZONES = {
-    left: { name: 'gauche', cols: [0, 1, 2], order: [0, 2, 4, 6, 1, 5, 3] },
+    left: { name: 'coin gauche', cols: [0, 1, 2], order: [0, 2, 4, 6, 1, 5, 3] },
     center: { name: 'centre', cols: [2, 3, 4], order: [3, 1, 5, 0, 6, 2, 4] },
-    right: { name: 'droite', cols: [4, 5, 6], order: [6, 4, 2, 0, 5, 1, 3] },
+    right: { name: 'coin droit', cols: [4, 5, 6], order: [6, 4, 2, 0, 5, 1, 3] },
   };
 
   // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). Chaque Pokémon a ses cases
@@ -1158,98 +1158,180 @@ const KT = (() => {
     SOURCES, SAVE_KEY, UI_KEY, PLAN_NAME, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
-    boardCell, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES,
+    boardCell, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey,
   };
 })();
 
 const CSS = `
-/* Jetons */
-:host { all: initial;
-  /* Pastilles : couleurs fixes, posées sur le jeu toujours sombre ; bord sombre + liseré blanc = contraste sur les deux fonds */
+:host { all: initial; }
+/* Jetons : seuls littéraux de couleur, de taille et d'ombre de la feuille. Thème sombre par défaut, clair par data-scheme. */
+.kt-root {
+  /* Pastilles : couleurs Okabe-Ito fixes, posées sur le jeu toujours sombre ; bord sombre + liseré blanc = contraste sur les deux fonds */
   --kp-do-bg:#0072b2; --kp-do-fg:#fff; --kp-opt-bg:#fff; --kp-opt-fg:#141a33; --kp-no-bg:#f0e442; --kp-no-fg:#141a33;
-  --kp-edge:#141a33; --kp-ring:#fff; --kp-focus:#56b4e9; --kp-tip-bg:#141a33; --kp-tip-fg:#eef1ff; --kp-tip-muted:#aab3d6;
-  --kt-space-1:4px; --kt-space-2:8px; --kt-space-3:12px; --kt-space-4:16px; --kt-font:system-ui,-apple-system,"Segoe UI",sans-serif; }
-.kt { --kt-surface:#fff; --kt-surface-2:#eef1fa; --kt-text:#141a33; --kt-muted:#4a5378; --kt-border:#c9cfe6; --kt-control:#737c9c;
-  --kt-focus:#0072b2; --kt-good-bg:#0072b2; --kt-good-fg:#fff; --kt-bad-bg:#f0e442; --kt-bad-fg:#141a33; --kt-mid-bg:#dfe3f2; --kt-mid-fg:#141a33;
-  --kt-radius:12px; }
-@media (prefers-color-scheme: dark) {
-  .kt { --kt-surface:#141a33; --kt-surface-2:#1e2647; --kt-text:#eef1ff; --kt-muted:#aab3d6; --kt-border:#33406e; --kt-control:#7a86b8;
-    --kt-focus:#56b4e9; --kt-good-bg:#56b4e9; --kt-good-fg:#141a33; --kt-mid-bg:#2c3660; --kt-mid-fg:#eef1ff; }
-}
+  --kp-edge:#141a33; --kp-ring:#fff; --kp-focus:#56b4e9; --kp-shadow:0 2px 6px rgb(0 0 0 / .35);
+  --kt-glass:rgb(16 20 38 / var(--kt-alpha)); --kt-blur:16px;
+  --kt-text:#f1f3ff; --kt-muted:#b4bcdf; --kt-line:rgb(255 255 255 / .12); --kt-control:rgb(255 255 255 / .38);
+  --kt-raised:rgb(255 255 255 / .07); --kt-raised-2:rgb(255 255 255 / .12); --kt-scrim:rgb(0 0 0 / .18);
+  /* Accent en texte (4,5:1 jusqu'au fond 80 % sur les zones claires du jeu) distinct de l'accent en aplat. */
+  --kt-accent:#56b4e9; --kt-accent-fg:#0b1020; --kt-accent-text:#8fd0f5; --kt-focus:#56b4e9;
+  --kt-good-bg:#56b4e9; --kt-good-fg:#0b1020; --kt-bad-bg:#f0e442; --kt-bad-fg:#141a33; --kt-mid-bg:rgb(255 255 255 / .14); --kt-mid-fg:#f1f3ff;
+  --kt-coin:#e8b931; --kt-coin-edge:#b9851b;
+  --kt-shadow:0 12px 32px rgb(0 0 0 / .45), inset 0 0 0 1px rgb(255 255 255 / .06);
+  --kt-font:system-ui,-apple-system,"Segoe UI",sans-serif;
+  --kt-alpha:.9; --kt-size:14px; --kt-width:320px;
+  --kt-fs-xs:calc(var(--kt-size) - 3px); --kt-fs-s:calc(var(--kt-size) - 2px); --kt-fs-m:calc(var(--kt-size) - 1px); --kt-fs-l:calc(var(--kt-size) + 2px);
+  --kt-s1:4px; --kt-s2:8px; --kt-s3:12px; --kt-s4:16px; --kt-r-ctl:8px; --kt-r-card:10px; --kt-r-box:14px; }
+.kt-root[data-scheme="light"] {
+  --kt-glass:rgb(250 251 255 / var(--kt-alpha)); --kt-text:#141a33; --kt-muted:#47507a; --kt-line:rgb(20 26 51 / .12);
+  --kt-control:rgb(20 26 51 / .45); --kt-raised:rgb(20 26 51 / .05); --kt-raised-2:rgb(20 26 51 / .09);
+  --kt-accent:#0072b2; --kt-accent-fg:#fff; --kt-accent-text:#004f7a; --kt-focus:#0072b2;
+  --kt-good-bg:#0072b2; --kt-good-fg:#fff; --kt-mid-bg:rgb(20 26 51 / .08); --kt-mid-fg:#141a33;
+  --kt-shadow:0 12px 32px rgb(0 0 0 / .3), inset 0 0 0 1px rgb(255 255 255 / .5); }
+/* Options Fond, Texte, Largeur ; 80 % est le plancher : en deçà, le texte secondaire passe sous 4,5:1 sur les zones claires du jeu. */
+.kt-root[data-alpha="100"] { --kt-alpha:1; }
+.kt-root[data-alpha="80"] { --kt-alpha:.8; }
+.kt-root[data-text="small"] { --kt-size:13px; }
+.kt-root[data-text="large"] { --kt-size:16px; }
+.kt-root[data-width="wide"] { --kt-width:380px; }
 
 /* Panneau */
-.kt { position: fixed; z-index: 2147483647; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; box-sizing: border-box;
-  background: var(--kt-surface); color: var(--kt-text); border: 1px solid var(--kt-border); border-radius: var(--kt-radius);
-  box-shadow: 0 8px 24px rgb(0 0 0 / .35); font: 14px/1.4 var(--kt-font); font-variant-numeric: tabular-nums; }
+.kt { position: fixed; z-index: 2147483647; width: var(--kt-width); max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; box-sizing: border-box;
+  background: var(--kt-glass); backdrop-filter: blur(var(--kt-blur)) saturate(1.2); color: var(--kt-text); border-radius: var(--kt-r-box);
+  box-shadow: var(--kt-shadow); font: var(--kt-size)/1.4 var(--kt-font); font-variant-numeric: tabular-nums; }
 .kt * { box-sizing: border-box; }
-.kt-bar { display: flex; align-items: center; gap: var(--kt-space-2); padding: var(--kt-space-2) var(--kt-space-3); background: var(--kt-surface-2); cursor: move; touch-action: none; user-select: none; }
-.kt-title { font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kt-src { font-size: 12px; color: var(--kt-muted); min-width: 6.5ch; text-align: center; }
-.kt-btn { min-width: 28px; height: 28px; border: 1px solid var(--kt-control); border-radius: 8px; background: var(--kt-surface); color: var(--kt-text); font: inherit; cursor: pointer; }
-.kt-floor { width: 56px; height: 28px; border: 1px solid var(--kt-control); border-radius: 8px; background: var(--kt-surface); color: var(--kt-text); font: inherit; text-align: center; }
-.kt-floor.is-empty { border-color: var(--kt-focus); border-width: 2px; }
-.kt-btn:focus-visible, .kt-floor:focus-visible, .kt a:focus-visible, .kt summary:focus-visible { outline: 2px solid var(--kt-focus); outline-offset: 2px; }
-.kt-body { padding: var(--kt-space-3); display: grid; gap: var(--kt-space-3); }
 .kt p { margin: 0; }
-.kt-label { font-size: 12px; color: var(--kt-muted); }
-.kt-boss { font-size: 18px; font-weight: 700; }
-.kt-boss small { font-size: 14px; font-weight: 400; color: var(--kt-muted); }
-.kt-stats { display: flex; flex-wrap: wrap; gap: var(--kt-space-2); align-items: center; font-size: 12px; color: var(--kt-muted); }
-.kt-rate { display: inline-block; padding: 2px var(--kt-space-2); border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.kt button { font: inherit; color: inherit; }
+.kt-bar { display: flex; align-items: center; gap: var(--kt-s1); min-height: 44px; padding: 0 var(--kt-s2) 0 var(--kt-s3); cursor: move; touch-action: none; user-select: none; }
+.kt-lbl { font-size: var(--kt-fs-s); color: var(--kt-muted); margin-right: var(--kt-s1); }
+.kt-stepper { display: inline-flex; align-items: center; height: 28px; border: 1px solid var(--kt-control); border-radius: var(--kt-r-ctl); flex: none; }
+.kt-stepper button { width: 26px; height: 26px; border: 0; background: none; color: var(--kt-muted); cursor: pointer; border-radius: var(--kt-r-ctl); }
+.kt-floor { width: 40px; height: 26px; border: 0; border-inline: 1px solid var(--kt-line); background: none; color: var(--kt-text); font: 700 var(--kt-fs-l) var(--kt-font); text-align: center; }
+.kt-floor.is-empty { outline: 2px solid var(--kt-focus); outline-offset: -2px; }
+.kt-src { font-size: var(--kt-fs-xs); color: var(--kt-muted); padding: 2px 6px; border-radius: 999px; background: var(--kt-raised); margin-left: var(--kt-s1); }
+.kt-sp { flex: 1; }
+.kt-ibtn { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: var(--kt-r-ctl); background: none; color: var(--kt-muted); cursor: pointer; flex: none; }
+.kt-ibtn:hover, .kt-ibtn[aria-expanded="true"][data-act="menu"] { background: var(--kt-raised-2); color: var(--kt-text); }
+.kt-ibtn svg { width: 16px; height: 16px; }
+.kt button:focus-visible, .kt-floor:focus-visible, .kt a:focus-visible, .kt summary:focus-visible, .kt-opts input:focus-visible + span { outline: 2px solid var(--kt-focus); outline-offset: 2px; }
+.kt-sum { display: none; align-items: center; gap: var(--kt-s2); min-width: 0; font-size: var(--kt-fs-m); }
+.kt-sum b { color: var(--kt-accent-text); }
+.kt-sum .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kt.is-collapsed .kt-sum { display: flex; }
+.kt.is-collapsed :is(.kt-lbl, .kt-src, [data-act="menu"], .kt-alert, .kt-opts, .kt-body, .kt-status, .kt-foot) { display: none; }
+.kt-coin { width: 14px; height: 14px; border-radius: 999px; background: var(--kt-coin); box-shadow: inset 0 0 0 2px var(--kt-coin-edge); flex: none; }
+
+/* En-tête : or et prochain boss */
+.kt-body { display: grid; gap: var(--kt-s3); padding: 0 0 var(--kt-s3); }
+/* minmax(0, 1fr) : une ligne longue sans retour (« à éviter ») s'ellipse au lieu d'élargir la grille hors du panneau. */
+.kt-body, .kt-head, .kt-panel { grid-template-columns: minmax(0, 1fr); }
+.kt-head { display: grid; gap: var(--kt-s2); padding: 0 var(--kt-s3); }
+.kt-gold { display: flex; align-items: center; gap: var(--kt-s2); }
+.kt-gold b { font-size: var(--kt-fs-l); }
+.kt-gold .spend { font-size: var(--kt-fs-l); font-weight: 700; color: var(--kt-accent-text); }
+.kt-gold .m { font-size: var(--kt-fs-s); color: var(--kt-muted); margin-left: auto; white-space: nowrap; }
+.kt-warn { display: flex; gap: var(--kt-s2); align-items: center; font-size: var(--kt-fs-s); padding: 6px var(--kt-s2); border-radius: var(--kt-r-ctl); background: var(--kt-raised); }
+.kt-boss { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 var(--kt-s2); padding: var(--kt-s2) var(--kt-s3); border-radius: var(--kt-r-card); background: var(--kt-raised); }
+.kt-boss .n { font-weight: 700; font-size: var(--kt-fs-l); }
+.kt-boss .w { font-size: var(--kt-fs-s); color: var(--kt-muted); }
+.kt-boss .kt-rate { grid-row: 1 / span 2; grid-column: 2; }
+.kt-rate { display: inline-flex; gap: var(--kt-s1); align-items: center; padding: 2px var(--kt-s2); border-radius: 999px; font-size: var(--kt-fs-s); font-weight: 700; white-space: nowrap; }
 .kt-rate.good { background: var(--kt-good-bg); color: var(--kt-good-fg); }
 .kt-rate.bad { background: var(--kt-bad-bg); color: var(--kt-bad-fg); }
 .kt-rate.mid { background: var(--kt-mid-bg); color: var(--kt-mid-fg); }
-.kt-cores { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--kt-space-1); }
-.kt-cores li { display: grid; grid-template-columns: 1fr auto; gap: 0 var(--kt-space-2); padding: var(--kt-space-2); background: var(--kt-surface-2); border-radius: 8px; }
-.kt-cores .n { grid-column: 1; font-size: 12px; color: var(--kt-muted); }
-.kt-cores .kt-rate { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
-.kt-guide { border-top: 1px solid var(--kt-border); padding-top: var(--kt-space-2); }
-.kt-guide summary { font-weight: 600; cursor: pointer; min-height: 24px; }
-.kt-guide p, .kt-guide ul { margin: var(--kt-space-1) 0 0; font-size: 12px; }
-.kt-guide ul { padding-left: var(--kt-space-4); }
-.kt-aims { border-top: 1px solid var(--kt-border); padding-top: var(--kt-space-2); font-size: 12px; }
+
+/* Onglets */
+.kt-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; margin: 0 var(--kt-s3); padding: 3px; border-radius: var(--kt-r-card); background: var(--kt-raised); }
+.kt-tabs button { height: 28px; display: flex; align-items: center; justify-content: center; gap: var(--kt-s1); border: 0; border-radius: 7px; background: none; color: var(--kt-muted); font-size: var(--kt-fs-m); font-weight: 600; cursor: pointer; }
+.kt-tabs button[aria-selected="true"] { background: var(--kt-accent); color: var(--kt-accent-fg); }
+.kt-tabs .count { min-width: 16px; height: 16px; padding: 0 var(--kt-s1); border-radius: 999px; background: var(--kt-raised-2); font-size: var(--kt-fs-xs); display: inline-grid; place-items: center; }
+.kt-tabs button[aria-selected="true"] .count { background: var(--kt-scrim); }
+.kt-panel { display: grid; gap: var(--kt-s3); padding: 0 var(--kt-s3); }
+.kt-label { display: flex; justify-content: space-between; gap: var(--kt-s2); font-size: var(--kt-fs-s); color: var(--kt-muted); }
+.kt-msg { padding: var(--kt-s2) var(--kt-s3); border-radius: var(--kt-r-card); background: var(--kt-raised); font-size: var(--kt-fs-m); }
+.kt-msg strong { display: block; }
+
+/* Conseils */
+.kt-todo { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.kt-todo li { display: grid; grid-template-columns: 20px 1fr; gap: var(--kt-s2); padding: 6px var(--kt-s2); border-radius: var(--kt-r-ctl); }
+.kt-todo .t { font-weight: 600; font-size: var(--kt-fs-m); }
+.kt-todo .why { display: block; font-size: var(--kt-fs-s); color: var(--kt-muted); }
+.kt-sym { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; font-size: var(--kt-fs-xs); font-weight: 700; border: 1px solid var(--kp-edge); flex: none; }
+.kt-avoid { border-top: 1px solid var(--kt-line); }
+.kt-avoid summary { display: flex; align-items: center; gap: var(--kt-s2); min-height: 32px; padding: 0 var(--kt-s2); font-size: var(--kt-fs-m); color: var(--kt-muted); cursor: pointer; list-style: none; }
+.kt-avoid summary::-webkit-details-marker { display: none; }
+.kt-avoid summary::before { content: "▸"; width: 20px; text-align: center; }
+.kt-avoid[open] summary::before { content: "▾"; }
+.kt-avoid .k { color: var(--kt-text); font-weight: 600; white-space: nowrap; }
+.kt-avoid .l { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kt-avoid[open] .l { display: none; }
+
+/* Compo */
+.kt-comp { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--kt-s1); }
+.kt-comp li { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 var(--kt-s2); border-radius: var(--kt-r-ctl); background: var(--kt-raised); font-size: var(--kt-fs-s); }
+.kt-comp li.core { font-weight: 700; box-shadow: inset 0 0 0 1px var(--kt-accent); }
+.kt-comp .p { color: var(--kt-muted); font-weight: 400; }
+.kt-comp .sh { padding: 1px 5px; border-radius: 999px; background: var(--kt-bad-bg); color: var(--kt-bad-fg); font-size: var(--kt-fs-xs); font-weight: 700; }
+.kt-copy { height: 36px; border: 0; border-radius: var(--kt-r-ctl); background: var(--kt-accent); color: var(--kt-accent-fg); font-weight: 700; cursor: pointer; }
+.kt-hint { font-size: var(--kt-fs-s); color: var(--kt-muted); }
+
+/* Objets visés */
+.kt-aims { border-top: 1px solid var(--kt-line); padding-top: var(--kt-s2); font-size: var(--kt-fs-s); }
 .kt-aims summary { font-weight: 600; cursor: pointer; min-height: 24px; }
-.kt-aims > ul { list-style: none; margin: var(--kt-space-1) 0 0; padding: 0; display: grid; gap: var(--kt-space-2); }
+.kt-aims > ul { list-style: none; margin: var(--kt-s1) 0 0; padding: 0; display: grid; gap: var(--kt-s2); }
 .kt-aims .who { font-weight: 700; }
 .kt-aims ul ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.kt-aims ul ul li { display: grid; grid-template-columns: 16px 1fr; gap: var(--kt-space-1); }
+.kt-aims ul ul li { display: grid; grid-template-columns: 16px 1fr; gap: var(--kt-s1); }
 .kt-aims .st { text-align: center; }
 .kt-aims .why { color: var(--kt-muted); }
-.kt-msg { padding: var(--kt-space-2) var(--kt-space-3); border-radius: 8px; background: var(--kt-surface-2); }
-.kt-msg strong { display: block; }
-.kt-foot { padding: var(--kt-space-2) var(--kt-space-3); font-size: 12px; color: var(--kt-muted); border-top: 1px solid var(--kt-border); }
+
+/* Boss */
+.kt-big { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--kt-s2); }
+.kt-big p { padding: var(--kt-s2); border-radius: var(--kt-r-card); background: var(--kt-raised); }
+.kt-big b { display: block; font-size: var(--kt-fs-l); }
+.kt-big span { font-size: var(--kt-fs-xs); color: var(--kt-muted); }
+.kt-cores { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--kt-s1); }
+.kt-cores li { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 var(--kt-s2); padding: var(--kt-s2); border-radius: var(--kt-r-card); background: var(--kt-raised); }
+.kt-cores .names { font-size: var(--kt-fs-m); font-weight: 600; }
+.kt-cores .n { font-size: var(--kt-fs-xs); color: var(--kt-muted); }
+.kt-cores .mine { color: var(--kt-accent-text); font-weight: 600; }
+.kt-cores .kt-rate { grid-row: 1 / span 2; grid-column: 2; }
+
+/* Règles */
+.kt-rules { margin: 0; padding-left: var(--kt-s4); display: grid; gap: 6px; font-size: var(--kt-fs-m); }
+
+/* Options */
+.kt-opts { display: grid; gap: var(--kt-s3); padding: var(--kt-s3); border-top: 1px solid var(--kt-line); }
+.kt-opts[hidden] { display: none; }
+.kt-opts h2 { margin: 0; font-size: var(--kt-fs-m); }
+.kt-opts fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; }
+.kt-opts legend { padding: 0; margin-bottom: 6px; font-size: var(--kt-fs-s); color: var(--kt-muted); }
+.kt-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 2px; border-radius: var(--kt-r-ctl); background: var(--kt-raised); }
+.kt-seg label, .kt-checks label { position: relative; cursor: pointer; }
+.kt-opts input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.kt-seg span { min-height: 26px; display: grid; place-items: center; padding: 0 var(--kt-s1); border-radius: 6px; font-size: var(--kt-fs-s); font-weight: 600; color: var(--kt-muted); text-align: center; }
+.kt-seg input:checked + span { background: var(--kt-raised-2); color: var(--kt-text); box-shadow: inset 0 0 0 1px var(--kt-control); }
+.kt-checks { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--kt-s2); }
+.kt-checks span { min-height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 var(--kt-s2); border-radius: var(--kt-r-ctl); background: var(--kt-raised); font-size: var(--kt-fs-s); color: var(--kt-muted); }
+.kt-checks span::before { content: ""; width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--kt-control); flex: none; }
+.kt-checks input:checked + span { color: var(--kt-text); }
+.kt-checks input:checked + span::before { background: var(--kt-accent); border-color: var(--kt-accent); box-shadow: inset 0 0 0 3px var(--kt-glass); }
+
+.kt-alert { padding: 0 var(--kt-s3) var(--kt-s3); }
+.kt-alert:empty, .kt-status:empty { display: none; }
+.kt-status { padding: 0 var(--kt-s3) var(--kt-s2); font-size: var(--kt-fs-s); color: var(--kt-muted); overflow-wrap: anywhere; }
+.kt-status code { font-size: var(--kt-fs-s); user-select: all; }
+.kt-foot { padding: var(--kt-s2) var(--kt-s3); font-size: var(--kt-fs-xs); color: var(--kt-muted); border-top: 1px solid var(--kt-line); }
 .kt-foot a { color: inherit; white-space: nowrap; }
-.kt.is-collapsed .kt-body, .kt.is-collapsed .kt-foot { display: none; }
-.kt-plan { display: grid; gap: var(--kt-space-2); }
-.kt-comp { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--kt-space-1); }
-.kt-comp li { padding: 2px var(--kt-space-2); border-radius: 8px; background: var(--kt-surface-2); font-size: 12px; }
-.kt-comp li.core { font-weight: 700; }
-.kt-comp .p { color: var(--kt-muted); font-weight: 400; }
-.kt-eco { font-size: 12px; color: var(--kt-muted); }
-.kt-eco b { color: var(--kt-text); }
-.kt-todo { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--kt-space-1); font-size: 12px; }
-.kt-todo li { display: grid; grid-template-columns: 20px 1fr; gap: var(--kt-space-1); align-items: baseline; }
-.kt-todo .why { color: var(--kt-muted); }
-.kt-sym { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 999px; font-weight: 700; border: 1px solid var(--kp-edge); }
-.kt-actions { display: flex; gap: var(--kt-space-2); }
-.kt-copy { flex: 1; height: 32px; border: 0; border-radius: 8px; background: var(--kt-good-bg); color: var(--kt-good-fg); font: 600 14px var(--kt-font); cursor: pointer; }
-.kt-side { height: 32px; padding: 0 var(--kt-space-2); font-size: 12px; }
-.kt-copy:focus-visible { outline: 2px solid var(--kt-focus); outline-offset: 2px; }
-.kt-status { padding: 0 var(--kt-space-3) var(--kt-space-2); font-size: 12px; color: var(--kt-muted); overflow-wrap: anywhere; }
-.kt-status:empty, .kt-alert:empty { display: none; }
-.kt-alert { padding: var(--kt-space-3) var(--kt-space-3) 0; }
-.kt.is-collapsed .kt-alert { display: none; }
-.kt-status code { font-size: 12px; user-select: all; }
-.kt.is-collapsed .kt-status { display: none; }
+.kt.is-menu :is(.kt-body, .kt-alert, .kt-status, .kt-foot) { display: none; }
 
 /* Pastilles */
 .kp-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
-.kp { position: fixed; display: inline-flex; align-items: center; gap: var(--kt-space-1); height: 24px; min-width: 24px; padding: 0 var(--kt-space-2); translate: -50% 0;
+.kp { position: fixed; display: inline-flex; align-items: center; gap: var(--kt-s1); height: 22px; min-width: 22px; padding: 0 var(--kt-s2); translate: -50% 0;
   border-radius: 999px; border: 1px solid var(--kp-edge); font: 700 12px/1 var(--kt-font); white-space: nowrap; cursor: help;
-  pointer-events: auto; box-shadow: 0 0 0 1px var(--kp-ring), 0 1px 3px rgb(0 0 0 / .4); }
+  pointer-events: auto; box-shadow: 0 0 0 1px var(--kp-ring), var(--kp-shadow); }
 .kp[hidden] { display: none; }
 /* Cible étroite (case d'objet, banc) : symbole seul, verbe gardé pour les lecteurs d'écran. */
-.kp.is-compact { justify-content: center; padding: 0 var(--kt-space-1); }
+.kp.is-compact { justify-content: center; padding: 0 var(--kt-s1); }
 .kp.is-compact .kp-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .kp-do, .kt-sym.kp-do { background: var(--kp-do-bg); color: var(--kp-do-fg); }
 .kp-opt, .kt-sym.kp-opt { background: var(--kp-opt-bg); color: var(--kp-opt-fg); }
@@ -1257,10 +1339,10 @@ const CSS = `
 .kp:focus-visible { outline: 2px solid var(--kp-focus); outline-offset: 2px; }
 
 /* Bulles */
-.kp-tip { display: none; position: absolute; left: 50%; translate: -50% 0; bottom: calc(100% + var(--kt-space-2)); width: 240px; padding: var(--kt-space-2) var(--kt-space-3);
-  border-radius: 8px; background: var(--kp-tip-bg); color: var(--kp-tip-fg); font: 400 12px/1.4 var(--kt-font); white-space: normal;
-  text-align: left; box-shadow: 0 8px 24px rgb(0 0 0 / .45); }
-.kp.is-below .kp-tip { bottom: auto; top: calc(100% + var(--kt-space-2)); }
+.kp-tip { display: none; position: absolute; left: 50%; translate: -50% 0; bottom: calc(100% + var(--kt-s2)); width: 240px; padding: 10px var(--kt-s3);
+  border-radius: var(--kt-s3); background: var(--kt-glass); backdrop-filter: blur(var(--kt-blur)); color: var(--kt-text);
+  font: 400 12px/1.45 var(--kt-font); white-space: normal; text-align: left; box-shadow: var(--kt-shadow); }
+.kp.is-below .kp-tip { bottom: auto; top: calc(100% + var(--kt-s2)); }
 /* Près d'un bord, la bulle s'aligne sur la pastille au lieu de se centrer (sinon coupée par la fenêtre). */
 .kp.is-left .kp-tip { left: 0; translate: 0 0; }
 .kp.is-right .kp-tip { left: auto; right: 0; translate: 0 0; }
@@ -1268,8 +1350,11 @@ const CSS = `
 /* La pastille survolée ou sélectionnée passe devant ses voisines, bulle comprise. */
 .kp:hover, .kp:focus-visible { z-index: 1; }
 .kp.is-dismissed .kp-tip { display: none; }
-.kp-tip strong { display: block; font-size: 14px; margin-bottom: var(--kt-space-1); }
-.kp-tip .m { display: block; margin-top: var(--kt-space-1); color: var(--kp-tip-muted); }
+.kp-tip strong { display: block; font-size: 13px; margin-bottom: 2px; }
+.kp-tip .m { display: block; margin-top: var(--kt-s1); color: var(--kt-muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .kt-tabs button, .kt-seg span, .kt-ibtn { transition: background-color .12s, color .12s; }
+}
 `;
 
 const SYM = { do: '★', opt: '◆', no: '✕' };
@@ -1284,37 +1369,67 @@ const TARGETS = {
   reward: { sel: '.modal.itemreward .ir-card', modal: true },
   offer: { sel: '.modal.tboon .ev-card', modal: true },
 };
-// Le bouton « Porteur » parcourt les zones dans cet ordre.
-const SIDES = Object.keys(KT.CARRY_ZONES);
 const TOWER_HUD = '.topbar .rtrack.tw';
 const COMPACT_BELOW = 64;
 // Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
 const TIP_HALF = 120;
+
+const TABS = [['tour', 'Tour'], ['compo', 'Compo'], ['boss', 'Boss'], ['rules', 'Règles']];
+const capital = s => s[0].toUpperCase() + s.slice(1);
+// Options du menu ⚙ : clé de l'objet ui, valeurs [valeur, libellé] dans l'ordre affiché, valeur par défaut.
+const OPTIONS = [
+  { key: 'theme', label: 'Thème', values: [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']], def: 'auto' },
+  { key: 'width', label: 'Largeur', values: [['compact', 'Compacte'], ['wide', 'Large']], def: 'compact' },
+  { key: 'text', label: 'Texte', values: [['small', 'Petit'], ['normal', 'Normal'], ['large', 'Grand']], def: 'normal' },
+  { key: 'alpha', label: 'Fond', values: [['100', 'Opaque'], ['90', '90 %'], ['80', '80 %']], def: '90' },
+  { key: 'side', label: 'Porteur à distance (formation)', values: Object.entries(KT.CARRY_ZONES).map(([k, z]) => [k, capital(z.name)]), def: 'left' },
+];
+const PIN_NAME = { do: 'Faire', opt: 'Si l’or', no: 'Éviter' };
+const ICON = {
+  gear: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg>',
+  up: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg>',
+  down: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>',
+};
 
 const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
 // Conseils de partie seulement à l'étage de la sauvegarde : un étage saisi à la main ne sert qu'au prochain boss.
 const onSaveFloor = state => state.save !== null && state.floor === KT.floorFromSave(state.lastRaw);
 
-function guideHtml(floor, ui) {
-  const g = KT.guideFor(floor);
-  const range = g.to === Infinity ? `étages ${g.from} et plus` : `étages ${g.from}–${g.to}`;
-  const shinies = g.shinies.length
-    ? `Shinies à saisir : ${esc(g.shinies.join(', '))}. ${esc(g.advice)} (conseil non vérifié ; un shiny a +10 % de PV, de défenses et de dégâts).`
-    : esc(g.advice);
-  return `<details class="kt-guide"${ui.guide ? ' open' : ''}><summary>Règles d’or · ${range}</summary>
-<p>${shinies}</p><ul>${KT.GOLD_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>`;
+// Valeurs inconnues du stockage (modifié à la main, version antérieure) ramenées aux valeurs par défaut : une zone de porteur
+// inconnue ferait échouer la formation à chaque lecture de la sauvegarde.
+function checkUi(ui) {
+  for (const o of OPTIONS) if (!o.values.some(([v]) => v === ui[o.key])) ui[o.key] = o.def;
+  if (!TABS.some(([t]) => t === ui.tab)) ui.tab = 'tour';
+  ui.pins = { do: true, opt: true, no: true, ...ui.pins };
 }
 
 const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
-
-function todoHtml(a) {
-  const order = { do: 0, opt: 1, no: 2 };
+const LEVEL_ORDER = { do: 0, opt: 1, no: 2 };
+// Un conseil par titre (la même consigne peut viser plusieurs cases du jeu), du plus pressant au moins pressant.
+function sortedMarks(a) {
   const seen = new Set();
-  const items = allMarks(a).sort((x, y) => order[x.level] - order[y.level]).filter(m => !seen.has(m.title) && seen.add(m.title));
-  const lines = items.map(m => `<li><span class="kt-sym kp-${m.level}" role="img" aria-label="${LEVEL_NAME[m.level]}">${SYM[m.level]}</span><span>${esc(m.title)} <span class="why">— ${esc(m.why)}</span></span></li>`);
-  for (const id of a.unknownOffer) lines.push(`<li><span></span><span>Bénédiction inconnue (${esc(id)}) <span class="why">— pas de conseil</span></span></li>`);
-  return lines.length ? `<ol class="kt-todo" aria-label="Conseils">${lines.join('')}</ol>` : '';
+  return allMarks(a).sort((x, y) => LEVEL_ORDER[x.level] - LEVEL_ORDER[y.level]).filter(m => !seen.has(m.title) && seen.add(m.title));
+}
+const symHtml = level => `<span class="kt-sym kp-${level}" role="img" aria-label="${LEVEL_NAME[level]}">${SYM[level]}</span>`;
+const markHtml = m => `<li>${symHtml(m.level)}<span><span class="t">${esc(m.title)}</span><span class="why">${esc(m.why)}</span></span></li>`;
+
+function noAdviceHtml(state) {
+  return state.save && !onSaveFloor(state)
+    ? `<p class="kt-msg">Conseils de partie masqués : ta partie est à l’étage ${KT.floorFromSave(state.lastRaw)}.</p>`
+    : '<p class="kt-msg">Les conseils de partie apparaissent dès qu’une partie Tour est lancée.</p>';
+}
+
+function tourHtml(state, ui) {
+  const a = state.advice;
+  if (!a) return noAdviceHtml(state);
+  const marks = sortedMarks(a);
+  const lines = marks.filter(m => m.level !== 'no').map(markHtml);
+  for (const id of a.unknownOffer) lines.push(`<li><span></span><span><span class="t">Bénédiction inconnue (${esc(id)})</span><span class="why">pas de conseil</span></span></li>`);
+  const avoid = marks.filter(m => m.level === 'no');
+  const todo = lines.length ? `<ol class="kt-todo" aria-label="Conseils">${lines.join('')}</ol>` : '<p class="kt-msg">Rien à faire pour l’instant.</p>';
+  return `${todo}${avoid.length ? `<details class="kt-avoid"${ui.avoid ? ' open' : ''}><summary><span class="k">${avoid.length} à éviter</span>
+<span class="l">${esc(avoid.map(m => m.title).join(' · '))}</span></summary><ol class="kt-todo">${avoid.map(markHtml).join('')}</ol></details>` : ''}`;
 }
 
 // Objets visés (maquette 2026-11-09-objets-vises) : symbole décoratif, l'état est dit par le libellé.
@@ -1330,51 +1445,110 @@ function aimsHtml(a, ui) {
   return rows.length ? `<details class="kt-aims"${ui.aims ? ' open' : ''}><summary>Objets visés</summary><ul>${rows.join('')}</ul></details>` : '';
 }
 
-function ecoHtml(a) {
-  const e = a.eco;
-  let wall = '';
-  if (e.allIn) wall = e.lowHp ? ` Tout jouer : PV sous 40.` : ' Tout jouer : combat difficile.';
-  else if (e.nextWall) wall = ` À l’étage ${e.nextWall.floor} (${esc(KT.bossName(e.nextWall.boss))}, ${KT.pct(e.nextWall.win)}) : tout jouer.`;
-  return `<p class="kt-eco">Or <b>${e.gold}</b> · palier ${e.floor} (intérêts +${e.floor / 10}) → <b>${e.spend} à dépenser</b>.${wall}</p>`;
-}
-
-function planHtml(a, ui) {
-  if (!a.target) return `<div class="kt-plan">${ecoHtml(a)}${todoHtml(a)}</div>`;
+function compoHtml(state, ui) {
+  const a = state.advice;
+  if (!a) return noAdviceHtml(state);
+  if (!a.target) return '<p class="kt-msg">Pas de compo cible sans les statistiques de la Tour.</p>';
   const t = a.target;
-  const bosses = t.stops.filter(s => s.boss !== 'elite').map(s => `${KT.bossName(s.boss)} ${s.floor}`).join(', ');
+  const bosses = t.stops.filter(s => s.boss !== 'elite').map(s => `${KT.bossName(s.boss)} ${s.floor}`);
+  const span = bosses.length > 1 ? `${bosses[0]} → ${bosses.at(-1)}` : bosses[0] ?? '';
   const chip = (id, core) => {
     const base = KT.baseLine(id);
-    return `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, base)}${KT.shinyLine(a.game, base) ? ' shiny' : ''}</span></li>`;
+    return `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, base)}</span>${KT.shinyLine(a.game, base) ? ' <span class="sh">shiny</span>' : ''}</li>`;
   };
-  return `<div class="kt-plan"><p class="kt-label">Compo cible${bosses ? ` · ${esc(bosses)}` : ''}</p>
+  return `<p class="kt-label"><span>Compo cible</span><span>${esc(span)}</span></p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
-${a.next ? `<p class="kt-label">Ensuite · ${esc(KT.floorRange(a.next.stops))}</p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
-${ecoHtml(a)}${todoHtml(a)}${aimsHtml(a, ui)}
-<div class="kt-actions"><button class="kt-copy" data-act="copy">Copier la formation</button>
-<button class="kt-btn kt-side" data-act="side">Porteur : ${KT.CARRY_ZONES[ui.side].name}</button></div></div>`;
+${a.next ? `<p class="kt-label"><span>Ensuite</span><span>${esc(KT.floorRange(a.next.stops))}</span></p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
+${aimsHtml(a, ui)}
+<button class="kt-copy" data-act="copy">Copier la formation</button>
+<p class="kt-hint">Porteur à distance : fond, ${KT.CARRY_ZONES[ui.side].name} (options ⚙).</p>`;
 }
 
-function bossHtml(state, ui) {
-  if (!state.torre) return '';
+function bossTabHtml(state) {
+  if (!state.torre) return '<p class="kt-msg">Statistiques de la Tour indisponibles.</p>';
   const stop = KT.nextBossStop(state.torre.stops, state.floor);
-  if (!stop) {
-    return `<p class="kt-msg"><strong>Aucun boss connu après l’étage ${KT.lastBossFloor(state.torre.stops)}</strong>Les statistiques publiques s’arrêtent là.</p>`;
-  }
-  const dist = stop.floor - state.floor;
-  const lvl = KT.rateLevel(stop.win);
+  if (!stop) return '<p class="kt-msg">Les statistiques publiques s’arrêtent avant ce boss.</p>';
   const names = KT.namer(state.lang);
+  const mine = state.advice?.target?.key;
   const cores = KT.topCores(state.torre.cores, stop.stop);
   const coresHtml = cores.length
     ? `<ol class="kt-cores">${cores.map(c => {
       const l = KT.rateLevel(c.win);
-      return `<li><span>${esc(c.core.map(names.line).join(' · '))}</span><span class="kt-rate ${l.cls}">${l.sym} ${KT.pct(c.win)}</span><span class="n">${c.n} combats</span></li>`;
+      const own = KT.coreKey(c.core) === mine ? ' · <span class="mine">ta compo cible</span>' : '';
+      return `<li><span class="names">${esc(c.core.map(names.line).join(' · '))}</span><span class="kt-rate ${l.cls}">${l.sym} ${KT.pct(c.win)}</span><span class="n">${c.n} combats${own}</span></li>`;
     }).join('')}</ol>`
     : '<p class="kt-msg">Aucun trio n’a encore 20 combats sur ce boss.</p>';
-  return `<div><p class="kt-label">Prochain boss</p>
-<p class="kt-boss">${esc(KT.bossName(stop.boss))} <small>· étage ${stop.floor}, ${dist ? `dans ${dist}` : 'en cours'}</small></p>
-<p class="kt-stats"><span class="kt-rate ${lvl.cls}">${lvl.sym} ${KT.pct(stop.win)} victoires</span> 1er essai ${KT.pct(stop.first)} · ${stop.tries.toLocaleString('fr-FR')} essais</p></div>
-${state.advice ? planHtml(state.advice, ui) : ''}${state.save && !onSaveFloor(state) ? `<p class="kt-msg">Conseils de partie masqués : ta partie est à l’étage ${KT.floorFromSave(state.lastRaw)}.</p>` : ''}
-<div><p class="kt-label">Meilleurs trios (≥ 20 combats)</p>${coresHtml}</div>`;
+  return `<div class="kt-big"><p><b>${KT.pct(stop.win)}</b><span>victoires</span></p><p><b>${KT.pct(stop.first)}</b><span>au 1er essai</span></p>
+<p><b>${stop.tries.toLocaleString('fr-FR')}</b><span>essais en moyenne</span></p></div>
+<p class="kt-label"><span>Meilleurs trios</span><span>≥ 20 combats</span></p>${coresHtml}`;
+}
+
+function rulesHtml(floor) {
+  const g = KT.guideFor(floor);
+  const range = g.to === Infinity ? `étages ${g.from} et plus` : `étages ${g.from}–${g.to}`;
+  const shinies = g.shinies.length
+    ? `Shinies à saisir : ${esc(g.shinies.join(', '))}. ${esc(g.advice)} (conseil non vérifié ; un shiny a +10 % de PV, de défenses et de dégâts).`
+    : esc(g.advice);
+  return `<p class="kt-label"><span>Règles d’or</span><span>${range}</span></p><p class="kt-msg">${shinies}</p>
+<ul class="kt-rules">${KT.GOLD_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`;
+}
+
+// En-tête toujours visible : or à dépenser, alerte « tout jouer », prochain boss.
+function headHtml(state) {
+  const parts = [];
+  const e = state.advice?.eco;
+  if (e) {
+    parts.push(`<p class="kt-gold"><span class="kt-coin" aria-hidden="true"></span>Or <b>${e.gold}</b> → <span class="spend">${e.spend} à dépenser</span><span class="m">palier ${e.floor} · +${e.floor / 10}</span></p>`);
+    let wall = '';
+    if (e.allIn) wall = e.lowHp ? 'Tout jouer : PV sous 40.' : 'Tout jouer : combat difficile.';
+    else if (e.nextWall) wall = `Étage ${e.nextWall.floor} (${esc(KT.bossName(e.nextWall.boss))}, ${KT.pct(e.nextWall.win)}) : tout jouer.`;
+    if (wall) parts.push(`<p class="kt-warn"><span class="kt-sym kp-no" aria-hidden="true">▼</span>${wall}</p>`);
+  }
+  const stop = state.torre && KT.nextBossStop(state.torre.stops, state.floor);
+  if (stop) {
+    const dist = stop.floor - state.floor;
+    const lvl = KT.rateLevel(stop.win);
+    parts.push(`<div class="kt-boss"><span class="n">${esc(KT.bossName(stop.boss))}</span><span class="kt-rate ${lvl.cls}" title="victoires">${lvl.sym} ${KT.pct(stop.win)}</span>
+<span class="w">étage ${stop.floor} · ${dist ? `dans ${dist}` : 'en cours'}</span></div>`);
+  } else if (state.torre) {
+    parts.push(`<p class="kt-msg"><strong>Aucun boss connu après l’étage ${KT.lastBossFloor(state.torre.stops)}</strong>Les statistiques publiques s’arrêtent là.</p>`);
+  }
+  return parts.length ? `<div class="kt-head">${parts.join('')}</div>` : '';
+}
+
+function tabsHtml(state, ui) {
+  const count = state.advice ? sortedMarks(state.advice).filter(m => m.level !== 'no').length : 0;
+  return `<div class="kt-tabs" role="tablist" aria-label="Sections">${TABS.map(([id, name]) => {
+    const on = id === ui.tab;
+    const badge = id === 'tour' && count ? ` <span class="count" aria-label="${count} conseils">${count}</span>` : '';
+    return `<button role="tab" id="kt-tab-${id}" data-act="tab" data-tab="${id}" aria-selected="${on}" aria-controls="kt-tabpanel" tabindex="${on ? 0 : -1}">${name}${badge}</button>`;
+  }).join('')}</div>`;
+}
+
+const TAB_HTML = { tour: tourHtml, compo: compoHtml, boss: bossTabHtml, rules: state => rulesHtml(state.floor) };
+
+function panelHtml(state, ui) {
+  if (!state.torre && !state.error) return '<div class="kt-panel"><p class="kt-msg" role="status">Chargement des statistiques de la Tour…</p></div>';
+  if (!state.floor) return '<div class="kt-panel"><p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p></div>';
+  return `${headHtml(state)}${tabsHtml(state, ui)}
+<div class="kt-panel" role="tabpanel" id="kt-tabpanel" aria-labelledby="kt-tab-${ui.tab}">${TAB_HTML[ui.tab](state, ui)}</div>`;
+}
+
+// Panneau replié : l'or à dépenser et le premier conseil ★.
+function summaryHtml(state) {
+  const a = state.advice;
+  if (!a) return '';
+  const first = sortedMarks(a).find(m => m.level === 'do');
+  return `<span class="kt-coin" role="img" aria-label="Or à dépenser"></span><b>${a.eco.spend}</b>${first ? `${symHtml('do')}<span class="t" title="${esc(first.title)}">${esc(first.title)}</span>` : ''}`;
+}
+
+function optionsHtml(ui) {
+  const seg = o => `<fieldset><legend>${o.label}</legend><div class="kt-seg">${o.values.map(([v, name]) =>
+    `<label><input type="radio" name="${o.key}" value="${v}"${ui[o.key] === v ? ' checked' : ''}><span>${name}</span></label>`).join('')}</div></fieldset>`;
+  const pins = `<fieldset><legend>Pastilles sur le jeu</legend><div class="kt-checks">${Object.keys(SYM).map(l =>
+    `<label><input type="checkbox" name="pins" value="${l}"${ui.pins[l] ? ' checked' : ''}><span>${SYM[l]} ${PIN_NAME[l]}</span></label>`).join('')}</div></fieldset>`;
+  return `<h2>Options</h2>${seg(OPTIONS[0])}${pins}${OPTIONS.slice(1).map(seg).join('')}
+<p class="kt-hint">Alt+K replie le panneau ; double-clic sur la barre pour le remettre en haut à droite.</p>`;
 }
 
 function alertHtml(state) {
@@ -1383,16 +1557,6 @@ function alertHtml(state) {
     ? 'Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées.'
     : 'Les objets et les sceaux sont nommés par leur identifiant.';
   return `<p class="kt-msg"><strong>Données indisponibles (${esc(state.error)})</strong>${effect} Recharge la page dans une heure.</p>`;
-}
-
-function panelHtml(state, ui) {
-  if (state.error && !state.torre) {
-    const more = state.floor ? '' : '<p class="kt-msg">Saisis l’étage pour afficher les règles d’or.</p>';
-    return `${state.advice ? planHtml(state.advice, ui) : ''}${more}${state.floor ? guideHtml(state.floor, ui) : ''}`;
-  }
-  if (!state.torre) return '<p class="kt-msg" role="status">Chargement des statistiques de la Tour…</p>';
-  if (!state.floor) return '<p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p>';
-  return `${bossHtml(state, ui)}${guideHtml(state.floor, ui)}`;
 }
 
 function footHtml(state) {
@@ -1521,8 +1685,9 @@ async function syncPlanner(planner, code, paste = pastePlan) {
 function pinLayer(layer) {
   let lastPins = null;
   let pins = [];
-  function paint(a) {
-    const sig = JSON.stringify(a && Object.keys(TARGETS).map(g => a[g]));
+  // show : niveaux affichés (option Pastilles), { do, opt, no } → booléen.
+  function paint(a, show) {
+    const sig = JSON.stringify([show, a && Object.keys(TARGETS).map(g => a[g])]);
     if (sig === lastPins) {
       position();
       return;
@@ -1535,7 +1700,7 @@ function pinLayer(layer) {
     for (const [group, t] of Object.entries(TARGETS)) {
       const marks = Array.isArray(a[group]) ? a[group] : [a[group]];
       marks.forEach((m, i) => {
-        if (!m || !m.label) return;
+        if (!m || !m.label || !show[m.level]) return;
         const pin = document.createElement('span');
         pin.className = `kp kp-${m.level}`;
         pin.tabIndex = 0;
@@ -1604,31 +1769,38 @@ async function loadSources(state) {
 }
 
 function mount() {
-  const ui = { x: null, y: 16, collapsed: false, guide: true, aims: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
-  // Une zone inconnue (stockage modifié à la main) ferait échouer la formation à chaque lecture de la sauvegarde.
-  if (!SIDES.includes(ui.side)) ui.side = SIDES[0];
+  const ui = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
+  checkUi(ui);
   const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${CSS}</style>
+<div class="kt-root">
 <div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
   <div class="kt-bar">
-    <span class="kt-title">Étage</span>
-    <button class="kt-btn" data-act="dec" aria-label="Étage précédent">−</button>
-    <input class="kt-floor" inputmode="numeric" aria-label="Étage courant" placeholder="?">
-    <button class="kt-btn" data-act="inc" aria-label="Étage suivant">+</button>
+    <span class="kt-lbl">Étage</span>
+    <span class="kt-stepper"><button data-act="dec" aria-label="Étage précédent">−</button><input class="kt-floor" inputmode="numeric" aria-label="Étage courant" placeholder="?"><button data-act="inc" aria-label="Étage suivant">+</button></span>
     <span class="kt-src"></span>
-    <button class="kt-btn" data-act="toggle"></button>
+    <span class="kt-sum"></span>
+    <span class="kt-sp"></span>
+    <button class="kt-ibtn" data-act="menu" aria-label="Options" aria-expanded="false" aria-controls="kt-opts">${ICON.gear}</button>
+    <button class="kt-ibtn" data-act="toggle"></button>
   </div>
   <div class="kt-alert" role="alert"></div>
+  <form class="kt-opts" id="kt-opts" aria-label="Options" hidden></form>
   <div class="kt-body"></div>
   <p class="kt-status" role="status"></p>
   <div class="kt-foot"></div>
 </div>
-<div class="kp-layer"></div>`;
+<div class="kp-layer"></div>
+</div>`;
   document.body.append(host);
+  const look = root.querySelector('.kt-root');
   const panel = root.querySelector('.kt');
+  const opts = root.querySelector('.kt-opts');
+  const menu = root.querySelector('[data-act="menu"]');
+  const summary = root.querySelector('.kt-sum');
   const layer = root.querySelector('.kp-layer');
   const input = root.querySelector('.kt-floor');
   const body = root.querySelector('.kt-body');
@@ -1640,11 +1812,23 @@ function mount() {
   const pins = pinLayer(layer);
 
   let lastHtml = null;
+  let lastSummary = '';
+  let menuOpen = false;
   let lastStatus = '';
   let lastAlert = '';
   let lastFoot = '';
 
   const saveUi = () => localStorage.setItem(KT.UI_KEY, JSON.stringify(ui));
+
+  // Thème, largeur, taille du texte et opacité : attributs lus par les jetons CSS ; « auto » suit le système.
+  const dark = window.matchMedia('(prefers-color-scheme: dark)');
+  function applyLook() {
+    look.dataset.scheme = ui.theme === 'auto' ? (dark.matches ? 'dark' : 'light') : ui.theme;
+    look.dataset.width = ui.width;
+    look.dataset.text = ui.text;
+    look.dataset.alpha = ui.alpha;
+  }
+  dark.addEventListener('change', applyLook);
 
   // Ancré à droite tant que le panneau n'a pas été déplacé, puis gardé dans la fenêtre.
   function place() {
@@ -1682,7 +1866,10 @@ function mount() {
 
   function render() {
     panel.classList.toggle('is-collapsed', ui.collapsed);
-    toggle.textContent = ui.collapsed ? '▸' : '▾';
+    panel.classList.toggle('is-menu', menuOpen);
+    opts.hidden = !menuOpen;
+    menu.setAttribute('aria-expanded', String(menuOpen));
+    toggle.innerHTML = ui.collapsed ? ICON.down : ICON.up;
     toggle.setAttribute('aria-label', ui.collapsed ? 'Déplier le panneau' : 'Replier le panneau');
     toggle.setAttribute('aria-expanded', String(!ui.collapsed));
     src.textContent = state.source;
@@ -1693,6 +1880,11 @@ function mount() {
     if (html !== lastHtml) {
       body.innerHTML = html;
       lastHtml = html;
+    }
+    const sum = summaryHtml(state);
+    if (sum !== lastSummary) {
+      summary.innerHTML = sum;
+      lastSummary = sum;
     }
     const alert = alertHtml(state);
     if (alert !== lastAlert) {
@@ -1713,7 +1905,7 @@ function mount() {
       lastStatus = statusText;
     }
     place();
-    pins.paint(state.advice);
+    pins.paint(state.advice, ui.pins);
   }
 
   // Le voile du Planificateur couperait un geste en cours sur le plateau ou le focus posé dans le panneau. Sans pointerup
@@ -1766,12 +1958,12 @@ function mount() {
       saveUi();
       render();
     }
-    if (act === 'side') {
-      ui.side = SIDES[(SIDES.indexOf(ui.side) + 1) % SIDES.length];
-      saveUi();
-      compute();
+    if (act === 'menu') {
+      menuOpen = !menuOpen;
+      if (menuOpen) opts.innerHTML = optionsHtml(ui);
       render();
     }
+    if (act === 'tab') showTab(e.target.closest('[data-tab]').dataset.tab);
     if (act === 'copy' && state.advice?.code) {
       navigator.clipboard.writeText(state.advice.code).then(() => {
         // Vider puis réécrire : un lecteur d'écran n'annonce pas un statut dont le texte ne change pas.
@@ -1786,15 +1978,41 @@ function mount() {
     }
   });
   input.addEventListener('change', () => setManual(Number.parseInt(input.value, 10)));
+  // Onglet choisi gardé entre deux sessions ; le focus le suit, le contenu étant réécrit.
+  function showTab(tab) {
+    ui.tab = tab;
+    saveUi();
+    render();
+    root.getElementById(`kt-tab-${tab}`)?.focus();
+  }
+  // Onglets au clavier (motif ARIA tablist) : flèches, Début et Fin.
+  panel.addEventListener('keydown', e => {
+    if (!e.target.matches('[role="tab"]')) return;
+    const i = TABS.findIndex(([t]) => t === ui.tab);
+    const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: TABS.length - 1 }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    showTab(TABS[(to + TABS.length) % TABS.length][0]);
+  });
+  opts.addEventListener('change', e => {
+    const { name, value, checked } = e.target;
+    if (name === 'pins') ui.pins[value] = checked;
+    else ui[name] = value;
+    saveUi();
+    applyLook();
+    if (name === 'side') compute();
+    render();
+  });
+  opts.addEventListener('submit', e => e.preventDefault());
   // Le Shadow DOM ne fait que recibler les événements : sans cet arrêt, les écouteurs du jeu en remontée recevraient
-  // les chiffres tapés. Alt+K passe, pour replier le panneau depuis le champ.
+  // les chiffres tapés et les flèches des onglets et des options. Alt+K passe, pour replier le panneau depuis un champ.
   for (const type of ['keydown', 'keyup', 'keypress']) {
-    input.addEventListener(type, e => {
-      if (!(e.altKey && e.code === 'KeyK')) e.stopPropagation();
+    panel.addEventListener(type, e => {
+      if (e.target.matches('input, [role="tab"]') && !(e.altKey && e.code === 'KeyK')) e.stopPropagation();
     });
   }
   // Sections repliables : état gardé entre deux rendus et deux sessions.
-  const FOLDS = { 'kt-guide': 'guide', 'kt-aims': 'aims' };
+  const FOLDS = { 'kt-avoid': 'avoid', 'kt-aims': 'aims' };
   root.addEventListener('toggle', e => {
     const key = FOLDS[Object.keys(FOLDS).find(c => e.target.classList?.contains(c))];
     if (!key || ui[key] === e.target.open) return;
@@ -1852,6 +2070,7 @@ function mount() {
     place();
   });
 
+  applyLook();
   render();
   pollSave();
   setInterval(() => {
