@@ -47,8 +47,9 @@ barre le remet en haut à droite.
   faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors formation si le plateau est plein.
 - **Planificateur** : quand la formation change, le script ouvre le Planificateur depuis la barre du jeu, supprime l'ancien
   « Plan kanto-overlay », colle le code et referme ; on voit l'écran s'ouvrir un instant et le jeu joue son bruit de clic. La CSP
-  du site empêche d'atteindre les plans du jeu autrement que par son interface. Supprimer avant de coller évite que la limite de
-  10 plans par mode efface un de tes plans. Rien n'est fait pendant un glisser, une saisie dans le panneau, une modale du jeu ou
+  du site empêche d'atteindre les plans du jeu autrement que par son interface. Au-delà de 10 plans par mode, le jeu efface le
+  plus ancien : le script supprime donc l'ancien plan avant de coller, et ne colle rien si tu as déjà 10 plans Tour (le panneau te
+  demande d'en supprimer un). Rien n'est fait pendant un glisser, quand le focus est dans le panneau, sous une modale du jeu ou
   quand le Planificateur est déjà ouvert (nouvel essai 2 s plus tard) ; en affichage portrait, où le bouton de la barre ouvre un
   menu, le panneau invite à copier le code. Si l'interface du jeu a changé, le panneau le signale et le bouton Copier reste.
 - **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny »

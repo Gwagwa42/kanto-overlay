@@ -1,7 +1,8 @@
 'use strict';
 // Pilote du Planificateur joué sur un faux DOM qui reprend le comportement relevé dans le code du jeu (Planner-*.js, plans-*.js) :
 // collage = nouveau plan actif et champ vidé, code invalide = .pln-err, au-delà de 10 plans par mode le plus ancien plan non
-// actif est évincé, suppression sans confirmation, clic sur le voile = fermeture.
+// actif est évincé, suppression sans confirmation, clic sur le voile = fermeture. Le faux champ ne modélise pas le suivi de valeur
+// de React : le passage par le setter natif n'est pas couvert ici.
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const KT = require('../kanto-overlay.user.js');
@@ -53,12 +54,14 @@ function fakeGame({ plans = [], active = null, hud = true, modal = false, layout
   g.document = {
     documentElement: { dataset: { layout } },
     activeElement: { focus() { g.focused = true; } },
-    querySelector: sel => ({
+    // Requêtes du pilote dans le Planificateur ouvert : « .pln-veil <sélecteur> ».
+    querySelector: sel => (sel.startsWith('.pln-veil ') ? (g.open ? veil.querySelector(sel.slice(10)) : null) : ({
       '.topbar .rtrack.tw': hud ? el({}) : null,
       '.pln-inbar .pln-chip': chip,
       '.pln-veil': g.open ? veil : null,
       '.modal': modal ? el({}) : null,
-    })[sel] ?? null,
+    })[sel] ?? null),
+    querySelectorAll: sel => (sel.startsWith('.pln-veil ') && g.open ? veil.querySelectorAll(sel.slice(10)) : []),
   };
   return g;
 }
@@ -122,4 +125,39 @@ test('planificateur : statut du panneau', () => {
   assert.match(KT.statusHtml(state({ code: CODE, error: null }, { copied: { ok: true } })), /^Code copié/);
   install({ layout: 'portrait' });
   assert.match(KT.statusHtml(state({ code: null, error: null })), /non mis à jour en affichage portrait/);
+});
+
+test('planificateur : 10 plans du joueur → rien collé, aucun plan perdu', async () => {
+  const mine = playerPlans(10);
+  install({ plans: mine, active: 'mine0' });
+  await assert.rejects(KT.pastePlan(CODE), e => e instanceof KT.PlannerError && /10 plans Tour/.test(e.message));
+  assert.deepEqual(game.plans, mine);
+  assert.equal(game.open, false);
+});
+
+test('synchro : un essai par code, succès, refus, pas le moment, bug du script', async () => {
+  const planner = { code: null, error: 'ancien', running: false };
+  assert.equal(await KT.syncPlanner(planner, CODE, async () => true), true);
+  assert.deepEqual(planner, { code: CODE, error: null, running: false });
+  let calls = 0;
+  assert.equal(await KT.syncPlanner(planner, CODE, async () => { calls++; return true; }), false);
+  assert.equal(calls, 0);
+
+  const later = { code: null, error: null, running: false };
+  assert.equal(await KT.syncPlanner(later, CODE, async () => false), false);
+  assert.equal(later.code, null);
+
+  const refused = { code: null, error: null, running: false };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(await KT.syncPlanner(refused, CODE, async () => { throw new KT.PlannerError('code refusé par le jeu'); }), true);
+  } finally {
+    console.warn = warn;
+  }
+  assert.deepEqual(refused, { code: CODE, error: 'code refusé par le jeu', running: false });
+
+  const bug = { code: 'avant', error: null, running: false };
+  await assert.rejects(KT.syncPlanner(bug, CODE, async () => { throw new TypeError('x is null'); }), TypeError);
+  assert.deepEqual(bug, { code: CODE, error: 'x is null', running: false });
 });

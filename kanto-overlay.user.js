@@ -1216,7 +1216,7 @@ function statusHtml(state) {
   const code = state.advice?.code;
   if (!code) return '';
   if (p.code !== code) {
-    return document.documentElement.dataset.layout === 'portrait'
+    return isPortrait()
       ? 'Planificateur non mis à jour en affichage portrait : copie le code et colle-le dans Planificateur → Coller un code.' : '';
   }
   return p.error ? `Planificateur non mis à jour (${esc(p.error)}) : copie le code et colle-le dans Planificateur → Coller un code.`
@@ -1225,8 +1225,9 @@ function statusHtml(state) {
 
 // Planificateur du jeu. La CSP du site (script-src 'self') oblige Violentmonkey à injecter le script en contexte content,
 // d'où le store des plans est hors d'atteinte : le plan passe par l'interface, comme à la main (Coller un code). Les anciens
-// plans du panneau (même nom) sont supprimés avant le collage : chaque collage crée un plan, et au-delà de 10 plans par mode
-// le jeu évince le plus ancien non actif, qui serait un plan du joueur. Sélecteurs relevés dans le code du jeu (règles 41).
+// plans du panneau (même nom) sont supprimés avant le collage, et rien n'est collé quand 10 plans restent : chaque collage
+// crée un plan, et au-delà de 10 plans par mode le jeu évince le plus ancien non actif, qui serait un plan du joueur.
+// Sélecteurs relevés dans le code du jeu (règles 41).
 const PLANNER = {
   chip: '.pln-inbar .pln-chip',
   veil: '.pln-veil',
@@ -1237,11 +1238,16 @@ const PLANNER = {
   name: '.pln-name',
   del: '.pln-btn.del',
 };
+const PLANNER_MAX_PLANS = 10;
 const PLANNER_WAIT_MS = 3000;
 // Le premier affichage charge le module du Planificateur à la demande.
 const PLANNER_OPEN_MS = 10000;
 // Interface du jeu différente de celle relevée : affichée dans le panneau, le bouton Copier reste le recours.
 class PlannerError extends Error {}
+// En portrait, le bouton du Planificateur ouvre un menu au lieu du Planificateur.
+const isPortrait = () => document.documentElement.dataset.layout === 'portrait';
+// Requête dans le Planificateur ouvert, refaite à chaque fois : React a pu remplacer les nœuds entre deux étapes.
+const inPlanner = sel => document.querySelector(`${PLANNER.veil} ${sel}`);
 
 // Attend que test() rende une valeur vraie, vérifiée à chaque image ; rejette avec message après ms.
 function waitFor(test, message, ms = PLANNER_WAIT_MS) {
@@ -1258,32 +1264,35 @@ function waitFor(test, message, ms = PLANNER_WAIT_MS) {
 }
 
 // Colle code dans le Planificateur de la partie Tour affichée. Rend false sans rien toucher quand ce n'est pas le moment :
-// pas de partie Tour à l'écran, modale du jeu ou Planificateur déjà ouverts, écran portrait (le bouton y ouvre un menu).
-// Rejette avec PlannerError si l'interface du jeu ne répond pas comme prévu. Le Planificateur est refermé et le focus rendu.
+// pas de partie Tour à l'écran, modale du jeu ou Planificateur déjà ouverts, écran portrait. Rejette avec PlannerError si
+// l'interface du jeu ne répond pas comme prévu ou si 10 plans du joueur remplissent déjà le mode. Le Planificateur est
+// refermé et le focus rendu.
 async function pastePlan(code) {
   const chip = document.querySelector(PLANNER.chip);
   if (!document.querySelector(TOWER_HUD) || !chip || document.querySelector(PLANNER.veil) || document.querySelector('.modal')
-    || document.documentElement.dataset.layout === 'portrait') return false;
+    || isPortrait()) return false;
   // Le Planificateur prend le focus à l'ouverture et ne le rend pas.
   const back = document.activeElement;
   chip.click();
   try {
-    const veil = await waitFor(() => document.querySelector(PLANNER.veil), 'le Planificateur ne s’ouvre pas', PLANNER_OPEN_MS);
-    const stale = () => [...veil.querySelectorAll(PLANNER.item)].find(li => li.querySelector(PLANNER.name)?.textContent === KT.PLAN_NAME);
+    await waitFor(() => document.querySelector(PLANNER.veil), 'le Planificateur ne s’ouvre pas', PLANNER_OPEN_MS);
+    const items = () => [...document.querySelectorAll(`${PLANNER.veil} ${PLANNER.item}`)];
+    const stale = () => items().find(li => li.querySelector(PLANNER.name)?.textContent === KT.PLAN_NAME);
     for (let li = stale(); li; li = stale()) {
       const del = li.querySelector(PLANNER.del);
       if (!del) throw new PlannerError('bouton Supprimer introuvable');
       del.click();
       await waitFor(() => !li.isConnected, 'ancien plan non supprimé');
     }
-    const field = await waitFor(() => veil.querySelector(PLANNER.input), 'champ Coller un code introuvable');
+    if (items().length >= PLANNER_MAX_PLANS) throw new PlannerError(`${PLANNER_MAX_PLANS} plans Tour déjà enregistrés, supprimes-en un`);
+    const field = await waitFor(() => inPlanner(PLANNER.input), 'champ Coller un code introuvable');
     // Setter natif : le même dans les deux contextes d'injection, sans passer par celui que React pose sur le champ.
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, code);
     field.dispatchEvent(new Event('input', { bubbles: true }));
-    const button = await waitFor(() => !veil.querySelector(PLANNER.paste)?.disabled && veil.querySelector(PLANNER.paste), 'bouton Coller un code introuvable');
+    const button = await waitFor(() => !inPlanner(PLANNER.paste)?.disabled && inPlanner(PLANNER.paste), 'bouton Coller un code introuvable');
     button.click();
     // Le jeu ne vide le champ que si le code est accepté.
-    const pasted = await waitFor(() => (veil.querySelector(PLANNER.error) ? 'refusé' : field.value === '' && 'collé'), 'collage sans réponse');
+    const pasted = await waitFor(() => (inPlanner(PLANNER.error) ? 'refusé' : inPlanner(PLANNER.input)?.value === '' && 'collé'), 'collage sans réponse');
     if (pasted === 'refusé') throw new PlannerError('code refusé par le jeu');
   } finally {
     // Un clic sur le voile lui-même ferme le Planificateur ; cherché à nouveau, React a pu remplacer le nœud.
@@ -1291,6 +1300,27 @@ async function pastePlan(code) {
     back?.focus?.({ preventScroll: true });
   }
   return true;
+}
+
+// Tente code une seule fois dans le Planificateur, même en échec, pour ne pas le rouvrir toutes les 2 s : l'erreur reste dans
+// planner jusqu'au prochain changement de compo. Rend true quand planner a changé. Une erreur autre que PlannerError (bug du
+// script) est notée puis relancée.
+async function syncPlanner(planner, code, paste = pastePlan) {
+  if (!code || code === planner.code || planner.running) return false;
+  planner.running = true;
+  let pasted;
+  try {
+    pasted = await paste(code);
+    planner.error = null;
+  } catch (e) {
+    planner.error = e.message;
+    if (!(e instanceof PlannerError)) throw e;
+    console.warn('kanto-overlay : Planificateur', e);
+  } finally {
+    planner.running = false;
+    if (pasted !== false) planner.code = code;
+  }
+  return pasted !== false;
 }
 
 // Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien).
@@ -1490,31 +1520,17 @@ function mount() {
     pins.paint(state.advice);
   }
 
-  // Le voile du Planificateur couperait une saisie dans le panneau ou un geste en cours sur le plateau.
+  // Le voile du Planificateur couperait un geste en cours sur le plateau ou le focus posé dans le panneau. Sans pointerup
+  // (relâché hors de la fenêtre), la perte de focus de la fenêtre libère le drapeau.
   let pointerHeld = false;
   window.addEventListener('pointerdown', () => { pointerHeld = true; }, true);
-  for (const type of ['pointerup', 'pointercancel']) window.addEventListener(type, () => { pointerHeld = false; }, true);
-
-  // Un code n'est tenté qu'une fois, même en échec, pour ne pas rouvrir le Planificateur toutes les 2 s : l'erreur reste
-  // affichée jusqu'au prochain changement de compo.
-  async function syncPlanner() {
-    const p = state.planner;
-    const code = state.advice?.code;
-    if (!code || code === p.code || p.running || pointerHeld || root.activeElement === input) return;
-    p.running = true;
-    try {
-      if (!await pastePlan(code)) return;
-      p.code = code;
-      p.error = null;
-    } catch (e) {
-      p.code = code;
-      if (!(e instanceof PlannerError)) throw e;
-      console.warn('kanto-overlay : Planificateur', e);
-      p.error = e.message;
-    } finally {
-      p.running = false;
+  for (const type of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(type, () => { pointerHeld = false; }, true);
+  function plannerTick() {
+    if (pointerHeld || root.activeElement !== null) return;
+    syncPlanner(state.planner, state.advice?.code).then(changed => changed && render(), err => {
       render();
-    }
+      throw err;
+    });
   }
 
   function setManual(floor) {
@@ -1641,7 +1657,7 @@ function mount() {
   pollSave();
   setInterval(() => {
     pollSave();
-    syncPlanner();
+    plannerTick();
   }, 2000);
 
   loadSources(state).then(() => {
@@ -1655,5 +1671,5 @@ function mount() {
 }
 
 // Les tests reçoivent aussi le pilote du Planificateur, joué sur un faux DOM.
-if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, statusHtml, PlannerError };
+if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, PlannerError };
 else mount();
