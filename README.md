@@ -4,10 +4,12 @@ Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](ht
 - prochain boss (nom, étage, taux de victoire, taux au premier essai, nombre moyen d'essais) ;
 - les 3 meilleurs trios contre ce boss (au moins 20 combats) ;
 - une **compo cible** choisie pour les 9 prochains combats (environ 20 étages) en partant de ton équipe, et des **conseils lus sur
-  ta partie** : quoi acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, quelle
+  ta partie** : quoi acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, lesquels retirer, quelle
   récompense et quelle bénédiction prendre, quand ancrer une forme ;
-- un bouton **Copier la formation** : code `KT1;…` à coller dans le Planificateur du jeu (Planificateur → Coller un code), qui
-  affiche la compo cible sur le plateau ; le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos — avant, colonne 4 ») ;
+- la compo cible écrite dans le **Planificateur** du jeu à chaque changement, sous le nom « Plan kanto-overlay », et activée :
+  ses ombres s'affichent sur le plateau. Le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos — avant, colonne 4 ») ;
+- un bouton **Copier la formation** : le même code `KT1;…`, pour le partager ou le coller à la main (Planificateur → Coller un code)
+  si l'écriture automatique échoue ;
 - les règles d'or (intérêts, actualisation, shinies) pour la tranche d'étages en cours.
 
 Les conseils apparaissent aussi en **pastilles** sur le jeu : ★ fais-le, ◆ si l'or le permet, ✕ évite. Survoler une pastille (ou la
@@ -33,17 +35,37 @@ barre le remet en haut à droite.
   sans passer sous le palier ni en tout jouer, et pas de « Vends » pour eux au banc tant que l'or suffit aux ★ de la compo cible.
 - **Économie** : intérêts plafonnés à +3 en Tour, donc palier de 30 pièces (50 avec la voie Fortune complète). On ne dépense que le
   surplus, sauf en **tout jouer** : combat de l'étage sous 45 % de victoires, ou PV sous 40.
-- **Objets** : tout objet complet ou composant du sac va tout de suite sur un Pokémon de la compo. Un composant seul donne déjà son
-  effet et fusionne sur le Pokémon avec le suivant ; deux composants du sac pour le même Pokémon sont donnés en paire, avec l'ordre
-  de pose quand il compte. Priorité à la recette idéale de chaque lignée (meilleurs couples Pokémon/objet de la Tour), sinon par
-  rôle : offensif au porteur puis aux attaquants, défensif au tank puis à la mêlée. 3 objets au plus par Pokémon ; « Garde »
-  seulement quand toute la compo est pleine. La récompense d'objet se choisit d'après ce qui reste à compléter après ces conseils.
+- **Profil de chaque lignée** : lu sur les objets qu'elle porte en Tour. Elle est tank si la moitié au moins de leurs composants
+  sont défensifs (PV Plus, Fer, Zinc), spéciale si le Calcium l'emporte sur la Protéine, physique sinon. Exemples : Ronflex et Machop
+  tanks, Minidraco et Caninos attaquants physiques, Abra et Goupix attaquants spéciaux.
+- **Objets** : un objet ne va qu'à un Pokémon à qui il convient. Jamais un objet d'Atq. Spé. à un physique ni d'Attaque à un spécial
+  (les objets mixtes, comme Orbe Vie et Lentilscope, vont aux deux) ; au moins la moitié de défensif pour un tank, d'offensif pour
+  un attaquant. Les composants pris en compte sont ceux qui donnent ses stats à l'objet (Casque Brut : PV et Défense).
+  - Pose : tout objet complet ou composant du sac va tout de suite sur un Pokémon de la compo. Un composant seul donne déjà son
+    effet et fusionne sur le Pokémon avec le suivant ; deux composants du sac pour le même Pokémon sont donnés en paire, avec
+    l'ordre de pose quand il compte. Priorité à la recette idéale de chaque lignée (meilleurs couples Pokémon/objet de la Tour qui
+    conviennent à son profil), sinon par rôle : offensif au porteur puis aux attaquants, défensif aux tanks. 3 objets au plus.
+  - Préparation : un composant qui n'entre dans aucune recette idéale d'un Pokémon possédé reste au sac, avant toute pose par rôle,
+    s'il entre dans celle d'un Pokémon du cœur cible pas encore acheté ou du cœur de la compo suivante (« Garde Fer — Cuiller Tordue pour Lokhlass, à venir »). La
+    récompense d'objet vise ce qui reste à compléter, puis ces recettes à venir.
+  - Retrait : l'Aimant du sac va sur un Pokémon de la compo qui porte un objet contraire à son profil, sinon sur un Pokémon plein
+    dont un objet idéal attend au sac (l'objet, ou ses composants, est alors gardé pour lui), enfin sur un Pokémon posé hors des
+    deux compos qui porte des objets. Au banc, un tel Pokémon est à vendre : il rend ses objets au sac.
+  - « Objets visés », sous les conseils : pour chaque Pokémon de la compo, ses 3 objets visés, portés (✓), prêts au sac (●) ou
+    avec les composants qui manquent (○).
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
-- **Formation** : la compo cible dans la limite du niveau. Chaque Pokémon a sa zone : tank au premier rang, porteur à distance au
-  fond, dans la zone choisie (bouton « Porteur » : coin gauche, centre ou coin droit ; aucune statistique publique ne départage
-  ces placements), mêlée devant, distance au fond. Un Pokémon déjà dans sa zone garde sa case ; les autres prennent la première
-  case libre (avant depuis le centre, fond depuis la zone du porteur). Les déplacements sont listés dans l'ordre où les
+- **Formation** : la compo cible dans la limite du niveau. Chaque Pokémon a sa zone : tanks (profil) au premier rang, porteur à
+  distance au fond, dans la zone choisie (bouton « Porteur » : coin gauche, centre ou coin droit ; aucune statistique publique ne
+  départage ces placements), mêlée devant, distance au fond. Un Pokémon déjà dans sa zone garde sa case ; les autres prennent la
+  première case libre (avant depuis le centre, fond depuis la zone du porteur). Les déplacements sont listés dans l'ordre où les
   faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors formation si le plateau est plein.
+- **Planificateur** : quand la formation change, le script ouvre le Planificateur depuis la barre du jeu, supprime l'ancien
+  « Plan kanto-overlay », colle le code et referme ; on voit l'écran s'ouvrir un instant et le jeu joue son bruit de clic. La CSP
+  du site empêche d'atteindre les plans du jeu autrement que par son interface. Au-delà de 10 plans par mode, le jeu efface le
+  plus ancien : le script supprime donc l'ancien plan avant de coller, et ne colle rien si tu as déjà 10 plans Tour (le panneau te
+  demande d'en supprimer un). Rien n'est fait pendant un glisser, quand le focus est dans le panneau, sous une modale du jeu ou
+  quand le Planificateur est déjà ouvert (nouvel essai 2 s plus tard) ; en affichage portrait, où le bouton de la barre ouvre un
+  menu, le panneau invite à copier le code. Si l'interface du jeu a changé, le panneau le signale et le bouton Copier reste.
 - **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny »
   dans la compo cible, ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, et s'écrit `ligne:2s:…` dans
   le code KT1. Une unité shiny n'est pas proposée à la vente jusqu'à l'étage 120.
@@ -71,7 +93,7 @@ Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pok
 ## Développement
 
 ```sh
-node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1
+node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur
 node scripts/preview.mjs   # pages d'aperçu par état dans build/, puis la commande de rendu imprimée
 ```
 
