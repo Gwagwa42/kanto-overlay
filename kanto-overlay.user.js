@@ -1056,12 +1056,12 @@ const CSS = `
 .kt-copy { flex: 1; height: 32px; border: 0; border-radius: 8px; background: var(--kt-good-bg); color: var(--kt-good-fg); font: 600 14px var(--kt-font); cursor: pointer; }
 .kt-side { height: 32px; padding: 0 var(--kt-space-2); font-size: 12px; }
 .kt-copy:focus-visible { outline: 2px solid var(--kt-focus); outline-offset: 2px; }
-.kt-copied { padding: 0 var(--kt-space-3) var(--kt-space-2); font-size: 12px; color: var(--kt-muted); overflow-wrap: anywhere; }
-.kt-copied:empty, .kt-alert:empty { display: none; }
+.kt-status { padding: 0 var(--kt-space-3) var(--kt-space-2); font-size: 12px; color: var(--kt-muted); overflow-wrap: anywhere; }
+.kt-status:empty, .kt-alert:empty { display: none; }
 .kt-alert { padding: var(--kt-space-3) var(--kt-space-3) 0; }
 .kt.is-collapsed .kt-alert { display: none; }
-.kt-copied code { font-size: 12px; user-select: all; }
-.kt.is-collapsed .kt-copied { display: none; }
+.kt-status code { font-size: 12px; user-select: all; }
+.kt.is-collapsed .kt-status { display: none; }
 
 /* Pastilles */
 .kp-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
@@ -1213,15 +1213,20 @@ function statusHtml(state) {
       : `Copie refusée par le navigateur : sélectionne le code et copie-le.<br><code>${esc(state.advice?.code ?? '')}</code>`;
   }
   const p = state.planner;
-  if (!state.advice?.code || p.code !== state.advice.code) return '';
+  const code = state.advice?.code;
+  if (!code) return '';
+  if (p.code !== code) {
+    return document.documentElement.dataset.layout === 'portrait'
+      ? 'Planificateur non mis à jour en affichage portrait : copie le code et colle-le dans Planificateur → Coller un code.' : '';
+  }
   return p.error ? `Planificateur non mis à jour (${esc(p.error)}) : copie le code et colle-le dans Planificateur → Coller un code.`
     : `Planificateur à jour : « ${esc(KT.PLAN_NAME)} » est le plan actif.`;
 }
 
 // Planificateur du jeu. La CSP du site (script-src 'self') oblige Violentmonkey à injecter le script en contexte content,
-// d'où le store des plans est hors d'atteinte : le plan passe par l'interface, comme à la main (Coller un code). Chaque
-// collage crée un plan actif ; les anciens plans du panneau (même nom) sont ensuite supprimés, sinon la limite de 10 plans
-// par mode effacerait ceux du joueur. Sélecteurs relevés dans le code du jeu (règles 41).
+// d'où le store des plans est hors d'atteinte : le plan passe par l'interface, comme à la main (Coller un code). Les anciens
+// plans du panneau (même nom) sont supprimés avant le collage : chaque collage crée un plan, et au-delà de 10 plans par mode
+// le jeu évince le plus ancien non actif, qui serait un plan du joueur. Sélecteurs relevés dans le code du jeu (règles 41).
 const PLANNER = {
   chip: '.pln-inbar .pln-chip',
   veil: '.pln-veil',
@@ -1233,17 +1238,19 @@ const PLANNER = {
   del: '.pln-btn.del',
 };
 const PLANNER_WAIT_MS = 3000;
+// Le premier affichage charge le module du Planificateur à la demande.
+const PLANNER_OPEN_MS = 10000;
 // Interface du jeu différente de celle relevée : affichée dans le panneau, le bouton Copier reste le recours.
 class PlannerError extends Error {}
 
-// Attend que test() rende une valeur vraie, vérifiée à chaque image ; rejette après PLANNER_WAIT_MS.
-function waitFor(test, what) {
+// Attend que test() rende une valeur vraie, vérifiée à chaque image ; rejette avec message après ms.
+function waitFor(test, message, ms = PLANNER_WAIT_MS) {
   const start = performance.now();
   return new Promise((resolve, reject) => {
     const tick = () => {
       const v = test();
       if (v) resolve(v);
-      else if (performance.now() - start > PLANNER_WAIT_MS) reject(new PlannerError(`${what} introuvable`));
+      else if (performance.now() - start > ms) reject(new PlannerError(message));
       else requestAnimationFrame(tick);
     };
     tick();
@@ -1251,33 +1258,37 @@ function waitFor(test, what) {
 }
 
 // Colle code dans le Planificateur de la partie Tour affichée. Rend false sans rien toucher quand ce n'est pas le moment :
-// pas de partie Tour à l'écran, Planificateur déjà ouvert (le joueur s'en sert), ou écran portrait (le bouton y ouvre un
-// menu). Rejette si l'interface du jeu ne répond pas comme prévu ; le Planificateur est refermé dans tous les cas.
+// pas de partie Tour à l'écran, modale du jeu ou Planificateur déjà ouverts, écran portrait (le bouton y ouvre un menu).
+// Rejette avec PlannerError si l'interface du jeu ne répond pas comme prévu. Le Planificateur est refermé et le focus rendu.
 async function pastePlan(code) {
   const chip = document.querySelector(PLANNER.chip);
-  if (!document.querySelector(TOWER_HUD) || !chip || document.querySelector(PLANNER.veil)
+  if (!document.querySelector(TOWER_HUD) || !chip || document.querySelector(PLANNER.veil) || document.querySelector('.modal')
     || document.documentElement.dataset.layout === 'portrait') return false;
+  // Le Planificateur prend le focus à l'ouverture et ne le rend pas.
+  const back = document.activeElement;
   chip.click();
-  const veil = await waitFor(() => document.querySelector(PLANNER.veil), 'Planificateur');
   try {
-    const field = await waitFor(() => veil.querySelector(PLANNER.input), 'champ Coller un code');
-    // Setter natif : React suit la valeur du champ par son propre setter, et ne verrait pas de changement sans celui-ci.
+    const veil = await waitFor(() => document.querySelector(PLANNER.veil), 'le Planificateur ne s’ouvre pas', PLANNER_OPEN_MS);
+    const stale = () => [...veil.querySelectorAll(PLANNER.item)].find(li => li.querySelector(PLANNER.name)?.textContent === KT.PLAN_NAME);
+    for (let li = stale(); li; li = stale()) {
+      const del = li.querySelector(PLANNER.del);
+      if (!del) throw new PlannerError('bouton Supprimer introuvable');
+      del.click();
+      await waitFor(() => !li.isConnected, 'ancien plan non supprimé');
+    }
+    const field = await waitFor(() => veil.querySelector(PLANNER.input), 'champ Coller un code introuvable');
+    // Setter natif : le même dans les deux contextes d'injection, sans passer par celui que React pose sur le champ.
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, code);
     field.dispatchEvent(new Event('input', { bubbles: true }));
-    const button = await waitFor(() => !veil.querySelector(PLANNER.paste)?.disabled && veil.querySelector(PLANNER.paste), 'bouton Coller un code');
+    const button = await waitFor(() => !veil.querySelector(PLANNER.paste)?.disabled && veil.querySelector(PLANNER.paste), 'bouton Coller un code introuvable');
     button.click();
-    const pasted = await waitFor(() => (veil.querySelector(PLANNER.error) ? 'refusé' : field.value === '' && 'collé'), 'résultat du collage');
+    // Le jeu ne vide le champ que si le code est accepté.
+    const pasted = await waitFor(() => (veil.querySelector(PLANNER.error) ? 'refusé' : field.value === '' && 'collé'), 'collage sans réponse');
     if (pasted === 'refusé') throw new PlannerError('code refusé par le jeu');
-    const stale = () => [...veil.querySelectorAll(PLANNER.item)]
-      .find(li => !li.classList.contains('on') && li.querySelector(PLANNER.name)?.textContent === KT.PLAN_NAME);
-    for (let li = stale(); li; li = stale()) {
-      const old = li;
-      old.querySelector(PLANNER.del).click();
-      await waitFor(() => !old.isConnected, 'suppression de l’ancien plan');
-    }
   } finally {
-    // Un clic sur le voile lui-même ferme le Planificateur.
-    veil.click();
+    // Un clic sur le voile lui-même ferme le Planificateur ; cherché à nouveau, React a pu remplacer le nœud.
+    document.querySelector(PLANNER.veil)?.click();
+    back?.focus?.({ preventScroll: true });
   }
   return true;
 }
@@ -1386,7 +1397,7 @@ function mount() {
   </div>
   <div class="kt-alert" role="alert"></div>
   <div class="kt-body"></div>
-  <p class="kt-copied" role="status"></p>
+  <p class="kt-status" role="status"></p>
   <div class="kt-foot"></div>
 </div>
 <div class="kp-layer"></div>`;
@@ -1398,12 +1409,12 @@ function mount() {
   const foot = root.querySelector('.kt-foot');
   const toggle = root.querySelector('[data-act="toggle"]');
   const src = root.querySelector('.kt-src');
-  const status = root.querySelector('.kt-copied');
+  const status = root.querySelector('.kt-status');
   const alertBox = root.querySelector('.kt-alert');
   const pins = pinLayer(layer);
 
   let lastHtml = null;
-  let lastCopied = '';
+  let lastStatus = '';
   let lastAlert = '';
   let lastFoot = '';
 
@@ -1470,33 +1481,40 @@ function mount() {
         lastFoot = footer;
       }
     }
-    const copied = statusHtml(state);
-    if (copied !== lastCopied) {
-      status.innerHTML = copied;
-      lastCopied = copied;
+    const statusText = statusHtml(state);
+    if (statusText !== lastStatus) {
+      status.innerHTML = statusText;
+      lastStatus = statusText;
     }
     place();
     pins.paint(state.advice);
   }
 
-  // Un code n'est tenté qu'une fois, même en échec : l'erreur reste affichée jusqu'au prochain changement de compo.
+  // Le voile du Planificateur couperait une saisie dans le panneau ou un geste en cours sur le plateau.
+  let pointerHeld = false;
+  window.addEventListener('pointerdown', () => { pointerHeld = true; }, true);
+  for (const type of ['pointerup', 'pointercancel']) window.addEventListener(type, () => { pointerHeld = false; }, true);
+
+  // Un code n'est tenté qu'une fois, même en échec, pour ne pas rouvrir le Planificateur toutes les 2 s : l'erreur reste
+  // affichée jusqu'au prochain changement de compo.
   async function syncPlanner() {
     const p = state.planner;
     const code = state.advice?.code;
-    if (!code || code === p.code || p.running) return;
+    if (!code || code === p.code || p.running || pointerHeld || root.activeElement === input) return;
     p.running = true;
     try {
       if (!await pastePlan(code)) return;
+      p.code = code;
       p.error = null;
     } catch (e) {
+      p.code = code;
       if (!(e instanceof PlannerError)) throw e;
       console.warn('kanto-overlay : Planificateur', e);
       p.error = e.message;
     } finally {
       p.running = false;
+      render();
     }
-    p.code = code;
-    render();
   }
 
   function setManual(floor) {
@@ -1546,7 +1564,7 @@ function mount() {
       navigator.clipboard.writeText(state.advice.code).then(() => {
         // Vider puis réécrire : un lecteur d'écran n'annonce pas un statut dont le texte ne change pas.
         status.textContent = '';
-        lastCopied = '';
+        lastStatus = '';
         state.copied = { ok: true };
         requestAnimationFrame(render);
       }, () => {
@@ -1636,5 +1654,6 @@ function mount() {
   });
 }
 
-if (typeof module !== 'undefined') module.exports = KT;
+// Les tests reçoivent aussi le pilote du Planificateur, joué sur un faux DOM.
+if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, statusHtml, PlannerError };
 else mount();

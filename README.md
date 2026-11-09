@@ -45,11 +45,12 @@ barre le remet en haut à droite.
   le coin choisi (bouton « Porteur »), mêlée devant, distance au fond. Un Pokémon déjà dans sa zone garde sa case ; les autres
   prennent la première case libre (avant depuis le centre, fond depuis le coin). Les déplacements sont listés dans l'ordre où les
   faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors formation si le plateau est plein.
-- **Planificateur** : quand la formation change, le script ouvre le Planificateur depuis la barre du jeu, colle le code, supprime
-  l'ancien « Plan kanto-overlay » et referme ; on voit l'écran s'ouvrir un instant. La CSP du site empêche d'atteindre les plans du
-  jeu autrement que par son interface. Rien n'est fait quand le Planificateur est déjà ouvert (nouvel essai 2 s plus tard) ni en
-  affichage portrait, où le bouton de la barre ouvre un menu. Si l'interface du jeu a changé, le panneau le signale et le bouton
-  Copier reste.
+- **Planificateur** : quand la formation change, le script ouvre le Planificateur depuis la barre du jeu, supprime l'ancien
+  « Plan kanto-overlay », colle le code et referme ; on voit l'écran s'ouvrir un instant et le jeu joue son bruit de clic. La CSP
+  du site empêche d'atteindre les plans du jeu autrement que par son interface. Supprimer avant de coller évite que la limite de
+  10 plans par mode efface un de tes plans. Rien n'est fait pendant un glisser, une saisie dans le panneau, une modale du jeu ou
+  quand le Planificateur est déjà ouvert (nouvel essai 2 s plus tard) ; en affichage portrait, où le bouton de la barre ouvre un
+  menu, le panneau invite à copier le code. Si l'interface du jeu a changé, le panneau le signale et le bouton Copier reste.
 - **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny »
   dans la compo cible, ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, et s'écrit `ligne:2s:…` dans
   le code KT1. Une unité shiny n'est pas proposée à la vente jusqu'à l'étage 120.
@@ -77,7 +78,7 @@ Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pok
 ## Développement
 
 ```sh
-node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1
+node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur
 node scripts/preview.mjs   # pages d'aperçu par état dans build/, puis la commande de rendu imprimée
 ```
 
