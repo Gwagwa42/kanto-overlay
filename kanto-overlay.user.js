@@ -787,6 +787,14 @@ const KT = (() => {
   const rowOf = cell => Math.floor(cell / 7);
   const colOf = cell => cell % 7;
 
+  // Zones du porteur à distance : colonnes préférées au fond, et ordre de remplissage du fond (une colonne sur deux d'abord, pour
+  // espacer les unités à distance face aux attaques de zone).
+  const CARRY_ZONES = {
+    left: { name: 'gauche', cols: [0, 1, 2], order: [0, 2, 4, 6, 1, 5, 3] },
+    center: { name: 'centre', cols: [2, 3, 4], order: [3, 1, 5, 0, 6, 2, 4] },
+    right: { name: 'droite', cols: [4, 5, 6], order: [6, 4, 2, 0, 5, 1, 3] },
+  };
+
   // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). Chaque Pokémon a ses cases
   // par préférence : tank au premier rang puis devant, porteur à distance dans la zone choisie du fond (coin gauche, centre ou
   // coin droit) puis au fond, mêlée devant (depuis le centre), distance au fond (depuis cette zone). Déjà sur une case de sa
@@ -803,12 +811,10 @@ const KT = (() => {
         unit: h?.unit ?? null, from: h ? boardCell(h.unit.cell) ?? 'bench' : null,
       };
     });
-    const fromCenter = [3, 2, 4, 1, 5, 0, 6];
-    const edge = { left: [0, 2, 4, 6, 1, 5, 3], right: [6, 4, 2, 0, 5, 1, 3], center: fromCenter }[side];
-    const front = [0, 1].flatMap(r => fromCenter.map(c => r * 7 + c));
-    const back = [3, 2].flatMap(r => edge.map(c => r * 7 + c));
-    const near = { left: c => c <= 2, right: c => c >= 4, center: c => c >= 2 && c <= 4 }[side];
-    const carryZone = back.filter(c => near(colOf(c)));
+    const zone = CARRY_ZONES[side];
+    const front = [0, 1].flatMap(r => [3, 2, 4, 1, 5, 0, 6].map(c => r * 7 + c));
+    const back = [3, 2].flatMap(r => zone.order.map(c => r * 7 + c));
+    const carryZone = back.filter(c => zone.cols.includes(colOf(c)));
     const zones = u => {
       if (u.role === 'tank') return [front.filter(c => rowOf(c) === 0), front];
       if (u.role === 'carry' && u.ranged) return [carryZone, back];
@@ -987,7 +993,7 @@ const KT = (() => {
     SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
-    boardCell, topHolders, floorRange,
+    boardCell, topHolders, floorRange, CARRY_ZONES,
   };
 })();
 
@@ -1105,9 +1111,8 @@ const TARGETS = {
   reward: { sel: '.modal.itemreward .ir-card', modal: true },
   offer: { sel: '.modal.tboon .ev-card', modal: true },
 };
-// Zone du fond où la formation place le porteur à distance ; le bouton « Porteur » les parcourt dans cet ordre.
-const SIDES = ['left', 'center', 'right'];
-const SIDE_NAME = { left: 'gauche', center: 'centre', right: 'droite' };
+// Le bouton « Porteur » parcourt les zones dans cet ordre.
+const SIDES = Object.keys(KT.CARRY_ZONES);
 const TOWER_HUD = '.topbar .rtrack.tw';
 const COMPACT_BELOW = 64;
 // Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
@@ -1160,7 +1165,7 @@ function planHtml(a, ui) {
 ${a.next ? `<p class="kt-label">Ensuite · ${esc(KT.floorRange(a.next.stops))}</p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
 ${ecoHtml(a)}${todoHtml(a)}
 <div class="kt-actions"><button class="kt-copy" data-act="copy">Copier la formation</button>
-<button class="kt-btn kt-side" data-act="side" aria-label="Côté du porteur dans la formation">Porteur : ${SIDE_NAME[ui.side]}</button></div></div>`;
+<button class="kt-btn kt-side" data-act="side">Porteur : ${KT.CARRY_ZONES[ui.side].name}</button></div></div>`;
 }
 
 function bossHtml(state, ui) {
@@ -1304,6 +1309,8 @@ async function loadSources(state) {
 
 function mount() {
   const ui = { x: null, y: 16, collapsed: false, guide: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
+  // Une zone inconnue (stockage modifié à la main) ferait échouer la formation à chaque lecture de la sauvegarde.
+  if (!SIDES.includes(ui.side)) ui.side = SIDES[0];
   const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null };
 
   const host = document.createElement('div');

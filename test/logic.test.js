@@ -551,7 +551,7 @@ test('déplacements rejoués comme le jeu : échange, occupant déplacé, Pokém
     ['Pose Goupix — fond, colonne 1, à la place de Rattata', 'Pose Caninos — avant, colonne 4 ; range Abo au banc']);
 });
 
-test('formation : porteur à distance dans le coin du côté choisi, gardé s’il y est déjà', () => {
+test('formation : porteur à distance dans la zone choisie du fond, gardé s’il y est déjà', () => {
   const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
   const t = { ...torre, stops, cores: [{ stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 }] };
   const at = (cell, side) => KT.advise({
@@ -576,12 +576,12 @@ test('formation : porteur à distance dans le coin du côté choisi, gardé s’
     },
   });
   assert.deepEqual(corner.moves.map(m => `${m.title} — ${m.why}`), ['Pose Abra — fond, colonne 2']);
-  // Centre : Onix et Goupix (distance) prennent ensuite les cases libres les plus proches du centre, colonnes 3 puis 5.
+  // Centre : Onix et Goupix (distance) se placent ensuite une colonne sur deux autour du porteur, colonnes 2 puis 6.
   const center = KT.advise({
     torre: { ...t, cores: [{ stop: '10:brock', core: ['abra', 'onix', 'vulpix'], n: 50, win: 90, lo: 80 }] }, data, lang, side: 'center', previous: null,
     save: { ...save, round: 1009, level: 3, shop: [], bench: ['x', 'v'], board: {}, units: { x: { id: 'x', line: 'abra', star: 2 }, v: { id: 'v', line: 'vulpix', star: 1 } } },
   });
-  assert.deepEqual(center.moves.map(m => `${m.title} — ${m.why}`), ['Pose Abra — fond, colonne 4', 'Pose Goupix — fond, colonne 5']);
+  assert.deepEqual(center.moves.map(m => `${m.title} — ${m.why}`), ['Pose Abra — fond, colonne 4', 'Pose Goupix — fond, colonne 6']);
 });
 
 // Unités de S57 remplacées ou ajoutées ; shiny : +10 % (makeUnit du jeu), transmis par la fusion.
