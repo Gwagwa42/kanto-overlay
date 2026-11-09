@@ -600,11 +600,9 @@ const KT = (() => {
 
   // Ce qu'un objet porté contraire au profil a de faux, pour le conseil d'Aimant.
   function misfit(data, profile, id) {
-    const parts = itemParts(data, id);
-    if (profile.tank) return 'offensif sur un tank';
     const other = profile.special ? 'protein' : 'calcium';
-    if (parts.includes(other)) return profile.special ? 'physique sur un spécial' : 'spécial sur un physique';
-    return 'défensif sur un attaquant';
+    if (itemParts(data, id).includes(other)) return profile.special ? 'physique sur un spécial' : 'spécial sur un physique';
+    return profile.tank ? 'offensif sur un tank' : 'défensif sur un attaquant';
   }
 
   // Meilleurs objets complets portés en Tour par cette lignée exacte et qui conviennent à son profil : une forme ancrée (-aN)
@@ -645,7 +643,7 @@ const KT = (() => {
   function futureLines(torre, data, target, next, holders, profiles, names) {
     const owned = new Set(holders.map(h => baseLine(h.unit.line)));
     return [...target.core, ...(next?.core ?? [])].filter(id => !owned.has(baseLine(id)) && owned.add(baseLine(id)))
-      .map(id => ({ who: names.line(baseLine(id)), ideal: idealItems(torre, data, id, profiles.get(baseLine(id)) ?? null) }));
+      .map(id => ({ base: baseLine(id), who: names.line(baseLine(id)), ideal: idealItems(torre, data, id, profiles.get(baseLine(id)) ?? null) }));
   }
 
   const BEST = 'meilleur objet de sa lignée en Tour';
@@ -759,13 +757,15 @@ const KT = (() => {
     };
 
     // Aimant : sur un Pokémon de la compo qui porte un objet contraire à son profil, puis sur un Pokémon plein dont un objet
-    // idéal attend au sac (complet, ou ses deux composants). Il rend tous ses objets au sac ; les conseils suivent au passage d'après.
-    const count = id => game.bag.filter(x => x === id).length;
+    // idéal attend au sac (complet, ou ses deux composants), enfin sur un Pokémon posé hors des deux compos qui porte des objets
+    // (au banc, la vente les rend : sellMarks). Il rend tous ses objets au sac : le Pokémon ne reçoit plus rien dans ce passage,
+    // les conseils suivent au passage d'après.
+    const count = id => pending(kind(id)).filter(x => x.id === id).length;
     const inBag = f => {
       const [a, b] = book.parts.get(f) ?? [];
       return count(f) > 0 || (a !== undefined && (a === b ? count(a) >= 2 : count(a) > 0 && count(b) > 0));
     };
-    const wrong = h => h.on.find(id => !fits(h, id));
+    const wrong = h => h.on.find(id => ['part', 'full'].includes(kind(id)) && !fits(h, id));
     const swap = h => {
       const bad = wrong(h);
       if (bad) return { why: `retire ${names.item(bad)} (${misfit(data, h.profile, bad)})`, ready: null };
@@ -773,20 +773,29 @@ const KT = (() => {
       const out = f && h.on.find(x => !h.ideal.includes(x));
       return out ? { why: `retire ${names.item(out)} ; ${names.item(f)} prêt au sac`, ready: f } : null;
     };
-    const swaps = [...hs.filter(wrong), ...hs.filter(h => !wrong(h))].map(h => ({ h, ...swap(h) })).filter(x => x.why);
-    game.bag.map((id, i) => ({ id, i })).filter(x => x.id === 'magnet').forEach(({ i }, k) => {
-      const s = swaps[k];
-      if (!s) return;
+    const wanted = [...targetBases(target), ...future.map(x => x.base)];
+    const strays = game.units.filter(u => u.items?.length && boardCell(u.cell) !== null && !wanted.includes(baseLine(u.line)));
+    const targets = [...hs.filter(wrong), ...hs.filter(h => !wrong(h))];
+    for (const { i } of game.bag.map((id, j) => ({ id, i: j })).filter(x => x.id === 'magnet')) {
+      // Calculé à chaque Aimant : l'objet réservé par le précédent n'est plus au sac.
+      const s = targets.map(h => ({ h, ...swap(h) })).find(x => x.why);
+      if (!s) {
+        const u = strays.shift();
+        if (u) marks[i] = mark('do', `Retire de ${names.line(u.line)}`, `Aimant sur ${names.line(u.line)}`, 'hors des compos : récupère ses objets');
+        continue;
+      }
+      targets.splice(targets.indexOf(s.h), 1);
       marks[i] = mark('do', `Retire de ${s.h.who}`, `Aimant sur ${s.h.who}`, s.why);
+      Object.assign(s.h, { slots: 0, lone: null });
       // L'objet prêt attend l'Aimant au sac : le complet s'il y est, sinon ses deux composants.
-      if (!s.ready) return;
+      if (!s.ready) continue;
       const keep = id => {
         const j = pending(kind(id)).find(x => x.id === id).i;
         marks[j] = mark('opt', 'Garde', `Garde ${names.item(id)}`, `pour ${s.h.who}, après l’Aimant`);
       };
       if (count(s.ready) > 0) keep(s.ready);
       else book.parts.get(s.ready).forEach(keep);
-    });
+    }
     // Objets complets : recettes idéales d'abord (rang le plus haut), puis par rôle, en évitant un doublon sur un Pokémon.
     for (const { id, i } of pending('full')) {
       const h = hs.filter(x => x.slots > 0 && ideal(x, id)).sort((a, b) => a.ideal.indexOf(id) - b.ideal.indexOf(id))[0];
@@ -825,8 +834,13 @@ const KT = (() => {
       const aims = [...new Set([...h.ideal, ...worn])].slice(0, MAX_ITEMS).map(id => {
         if (on.includes(id)) return { id, state: 'worn', missing: [] };
         if (take(bag, id)) return { id, state: 'ready', missing: [] };
-        const missing = (book.parts.get(id) ?? []).filter(x => !take(loose, x) && !take(bag, x));
-        return { id, state: missing.length ? 'missing' : 'ready', missing };
+        // Composants pris seulement si l'objet est prêt : un objet incomplet ne prive pas le Pokémon suivant.
+        const [l, b] = [[...loose], [...bag]];
+        const missing = (book.parts.get(id) ?? []).filter(x => !take(l, x) && !take(b, x));
+        if (missing.length) return { id, state: 'missing', missing };
+        loose.splice(0, loose.length, ...l);
+        bag.splice(0, bag.length, ...b);
+        return { id, state: 'ready', missing };
       });
       return { unit: h.unit, aims };
     });
@@ -835,7 +849,7 @@ const KT = (() => {
   // Récompense : d'après l'état des porteurs après les conseils du sac (composants seuls et places restantes), puis les
   // recettes idéales des lignées à venir.
   function offerMarks(book, game, hs, future, names) {
-    if (!hs.length || !game.reward.length) return game.reward.map(() => null);
+    if (!game.reward.length) return [];
     const value = id => [...hs.flatMap(h => h.ideal.filter(f => !h.on.includes(f)).map(f => {
       const ab = book.parts.get(f) ?? [];
       if (f === id) return h.slots > 0 && { s: 3, why: `${BEST} pour ${h.who}` };
@@ -942,8 +956,10 @@ const KT = (() => {
     };
     const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
     const taken = new Set([...stay].map(u => u.from));
-    const first = role => (a, b) => Number(b.role === role) - Number(a.role === role);
-    const order = [...units.filter(u => !u.ranged).sort(first('tank')), ...units.filter(u => u.ranged).sort(first('carry'))];
+    // Tanks d'abord, à distance compris (leur zone est l'avant), puis la mêlée, puis la distance porteur en tête.
+    const tanks = units.filter(u => u.role === 'tank');
+    const others = units.filter(u => u.role !== 'tank');
+    const order = [...tanks, ...others.filter(u => !u.ranged), ...others.filter(u => u.ranged).sort((a, b) => Number(b.role === 'carry') - Number(a.role === 'carry'))];
     for (const u of order) {
       u.cell = stay.has(u) ? u.from : zones(u).flat().find(c => !taken.has(c));
       taken.add(u.cell);
@@ -1750,7 +1766,7 @@ function mount() {
   // Sections repliables : état gardé entre deux rendus et deux sessions.
   const FOLDS = { 'kt-guide': 'guide', 'kt-aims': 'aims' };
   root.addEventListener('toggle', e => {
-    const key = FOLDS[e.target.className];
+    const key = FOLDS[Object.keys(FOLDS).find(c => e.target.classList?.contains(c))];
     if (!key || ui[key] === e.target.open) return;
     ui[key] = e.target.open;
     saveUi();

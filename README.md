@@ -45,12 +45,12 @@ barre le remet en haut à droite.
     effet et fusionne sur le Pokémon avec le suivant ; deux composants du sac pour le même Pokémon sont donnés en paire, avec
     l'ordre de pose quand il compte. Priorité à la recette idéale de chaque lignée (meilleurs couples Pokémon/objet de la Tour qui
     conviennent à son profil), sinon par rôle : offensif au porteur puis aux attaquants, défensif aux tanks. 3 objets au plus.
-  - Préparation : un composant qui ne sert à aucun Pokémon possédé reste au sac s'il entre dans la recette idéale d'un Pokémon du
-    cœur cible pas encore acheté ou du cœur de la compo suivante (« Garde Fer — Cuiller Tordue pour Lokhlass, à venir »). La
+  - Préparation : un composant qui n'entre dans aucune recette idéale d'un Pokémon possédé reste au sac, avant toute pose par rôle,
+    s'il entre dans celle d'un Pokémon du cœur cible pas encore acheté ou du cœur de la compo suivante (« Garde Fer — Cuiller Tordue pour Lokhlass, à venir »). La
     récompense d'objet vise ce qui reste à compléter, puis ces recettes à venir.
   - Retrait : l'Aimant du sac va sur un Pokémon de la compo qui porte un objet contraire à son profil, sinon sur un Pokémon plein
-    dont un objet idéal attend au sac (l'objet, ou ses composants, est alors gardé pour lui). Un Pokémon du banc hors des deux
-    compos qui porte des objets est à vendre : il les rend au sac.
+    dont un objet idéal attend au sac (l'objet, ou ses composants, est alors gardé pour lui), enfin sur un Pokémon posé hors des
+    deux compos qui porte des objets. Au banc, un tel Pokémon est à vendre : il rend ses objets au sac.
   - « Objets visés », sous les conseils : pour chaque Pokémon de la compo, ses 3 objets visés, portés (✓), prêts au sac (●) ou
     avec les composants qui manquent (○).
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.

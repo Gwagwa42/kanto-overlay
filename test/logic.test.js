@@ -441,6 +441,50 @@ test('Aimant : objet contraire au profil, puis objet idéal prêt au sac, gardé
   assert.deepEqual(advise(idle).bag, [null]);
 });
 
+test('Aimant : deux Aimants, emblème porté, Pokémon vidé qui ne reçoit rien, Pokémon posé hors des compos', () => {
+  // Deux Pokémon pleins visent Bandeau Choix, une seule paire de Protéine : le 2ᵉ Aimant ne réserve rien de plus.
+  const two = advise(withItems(['magnet', 'magnet', 'protein', 'protein'], { a: FULL3, b: FULL3 }));
+  assert.deepEqual(two.bag.map(brief), ['do Retire de Minidraco', null, 'opt Garde', 'opt Garde']);
+  // Un emblème n'est pas un objet contraire, même sans profil de lignée.
+  assert.deepEqual(advise(withItems(['magnet'], { a: ['emblem-fire'] })).bag, [null]);
+  const bare = KT.advise({ torre: { ...torre, holders: torre.holders.filter(h => KT.baseLine(h.line) !== 'vulpix') }, data, lang,
+    save: withItems(['magnet'], { d: ['emblem-fire', 'choice-band'] }), previous: null, side: 'left' });
+  assert.deepEqual(bare.bag, [null]);
+  // Minidraco (Restes, contraire) se vide : Orbe Vie va ailleurs.
+  const after = advise(withItems(['magnet', 'life-orb'], { a: ['leftovers'] }));
+  assert.deepEqual(after.bag.map(m => m.title), ['Aimant sur Minidraco', 'Orbe Vie → Goupix']);
+  // Rattata posé, hors des deux compos, porte des objets : l'Aimant les récupère.
+  const stray = { ...withItems(['magnet']), units: { ...S57.units, e: { ...S57.units.e, items: ['life-orb'] } }, board: { ...S57.board, 50: 'e' },
+    bench: ['b', 'c', null, null, null, null, null, null, null] };
+  const m = advise(stray).bag[0];
+  assert.deepEqual([m.title, m.why], ['Aimant sur Rattata', 'hors des compos : récupère ses objets']);
+});
+
+test('Aimant : un tank qui porte un objet de la stat contraire est dit « spécial sur un physique »', () => {
+  const t = { ...torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }],
+    cores: [{ stop: '10:brock', core: ['geodude', 'bulbasaur', 'abra'], n: 50, win: 90, lo: 80 }] };
+  const a = KT.advise({ torre: t, data, lang, side: 'left', previous: null, save: {
+    ...save, round: 1009, level: 3, shop: [], bench: ['g'], board: {}, items: ['magnet'],
+    units: { g: { id: 'g', line: 'geodude', star: 1, items: ['twisted-spoon'] } },
+  } });
+  assert.equal(a.bag[0].why, 'retire Cuiller Tordue (spécial sur un physique)');
+});
+
+test('récompense d’objet : sans Pokémon de la compo, prépare une lignée à venir', () => {
+  const a = advise({ ...S57, units: {}, board: {}, bench: [], itemReward: ['carbos'] });
+  assert.deepEqual([brief(a.reward[0]), a.reward[0].why], ['do Prends', 'Lentilscope pour Ptéra, à venir']);
+});
+
+test('formation : un tank à distance (Onix) passe au premier rang avant la mêlée', () => {
+  const t = { ...torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }],
+    cores: [{ stop: '10:brock', core: ['onix', 'machop', 'abra'], n: 50, win: 90, lo: 80 }] };
+  const code = KT.advise({ torre: t, data, lang, side: 'left', previous: null, save: {
+    ...save, round: 1009, level: 2, shop: [], bench: ['o', 'z'], board: {}, items: [],
+    units: { o: { id: 'o', line: 'onix', star: 2 }, z: { id: 'z', line: 'zubat', star: 1 } },
+  } }).code;
+  assert.match(code, /;onix:2:3/);
+});
+
 test('vente : Pokémon hors des deux compos qui porte des objets, gardé s’il sert à la compo suivante', () => {
   const lay = {
     ...S57, units: { ...S57.units, e: { ...S57.units.e, items: ['protein'] }, f: { id: 'f', line: 'lapras', star: 1, items: ['iron'] } },
@@ -451,14 +495,18 @@ test('vente : Pokémon hors des deux compos qui porte des objets, gardé s’il 
   assert.equal(a.bench[3], null);
 });
 
-test('objets visés : idéaux portés, prêts ou composants manquants, sac partagé dans l’ordre des rôles', () => {
-  const a = advise(withItems(['hp-up', 'calcium', 'protein'], { a: ['choice-band'] }));
-  const aims = Object.fromEntries(a.aims.map(x => [x.unit.line, x.aims.map(y => `${y.id}:${y.state}:${y.missing.join('+')}`)]));
-  assert.deepEqual(aims, {
+test('objets visés : portés, prêts ou composants manquants ; un objet prêt prend ses composants au sac', () => {
+  const aimsOf = save => Object.fromEntries(advise(save).aims.map(x => [x.unit.line, x.aims.map(y => `${y.id}:${y.state}:${y.missing.join('+')}`)]));
+  // Un objet incomplet ne prend rien : chaque Pokémon voit ce qui lui manque par rapport au sac entier.
+  assert.deepEqual(aimsOf(withItems(['hp-up', 'calcium', 'protein'], { a: ['choice-band'] })), {
     dratini: ['choice-band:worn:', 'focus-sash:missing:carbos', 'scope-lens:missing:carbos'],
-    vulpix: ['choice-specs:missing:calcium', 'scope-lens:missing:protein+carbos', 'quick-claw:missing:calcium+carbos'],
-    growlithe: ['scope-lens:missing:protein+carbos', 'choice-band:missing:protein+protein', 'focus-sash:missing:hp-up+carbos'],
+    vulpix: ['choice-specs:missing:calcium', 'scope-lens:missing:carbos', 'quick-claw:missing:carbos'],
+    growlithe: ['scope-lens:missing:carbos', 'choice-band:missing:protein', 'focus-sash:missing:carbos'],
   });
+  // Protéine + Carbone : Lentilscope prête pour Minidraco (porteur, servi d'abord), plus pour les suivants.
+  const ready = aimsOf(withItems(['protein', 'carbos']));
+  assert.equal(ready.dratini[2], 'scope-lens:ready:');
+  assert.equal(ready.vulpix[1], 'scope-lens:missing:protein+carbos');
 });
 
 test('objets idéaux : 3 objets complets de la lignée exacte, ≥ 20 combats, par borne basse, qui conviennent', () => {
