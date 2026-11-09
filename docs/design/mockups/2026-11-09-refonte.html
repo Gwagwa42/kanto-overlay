@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maquette : refonte du panneau Tour Kanto Tactics</title>
+<!--
+Brief (5 lignes) ; validée sans le mini-plateau de formation (2026-11-09)
+- Utilisateur : Mathieu, en partie Tour sur Firefox desktop ; il lit le panneau d'un coup d'œil entre deux combats.
+- Densité : compacte (320 px, 380 en large) ; point focal : l'or à dépenser et la prochaine action ★, toujours visibles en tête.
+- Ton : outil posé sur le jeu, verre sombre translucide (choix de Mathieu), sans néon ni dégradé ; vocabulaire du jeu en français.
+- Palette : Okabe-Ito pour les niveaux (★ bleu, ◆ blanc, ✕ jaune) et les taux (▲ bleu, ● neutre, ▼ jaune), toujours avec symbole.
+- Typographie : system-ui, chiffres tabulaires ; quatre tailles (11, 12, 14, 16 px) à la taille de texte « Normal ».
+-->
+<style>
+  :root {
+    /* Jetons du panneau (deviendront les --kt-* de kanto-overlay.user.js) */
+    --kt-alpha: .9;                         /* option Fond : 1, .9, .8 (en deçà, texte secondaire < 4,5:1 sur les zones claires du jeu) */
+    --kt-glass: rgb(16 20 38 / var(--kt-alpha));
+    --kt-blur: 16px;
+    --kt-text: #f1f3ff;
+    --kt-muted: #b4bcdf;
+    --kt-line: rgb(255 255 255 / .12);      /* filets décoratifs */
+    --kt-control: rgb(255 255 255 / .38);   /* bord des contrôles, 3:1 */
+    --kt-raised: rgb(255 255 255 / .07);
+    --kt-raised-2: rgb(255 255 255 / .12);
+    --kt-accent: #56b4e9;                   /* Okabe-Ito bleu ciel : action principale, onglet actif */
+    --kt-accent-fg: #0b1020;
+    --kt-accent-text: #8fd0f5;              /* accent en texte : 4,5:1 jusqu'au fond 80 % sur le jeu */
+    --kt-good-bg: #56b4e9; --kt-good-fg: #0b1020;
+    --kt-bad-bg: #f0e442;  --kt-bad-fg: #141a33;
+    --kt-mid-bg: rgb(255 255 255 / .14); --kt-mid-fg: #f1f3ff;
+    --kp-do-bg: #0072b2; --kp-do-fg: #fff; --kp-opt-bg: #fff; --kp-opt-fg: #141a33; --kp-no-bg: #f0e442; --kp-no-fg: #141a33;
+    --kp-edge: #141a33;
+    --kt-shadow: 0 12px 32px rgb(0 0 0 / .45), 0 0 0 1px rgb(255 255 255 / .06) inset;
+    --kt-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --kt-size: 14px;                        /* option Texte : 13, 14, 16 */
+    --kt-s1: 4px; --kt-s2: 8px; --kt-s3: 12px; --kt-s4: 16px;
+    --kt-r-ctl: 8px; --kt-r-box: 14px;
+    --page-bg: #0b0f1f; --page-fg: #eef1ff; --page-muted: #aab3d6;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --kt-glass: rgb(250 251 255 / var(--kt-alpha));
+      --kt-text: #141a33;
+      --kt-muted: #47507a;
+      --kt-line: rgb(20 26 51 / .12);
+      --kt-control: rgb(20 26 51 / .45);
+      --kt-raised: rgb(20 26 51 / .05);
+      --kt-raised-2: rgb(20 26 51 / .09);
+      --kt-accent: #0072b2; --kt-accent-fg: #fff; --kt-accent-text: #004f7a;
+      --kt-good-bg: #0072b2; --kt-good-fg: #fff;
+      --kt-mid-bg: rgb(20 26 51 / .08); --kt-mid-fg: #141a33;
+      --kt-shadow: 0 12px 32px rgb(0 0 0 / .3), 0 0 0 1px rgb(255 255 255 / .5) inset;
+      --page-bg: #e4e9f5; --page-fg: #141a33; --page-muted: #4a5378;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 32px; background: var(--page-bg); color: var(--page-fg); font-family: var(--kt-font); }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .note { font-size: 13px; color: var(--page-muted); margin: 0 0 16px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 320px); gap: 24px; }
+  .state > h2 { font-size: 12px; font-weight: 600; color: var(--page-muted); margin: 0 0 6px; }
+  .stage { position: relative; height: 640px; border-radius: 10px; overflow: hidden; padding: 12px 0;
+    background: url(data:image/webp;base64,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) right center / cover; }
+  .stage.wide { height: 640px; }
+  .span2 { grid-column: span 2; }
+  .stage .kt { position: absolute; top: 12px; right: 0; }
+
+  /* Panneau */
+  .kt { width: 320px; color: var(--kt-text); font: var(--kt-size)/1.4 var(--kt-font); font-variant-numeric: tabular-nums;
+    background: var(--kt-glass); backdrop-filter: blur(var(--kt-blur)) saturate(1.2); border-radius: var(--kt-r-box);
+    box-shadow: var(--kt-shadow); overflow: hidden; }
+  .kt p { margin: 0; }
+  .bar { display: flex; align-items: center; gap: var(--kt-s1); height: 44px; padding: 0 var(--kt-s2) 0 var(--kt-s3); cursor: move; }
+  .bar .lbl { font-size: 12px; color: var(--kt-muted); margin-right: var(--kt-s1); }
+  .stepper { display: inline-flex; align-items: center; border: 1px solid var(--kt-control); border-radius: var(--kt-r-ctl); height: 28px; }
+  .stepper button, .stepper input { all: unset; height: 26px; display: grid; place-items: center; text-align: center; }
+  .stepper button { width: 26px; color: var(--kt-muted); font-size: 16px; }
+  .stepper input { width: 36px; font-weight: 700; font-size: 15px; border-inline: 1px solid var(--kt-line); }
+  .src { font-size: 11px; color: var(--kt-muted); padding: 2px 6px; border-radius: 999px; background: var(--kt-raised); margin-left: var(--kt-s1); }
+  .sp { flex: 1; }
+  .ibtn { all: unset; width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--kt-r-ctl); color: var(--kt-muted); }
+  .ibtn:hover, .ibtn.on { background: var(--kt-raised-2); color: var(--kt-text); }
+  .ibtn svg { width: 16px; height: 16px; }
+
+  .head { display: grid; gap: var(--kt-s2); padding: 0 var(--kt-s3) var(--kt-s3); }
+  .gold { display: flex; align-items: baseline; gap: var(--kt-s2); }
+  .gold .coin { width: 14px; height: 14px; border-radius: 999px; background: #e8b931; box-shadow: inset 0 0 0 2px #b9851b; align-self: center; }
+  .gold b { font-size: 16px; }
+  .gold .spend { font-size: 16px; font-weight: 700; color: var(--kt-accent-text); }
+  .gold .m { font-size: 12px; color: var(--kt-muted); margin-left: auto; }
+  .warn { display: flex; gap: var(--kt-s2); align-items: center; font-size: 12px; padding: 6px var(--kt-s2); border-radius: var(--kt-r-ctl); background: var(--kt-raised); }
+  .boss { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 var(--kt-s2); padding: var(--kt-s2) var(--kt-s3);
+    border-radius: 10px; background: var(--kt-raised); }
+  .boss .n { font-weight: 700; font-size: 15px; }
+  .boss .w { font-size: 12px; color: var(--kt-muted); }
+  .boss .rate { grid-row: 1 / span 2; grid-column: 2; }
+  .rate { display: inline-flex; gap: 4px; align-items: center; padding: 2px var(--kt-s2); border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .rate.good { background: var(--kt-good-bg); color: var(--kt-good-fg); }
+  .rate.bad { background: var(--kt-bad-bg); color: var(--kt-bad-fg); }
+  .rate.mid { background: var(--kt-mid-bg); color: var(--kt-mid-fg); }
+
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 var(--kt-s3); padding: 3px; gap: 2px; border-radius: 10px; background: var(--kt-raised); }
+  .tabs button { all: unset; height: 28px; display: flex; align-items: center; justify-content: center; gap: 4px; border-radius: 7px; font-size: 13px; font-weight: 600; color: var(--kt-muted); }
+  .tabs button[aria-selected="true"] { background: var(--kt-accent); color: var(--kt-accent-fg); }
+  .tabs .count { font-size: 11px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--kt-raised-2); display: inline-grid; place-items: center; }
+  .tabs button[aria-selected="true"] .count { background: rgb(0 0 0 / .18); }
+  .panel { padding: var(--kt-s3); display: grid; gap: var(--kt-s3); }
+  .label { font-size: 12px; color: var(--kt-muted); display: flex; justify-content: space-between; gap: var(--kt-s2); }
+
+  /* Conseils */
+  .todo { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .todo li { display: grid; grid-template-columns: 20px 1fr; gap: var(--kt-s2); padding: 6px var(--kt-s2); border-radius: var(--kt-r-ctl); }
+  .todo li:hover { background: var(--kt-raised); }
+  .todo .t { font-weight: 600; font-size: 13px; }
+  .todo .why { display: block; font-size: 12px; color: var(--kt-muted); }
+  .sym { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid var(--kp-edge); margin-top: 1px; }
+  .sym.do { background: var(--kp-do-bg); color: var(--kp-do-fg); }
+  .sym.opt { background: var(--kp-opt-bg); color: var(--kp-opt-fg); }
+  .sym.no { background: var(--kp-no-bg); color: var(--kp-no-fg); }
+  .more { all: unset; display: flex; align-items: center; gap: var(--kt-s2); height: 32px; padding: 0 var(--kt-s2); border-radius: var(--kt-r-ctl); font-size: 13px; color: var(--kt-muted); border-top: 1px solid var(--kt-line); }
+  .more .chev { width: 20px; text-align: center; }
+  .more .k { color: var(--kt-text); font-weight: 600; white-space: nowrap; }
+  .more { width: 100%; min-width: 0; box-sizing: border-box; }
+  .more .l { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+  /* Compo */
+  .chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--kt-s1); }
+  .chips li { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 var(--kt-s2); border-radius: var(--kt-r-ctl); background: var(--kt-raised); font-size: 12px; }
+  .chips li.core { font-weight: 700; box-shadow: inset 0 0 0 1px var(--kt-accent); }
+  .chips .p { color: var(--kt-muted); font-weight: 400; }
+  .chips .sh { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 999px; background: var(--kt-bad-bg); color: var(--kt-bad-fg); }
+  .board { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .board span { height: 24px; border-radius: 6px; background: var(--kt-raised); display: grid; place-items: center; font-size: 10px; font-weight: 700; }
+  .board .u { background: var(--kt-raised-2); }
+  .board .c { box-shadow: inset 0 0 0 2px var(--kt-accent); }
+  .board .todo-cell { outline: 2px dashed var(--kt-accent); outline-offset: -2px; background: transparent; color: var(--kt-accent-text); }
+  .rows { display: flex; justify-content: space-between; font-size: 11px; color: var(--kt-muted); }
+  .copy { all: unset; height: 36px; display: flex; align-items: center; justify-content: center; gap: var(--kt-s2); border-radius: var(--kt-r-ctl); background: var(--kt-accent); color: var(--kt-accent-fg); font-weight: 700; font-size: 14px; }
+  .hint { font-size: 12px; color: var(--kt-muted); }
+
+  /* Boss */
+  .big { display: flex; gap: var(--kt-s3); }
+  .big div { flex: 1; padding: var(--kt-s2); border-radius: 10px; background: var(--kt-raised); }
+  .big b { display: block; font-size: 16px; }
+  .big span { font-size: 11px; color: var(--kt-muted); }
+  .cores { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--kt-s1); }
+  .cores li { display: grid; grid-template-columns: 1fr auto; gap: 0 var(--kt-s2); padding: var(--kt-s2); border-radius: 10px; background: var(--kt-raised); align-items: center; }
+  .cores .names { font-size: 13px; font-weight: 600; }
+  .cores .n { font-size: 11px; color: var(--kt-muted); }
+  .cores .rate { grid-row: 1 / span 2; grid-column: 2; }
+  .cores .mine { font-size: 11px; color: var(--kt-accent-text); font-weight: 600; }
+
+  /* Règles */
+  .rules { margin: 0; padding-left: var(--kt-s4); font-size: 13px; display: grid; gap: 6px; }
+  .callout { font-size: 12px; padding: var(--kt-s2); border-radius: 10px; background: var(--kt-raised); }
+
+  /* Options */
+  .opts { display: grid; gap: var(--kt-s3); padding: var(--kt-s3); border-top: 1px solid var(--kt-line); }
+  .opts h3 { margin: 0; font-size: 13px; }
+  .opt { display: grid; gap: 6px; }
+  .opt > span { font-size: 12px; color: var(--kt-muted); }
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; gap: 2px; border-radius: var(--kt-r-ctl); background: var(--kt-raised); }
+  .seg button { all: unset; height: 26px; display: grid; place-items: center; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--kt-muted); }
+  .seg button[aria-checked="true"] { background: var(--kt-raised-2); color: var(--kt-text); box-shadow: inset 0 0 0 1px var(--kt-control); }
+  .checks { display: flex; gap: var(--kt-s2); }
+  .checks label { flex: 1; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--kt-s2); border-radius: var(--kt-r-ctl); background: var(--kt-raised); font-size: 12px; }
+  .checks input { width: 16px; height: 16px; accent-color: var(--kt-accent); margin: 0; }
+  .checks .off { color: var(--kt-muted); }
+
+  /* Replié */
+  .mini .bar { height: 44px; }
+  .mini .sum { display: flex; align-items: center; gap: var(--kt-s2); font-size: 13px; min-width: 0; }
+  .mini .coin { width: 14px; height: 14px; border-radius: 999px; background: #e8b931; box-shadow: inset 0 0 0 2px #b9851b; flex: none; }
+  .mini .sum .spend { font-weight: 700; color: var(--kt-accent-text); white-space: nowrap; }
+  .mini .sum .next { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Pastilles sur le jeu */
+  .shop { position: absolute; left: 24px; right: 24px; bottom: 24px; display: flex; gap: 10px; }
+  .card { flex: 1; height: 92px; border-radius: 10px; background: rgb(240 242 250 / .9); color: #141a33; font-size: 12px; font-weight: 700; display: flex; align-items: end; padding: 8px; position: relative; }
+  .kp { position: absolute; left: 50%; top: -12px; translate: -50% 0; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px;
+    border-radius: 999px; font: 700 12px/1 var(--kt-font); border: 1px solid var(--kp-edge); box-shadow: 0 0 0 1px #fff, 0 2px 6px rgb(0 0 0 / .35); white-space: nowrap; }
+  .kp.do { background: var(--kp-do-bg); color: var(--kp-do-fg); }
+  .kp.no { background: var(--kp-no-bg); color: var(--kp-no-fg); }
+  .kp.opt { background: var(--kp-opt-bg); color: var(--kp-opt-fg); }
+  .tip { position: absolute; bottom: calc(100% + 8px); left: 50%; translate: -50% 0; width: 240px; padding: 10px 12px; border-radius: 12px;
+    background: var(--kt-glass); backdrop-filter: blur(var(--kt-blur)); color: var(--kt-text); box-shadow: var(--kt-shadow); font: 400 12px/1.45 var(--kt-font); white-space: normal; }
+  .tip strong { display: block; font-size: 13px; margin-bottom: 2px; }
+  .tip .m { display: block; margin-top: 4px; color: var(--kt-muted); }
+
+  .msg { padding: var(--kt-s2) var(--kt-s3); border-radius: 10px; background: var(--kt-raised); font-size: 13px; }
+  .msg strong { display: block; }
+  .skel { height: 12px; border-radius: 6px; background: var(--kt-raised-2); }
+  .foot { padding: var(--kt-s2) var(--kt-s3); font-size: 11px; color: var(--kt-muted); border-top: 1px solid var(--kt-line); }
+  .foot a { color: inherit; }
+  .stack { display: grid; gap: 12px; position: absolute; top: 12px; right: 0; }
+  .stack .kt { position: static; }
+</style>
+</head>
+<body>
+<h1>Refonte du panneau Tour : verre, en-tête fixe, onglets, options</h1>
+<p class="note">Étage 57, partie de démonstration (S57). Fond : capture réelle du jeu. Panneau compact (320 px), texte « Normal », fond 90 %.</p>
+
+<div class="grid">
+
+<!-- 1. Onglet Tour -->
+<section class="state"><h2>1. Onglet Tour (✕ repliés)</h2><div class="stage">
+<aside class="kt" aria-label="Aide Tour Kanto Tactics">
+  <div class="bar"><span class="lbl">Étage</span>
+    <span class="stepper"><button aria-label="Étage précédent">−</button><input value="57" aria-label="Étage courant"><button aria-label="Étage suivant">+</button></span>
+    <span class="src">auto</span><span class="sp"></span>
+    <button class="ibtn" aria-label="Options"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg></button>
+    <button class="ibtn" aria-label="Replier le panneau" aria-expanded="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10l4-4 4 4"/></svg></button>
+  </div>
+  <div class="head">
+    <p class="gold"><span class="coin" aria-hidden="true"></span>Or <b>38</b> → <span class="spend">8 à dépenser</span><span class="m">palier 30 · +3</span></p>
+    <p class="warn"><span class="sym no" aria-hidden="true">▼</span>Étage 60 (Électhor, 40,8 %) : tout jouer.</p>
+    <div class="boss"><span class="n">Électhor</span><span class="rate mid">● 40,8 %</span><span class="w">étage 60 · dans 3</span></div>
+  </div>
+  <div class="tabs" role="tablist"><button role="tab" aria-selected="true">Tour <span class="count">6</span></button><button role="tab">Compo</button><button role="tab">Boss</button><button role="tab">Règles</button></div>
+  <div class="panel" role="tabpanel">
+    <ol class="todo">
+      <li><span class="sym do">★</span><span><span class="t">Achète Caninos</span><span class="why">3ᵉ copie, passe ★★ ; cœur de la compo cible</span></span></li>
+      <li><span class="sym do">★</span><span><span class="t">Achète Ptéra</span><span class="why">cœur de la compo cible</span></span></li>
+      <li><span class="sym do">★</span><span><span class="t">PV Plus → Minidraco</span><span class="why">+10 % PV tout de suite ; Ceinture Force avec Carbone</span></span></li>
+      <li><span class="sym do">★</span><span><span class="t">Calcium + Fer → Caninos</span><span class="why">Cuiller Tordue, meilleur objet de sa lignée</span></span></li>
+      <li><span class="sym do">★</span><span><span class="t">Déplace Goupix</span><span class="why">avant, colonne 4 → fond, colonne 1</span></span></li>
+      <li><span class="sym do">★</span><span><span class="t">Pose Caninos</span><span class="why">avant, colonne 4</span></span></li>
+    </ol>
+    <button class="more" aria-expanded="false"><span class="chev" aria-hidden="true">▸</span><span class="k">5 à éviter</span><span class="l">Magmar, Rattata, Abo, Actualiser, XP</span></button>
+  </div>
+</aside></div></section>
+
+<!-- 2. Onglet Compo -->
+<section class="state"><h2>2. Onglet Compo</h2><div class="stage">
+<aside class="kt">
+  <div class="bar"><span class="lbl">Étage</span><span class="stepper"><button>−</button><input value="57"><button>+</button></span><span class="src">auto</span><span class="sp"></span>
+    <button class="ibtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg></button><button class="ibtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10l4-4 4 4"/></svg></button></div>
+  <div class="head">
+    <p class="gold"><span class="coin"></span>Or <b>38</b> → <span class="spend">8 à dépenser</span><span class="m">palier 30 · +3</span></p>
+    <div class="boss"><span class="n">Électhor</span><span class="rate mid">● 40,8 %</span><span class="w">étage 60 · dans 3</span></div>
+  </div>
+  <div class="tabs"><button>Tour <span class="count">6</span></button><button aria-selected="true">Compo</button><button>Boss</button><button>Règles</button></div>
+  <div class="panel">
+    <p class="label"><span>Compo cible</span><span>Électhor 60 → Koga 75</span></p>
+    <ul class="chips">
+      <li class="core">Ptéra <span class="p">0/3</span></li><li class="core">Minidraco <span class="p">★★</span> <span class="sh">shiny</span></li><li class="core">Caninos <span class="p">2/3</span></li>
+      <li>Goupix <span class="p">★★</span></li><li>Magmar <span class="p">0/3</span></li>
+    </ul>
+    <p class="label"><span>Ensuite</span><span>étages 80–100</span></p>
+    <ul class="chips"><li>Leveinard <span class="p">0/3</span></li><li>Minidraco <span class="p">★★</span></li><li>Lokhlass <span class="p">0/3</span></li></ul>
+    <button class="copy">Copier la formation</button>
+    <p class="hint">Porteur à distance : fond, coin gauche (options ⚙).</p>
+  </div>
+</aside></div></section>
+
+<!-- 3. Onglet Boss -->
+<section class="state"><h2>3. Onglet Boss</h2><div class="stage">
+<aside class="kt">
+  <div class="bar"><span class="lbl">Étage</span><span class="stepper"><button>−</button><input value="57"><button>+</button></span><span class="src">auto</span><span class="sp"></span>
+    <button class="ibtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg></button><button class="ibtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10l4-4 4 4"/></svg></button></div>
+  <div class="head">
+    <p class="gold"><span class="coin"></span>Or <b>38</b> → <span class="spend">8 à dépenser</span><span class="m">palier 30 · +3</span></p>
+    <div class="boss"><span class="n">Électhor</span><span class="rate mid">● 40,8 %</span><span class="w">étage 60 · dans 3</span></div>
+  </div>
+  <div class="tabs"><button>Tour <span class="count">6</span></button><button>Compo</button><button aria-selected="true">Boss</button><button>Règles</button></div>
+  <div class="panel">
+    <div class="big"><div><b>40,8 %</b><span>victoires</span></div><div><b>44,4 %</b><span>au 1er essai</span></div><div><b>2,45</b><span>essais en moyenne</span></div></div>
+    <p class="label"><span>Meilleurs trios</span><span>≥ 20 combats</span></p>
+    <ol class="cores">
+      <li><span class="names">Ptéra · Minidraco · Caninos</span><span class="rate good">▲ 96,1 %</span><span class="n">51 combats · <span class="mine">ta compo cible</span></span></li>
+      <li><span class="names">Ptéra · Caninos · Goupix</span><span class="rate good">▲ 92,4 %</span><span class="n">38 combats</span></li>
+      <li><span class="names">Minidraco · Magmar · Goupix</span><span class="rate good">▲ 88,0 %</span><span class="n">27 combats</span></li>
+    </ol>
+  </div>
+  <div class="foot">Du 12 oct. au 8 nov. · Data: <a href="#">Kanto Tactics · einoow.com</a></div>
+</aside></div></section>
+
+<!-- 4. Onglet Règles -->
+<section class="state"><h2>4. Onglet Règles</h2><div class="stage">
+<aside class="kt">
+  <div class="bar"><span class="lbl">Étage</span><span class="stepper"><button>−</button><input value="57"><button>+</button></span><span class="src">auto</span><span class="sp"></span>
+    <button class="ibtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg></button><button class="ibtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10l4-4 4 4"/></svg></button></div>
+  <div class="head">
+    <p class="gold"><span class="coin"></span>Or <b>38</b> → <span class="spend">8 à dépenser</span><span class="m">palier 30 · +3</span></p>
+    <div class="boss"><span class="n">Électhor</span><span class="rate mid">● 40,8 %</span><span class="w">étage 60 · dans 3</span></div>
+  </div>
+  <div class="tabs"><button>Tour <span class="count">6</span></button><button>Compo</button><button>Boss</button><button aria-selected="true">Règles</button></div>
+  <div class="panel">
+    <p class="label"><span>Règles d’or</span><span>étages 41–80</span></p>
+    <p class="callout">Shinies à saisir : Minidraco, Caninos. Garde-les jusqu’à l’étage 120 (conseil non vérifié ; un shiny a +10 % de PV, de défenses et de dégâts).</p>
+    <ul class="rules">
+      <li>Intérêts plafonnés à +3 : garde 30 pièces, dépense le surplus.</li>
+      <li>N’actualise que sur le surplus, sauf pour tout jouer.</li>
+      <li>Tout jouer quand le combat passe sous 45 % ou tes PV sous 40.</li>
+      <li>Pose chaque objet tout de suite : un composant seul agit déjà.</li>
+    </ul>
+  </div>
+</aside></div></section>
+
+<!-- 5. Options -->
+<section class="state"><h2>5. Menu ⚙ ouvert</h2><div class="stage">
+<aside class="kt">
+  <div class="bar"><span class="lbl">Étage</span><span class="stepper"><button>−</button><input value="57"><button>+</button></span><span class="src">auto</span><span class="sp"></span>
+    <button class="ibtn on" aria-expanded="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg></button><button class="ibtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10l4-4 4 4"/></svg></button></div>
+  <div class="opts" role="group" aria-label="Options">
+    <h3>Options</h3>
+    <div class="opt"><span>Thème</span><div class="seg" role="radiogroup"><button aria-checked="true">Auto</button><button>Clair</button><button>Sombre</button></div></div>
+    <div class="opt"><span>Pastilles sur le jeu</span><div class="checks"><label><input type="checkbox" checked>★ Faire</label><label><input type="checkbox" checked>◆ Si l’or</label><label class="off"><input type="checkbox">✕ Éviter</label></div></div>
+    <div class="opt"><span>Largeur</span><div class="seg"><button aria-checked="true">Compacte</button><button>Large</button></div></div>
+    <div class="opt"><span>Texte</span><div class="seg"><button>Petit</button><button aria-checked="true">Normal</button><button>Grand</button></div></div>
+    <div class="opt"><span>Fond</span><div class="seg"><button>Opaque</button><button aria-checked="true">90 %</button><button>80 %</button></div></div>
+    <div class="opt"><span>Porteur à distance (formation)</span><div class="seg"><button aria-checked="true">Coin gauche</button><button>Centre</button><button>Coin droit</button></div></div>
+    <p class="hint">Alt+K replie le panneau ; double-clic sur la barre pour le remettre en haut à droite.</p>
+  </div>
+</aside></div></section>
+
+<!-- 6. Replié + pastilles -->
+<section class="state span2"><h2>6. Panneau replié, pastilles affinées et bulle</h2><div class="stage wide" style="background-position: center 70%">
+<aside class="kt mini">
+  <div class="bar"><span class="stepper"><button>−</button><input value="57"><button>+</button></span>
+    <span class="sum" title="8 pièces à dépenser · Achète Caninos"><span class="coin" aria-hidden="true"></span><span class="spend">8</span><span class="sym do" aria-hidden="true">★</span><span class="next">Achète Caninos</span></span><span class="sp"></span>
+    <button class="ibtn" aria-label="Déplier le panneau" aria-expanded="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg></button></div>
+</aside>
+<div class="shop">
+  <div class="card">Acheter XP<span class="kp no">✕ Attends</span></div>
+  <div class="card">Caninos 4<span class="kp do">★ Achète<span class="tip"><strong>Achète Caninos</strong>3ᵉ copie, passe ★★ ; cœur de la compo cible<span class="m">Ptéra · Minidraco · Caninos : 96,1 % contre Électhor 60 (51 combats, au moins 86,0 %)</span></span></span></div>
+  <div class="card">Ptéra 4<span class="kp do">★ Achète</span></div>
+  <div class="card">Leveinard 3<span class="kp opt">◆ Prépare</span></div>
+  <div class="card">Rattata 1<span class="kp no">✕ Ignore</span></div>
+</div>
+</div></section>
+
+<!-- 7. États -->
+<section class="state"><h2>7. Chargement, erreur, sans partie</h2><div class="stage">
+<div class="stack">
+<aside class="kt">
+  <div class="bar"><span class="lbl">Étage</span><span class="stepper"><button>−</button><input value="57"><button>+</button></span><span class="src">auto</span></div>
+  <div class="panel" role="status" aria-label="Chargement des statistiques de la Tour"><p class="hint">Chargement des statistiques de la Tour…</p><div class="skel"></div><div class="skel" style="width:70%"></div></div>
+</aside>
+<aside class="kt">
+  <div class="bar"><span class="lbl">Étage</span><span class="stepper"><button>−</button><input value="57"><button>+</button></span><span class="src">auto</span></div>
+  <div class="panel"><p class="msg"><strong>Données indisponibles (campana.json : réseau)</strong>Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées. Recharge la page dans une heure.</p></div>
+</aside>
+<aside class="kt">
+  <div class="bar"><span class="lbl">Étage</span><span class="stepper"><button>−</button><input value="" placeholder="?"><button>+</button></span><span class="src">manuel</span></div>
+  <div class="panel"><p class="msg"><strong>Aucune partie Tour en cours</strong>Les conseils apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p></div>
+</aside>
+</div></div></section>
+
+</div>
+</body>
+</html>
