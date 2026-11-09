@@ -7,7 +7,7 @@ Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](ht
   ta partie** : quoi acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, lesquels retirer, quelle
   récompense et quelle bénédiction prendre, quand ancrer une forme ;
 - la compo cible écrite dans le **Planificateur** du jeu à chaque changement, sous le nom « Plan kanto-overlay », et activée :
-  ses ombres s'affichent sur le plateau. Le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos — avant, colonne 4 ») ;
+  ses ombres s'affichent sur le plateau. Le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos », avant, colonne 4) ;
 - un bouton **Copier la formation** : le même code `KT1;…`, pour le partager ou le coller à la main (Planificateur → Coller un code)
   si l'écriture automatique échoue ;
 - les règles d'or (intérêts, actualisation, shinies) pour la tranche d'étages en cours.
@@ -21,7 +21,7 @@ cible, compo suivante, objets visés, copie de la formation), **Boss** (taux, pr
 **Règles** (règles d'or de la tranche). Replié, le panneau garde l'étage, l'or à dépenser et le premier conseil ★.
 
 Le menu ⚙ règle le thème (auto, clair, sombre), les pastilles affichées par niveau, la largeur (320 ou 380 px), la taille du texte,
-l'opacité du fond (100, 90 ou 80 % : en deçà, le texte secondaire passe sous un contraste de 4,5:1 sur les zones claires du jeu)
+l'opacité du fond (100, 90 ou 85 % : en deçà, le texte secondaire passe sous un contraste de 4,5:1 sur les zones claires du jeu)
 et la zone du porteur dans la formation. Les réglages sont gardés dans le navigateur.
 
 Pages où il s'affiche : les pages d'entrée du jeu, `https://einoow.com/` et `/kanto-tactics`, `/tower`, `/pvp`, `/duo`, `/nuzlocke`
