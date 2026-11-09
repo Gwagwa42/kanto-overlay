@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      1.7.0
+// @version      1.8.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -947,11 +947,19 @@ const KT = (() => {
   const rowOf = cell => Math.floor(cell / 7);
   const colOf = cell => cell % 7;
 
+  // Zones du porteur à distance : colonnes préférées au fond, et ordre de remplissage du fond (une colonne sur deux d'abord, pour
+  // espacer les unités à distance face aux attaques de zone).
+  const CARRY_ZONES = {
+    left: { name: 'gauche', cols: [0, 1, 2], order: [0, 2, 4, 6, 1, 5, 3] },
+    center: { name: 'centre', cols: [2, 3, 4], order: [3, 1, 5, 0, 6, 2, 4] },
+    right: { name: 'droite', cols: [4, 5, 6], order: [6, 4, 2, 0, 5, 1, 3] },
+  };
+
   // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). Chaque Pokémon a ses cases
-  // par préférence : tank au premier rang puis devant, porteur à distance dans le coin choisi puis au fond, mêlée devant
-  // (depuis le centre), distance au fond (depuis le coin). Déjà sur une case de sa première liste, il la garde ; sinon il prend
-  // la première case libre. unit : l'unité possédée (porteur de holdersOf), from : sa cellule, 'bench', ou null s'il n'est
-  // pas possédé.
+  // par préférence : tank au premier rang puis devant, porteur à distance dans la zone choisie du fond (coin gauche, centre ou
+  // coin droit) puis au fond, mêlée devant (depuis le centre), distance au fond (depuis cette zone). Déjà sur une case de sa
+  // première liste, il la garde ; sinon il prend la première case libre. unit : l'unité possédée (porteur de holdersOf), from :
+  // sa cellule, 'bench', ou null s'il n'est pas possédé.
   function formation(target, game, data, holders, side) {
     const stars = id => bestStar(game, baseLine(id));
     const kept = new Set([...[...target.core].sort((a, b) => stars(b) - stars(a)), ...target.fillers].slice(0, game.level));
@@ -963,13 +971,13 @@ const KT = (() => {
         unit: h?.unit ?? null, from: h ? boardCell(h.unit.cell) ?? 'bench' : null,
       };
     });
-    const edge = side === 'right' ? [6, 4, 2, 0, 5, 1, 3] : [0, 2, 4, 6, 1, 5, 3];
+    const zone = CARRY_ZONES[side];
     const front = [0, 1].flatMap(r => [3, 2, 4, 1, 5, 0, 6].map(c => r * 7 + c));
-    const back = [3, 2].flatMap(r => edge.map(c => r * 7 + c));
-    const corner = back.filter(c => (side === 'right' ? colOf(c) >= 4 : colOf(c) <= 2));
+    const back = [3, 2].flatMap(r => zone.order.map(c => r * 7 + c));
+    const carryZone = back.filter(c => zone.cols.includes(colOf(c)));
     const zones = u => {
       if (u.role === 'tank') return [front.filter(c => rowOf(c) === 0), front];
-      if (u.role === 'carry' && u.ranged) return [corner, back];
+      if (u.role === 'carry' && u.ranged) return [carryZone, back];
       return [u.ranged ? back : front];
     };
     const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
@@ -1150,7 +1158,7 @@ const KT = (() => {
     SOURCES, SAVE_KEY, UI_KEY, PLAN_NAME, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
-    boardCell, topHolders, lineProfiles, suits, floorRange,
+    boardCell, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES,
   };
 })();
 
@@ -1276,6 +1284,8 @@ const TARGETS = {
   reward: { sel: '.modal.itemreward .ir-card', modal: true },
   offer: { sel: '.modal.tboon .ev-card', modal: true },
 };
+// Le bouton « Porteur » parcourt les zones dans cet ordre.
+const SIDES = Object.keys(KT.CARRY_ZONES);
 const TOWER_HUD = '.topbar .rtrack.tw';
 const COMPACT_BELOW = 64;
 // Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
@@ -1341,7 +1351,7 @@ function planHtml(a, ui) {
 ${a.next ? `<p class="kt-label">Ensuite · ${esc(KT.floorRange(a.next.stops))}</p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
 ${ecoHtml(a)}${todoHtml(a)}${aimsHtml(a, ui)}
 <div class="kt-actions"><button class="kt-copy" data-act="copy">Copier la formation</button>
-<button class="kt-btn kt-side" data-act="side" aria-label="Côté du porteur dans la formation">Porteur : ${ui.side === 'left' ? 'gauche' : 'droite'}</button></div></div>`;
+<button class="kt-btn kt-side" data-act="side">Porteur : ${KT.CARRY_ZONES[ui.side].name}</button></div></div>`;
 }
 
 function bossHtml(state, ui) {
@@ -1595,6 +1605,8 @@ async function loadSources(state) {
 
 function mount() {
   const ui = { x: null, y: 16, collapsed: false, guide: true, aims: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
+  // Une zone inconnue (stockage modifié à la main) ferait échouer la formation à chaque lecture de la sauvegarde.
+  if (!SIDES.includes(ui.side)) ui.side = SIDES[0];
   const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
 
   const host = document.createElement('div');
@@ -1755,7 +1767,7 @@ function mount() {
       render();
     }
     if (act === 'side') {
-      ui.side = ui.side === 'left' ? 'right' : 'left';
+      ui.side = SIDES[(SIDES.indexOf(ui.side) + 1) % SIDES.length];
       saveUi();
       compute();
       render();
