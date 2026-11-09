@@ -4,6 +4,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const KT = require('../kanto-overlay.user.js');
+const { headHtml } = KT;
 const torre = require('./fixtures/campana.json').modes.torre;
 const data = require('./fixtures/data.json');
 const lang = require('./fixtures/lang.json');
@@ -13,6 +14,8 @@ const ids = require('./fixtures/ids.json');
 const names = KT.namer(lang);
 // Étage 57, 38 pièces, niveau 8 : scénario commun avec la maquette et les pages d'aperçu.
 const S57 = require('./fixtures/s57.js');
+// S57 au niveau 4 : la compo se réduit au trio et à Goupix ★★, Rattata reste hors compo.
+const S57_4 = { ...S57, level: 4, xp: 0 };
 const advise = (s, extra = {}) => KT.advise({ torre, data, lang, save: s, previous: null, side: 'left', ...extra });
 const brief = m => m && `${m.level} ${m.label}`;
 
@@ -123,10 +126,20 @@ test('tout jouer : combat de l’étage sous 45 %, ou PV sous 40', () => {
   assert.equal(at(1056, 39).allIn, true);
 });
 
-test('compo cible : meilleur trio pondéré, remplissage par les lignées qui renforcent ses types', () => {
+test('tout jouer : étage rejoué à partir de l’étage 50', () => {
+  const at = (round, attempts) => advise({ ...S57, round, attempts }).eco;
+  assert.deepEqual([at(1056, 1).allIn, at(1056, 1).retry, at(1056, 1).spend], [true, true, 38]);
+  assert.deepEqual([at(1056, 0).allIn, at(1056, 0).retry], [false, false]);
+  assert.equal(at(1049, 1).allIn, true);
+  assert.equal(at(1048, 1).allIn, false);
+});
+
+test('compo cible : meilleur trio pondéré, remplissage par puissance', () => {
   const a = advise(S57);
   assert.deepEqual(a.target.core, ['aerodactyl', 'dratini', 'growlithe']);
-  assert.deepEqual(a.target.fillers, ['vulpix', 'magmar']);
+  // Niveau 8, 5 places : Goupix ★★ et Rattata ★ possédés, puis Magmar (coût 3) et Abo (coût 2) de la boutique.
+  assert.deepEqual(a.target.fillers, ['vulpix', 'rattata', 'magmar', 'ekans']);
+  assert.deepEqual(a.target.upgrades, []);
   assert.match(a.shop[1].detail, /Ptéra · Minidraco · Caninos : 96,1 % contre Électhor 60 \(51 combats, au moins 86,0 %\)/);
   assert.equal(KT.progress(a.game, 'dratini'), '★★');
   assert.equal(KT.progress(a.game, 'growlithe'), '2/3');
@@ -139,11 +152,28 @@ test('compo cible : inertie de 30 points', () => {
     { stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 },
     { stop: '10:brock', core: ['pidgey', 'rattata', 'spearow'], n: 50, win: 90, lo },
   ];
-  const game = KT.readGame({ ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [] });
+  // Niveau 6 : les coûts 1 à 3 des deux trios sont trouvables.
+  const game = KT.readGame({ ...save, round: 1009, level: 6, units: {}, board: {}, bench: [], shop: [] });
   const t = lo => ({ ...torre, stops, cores: cores(lo) });
   assert.equal(KT.targetComp(t(51), data, game, null).key, 'abra+onix+zubat');
   assert.equal(KT.targetComp(t(51), data, game, 'pidgey+rattata+spearow').key, 'pidgey+rattata+spearow');
   assert.equal(KT.targetComp(t(49), data, game, 'pidgey+rattata+spearow').key, 'abra+onix+zubat');
+});
+
+test('compo cible : −10 points par lignée du trio à trouver dont le coût ne sort pas à ce niveau', () => {
+  const stops = KT.nextStops([{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }], 10);
+  const cores = [
+    { stop: '10:brock', core: ['giovanni', 'koga', 'samurai'], n: 50, win: 90, lo: 80 },
+    { stop: '10:brock', core: ['onix', 'rhyhorn', 'kabuto'], n: 50, win: 90, lo: 55 },
+  ];
+  const game = (level, units = {}) => KT.readGame({ ...save, round: 1009, level, units, board: {}, bench: Object.keys(units), shop: [] });
+  const score = g => KT.coreScore(cores[0].core, stops, new Map(), g, data);
+  // Coût 5 : 6 % au niveau 8, 17 % au niveau 9 ; une lignée possédée garde son bonus.
+  assert.deepEqual([score(game(8)), score(game(9)), score(game(8, { g: { id: 'g', line: 'giovanni', star: 1 } }))], [-30, 0, -10]);
+  const key = g => KT.targetComp({ ...torre, stops, cores }, data, g, null).key;
+  // Niveau 8 : 80 − 30 contre 55 (coûts 3 et 4 trouvables) ; niveau 9 : 80 contre 55.
+  assert.equal(key(game(8)), 'kabuto+onix+rhyhorn');
+  assert.equal(key(game(9)), 'giovanni+koga+samurai');
 });
 
 test('compo cible : 9 prochains combats, élites comprises', () => {
@@ -166,19 +196,44 @@ test('compo cible : inertie seulement dans la même partie (runSeed)', () => {
   assert.equal(KT.advise({ torre, data, lang, save: s, previous: null, side: 'left' }).run, 7);
 });
 
-test('compléments : unités possédées avant la boutique, stables quand la boutique change', () => {
-  // Niveau 4 : une place après le trio. Rattata (possédé, Normal) apporte moins que Doduo (boutique, Normal 2) mais passe avant.
+test('compléments : possédés par puissance (coût, étoiles) et types, boutique pour les places libres, carte plus forte à part', () => {
+  // Trio Roucool + Piafabec + Abra.
   const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
-  const cores = [{ stop: '10:brock', core: ['pidgey', 'spearow', 'abra'], n: 50, win: 90, lo: 80 }];
-  const t = { ...torre, stops, cores };
-  const base = { ...save, round: 1009, level: 4, units: { r: { id: 'r', line: 'rattata', star: 1 } }, board: { 0: 'r' }, bench: [] };
-  const fill = shop => KT.targetComp(t, data, KT.readGame({ ...base, shop }), null).fillers;
-  assert.deepEqual(fill(['doduo', 'ekans']), ['rattata']);
-  assert.deepEqual(fill(['zubat', 'meowth']), ['rattata']);
-  assert.deepEqual(KT.targetComp(t, data, KT.readGame({ ...base, units: {}, board: {}, shop: ['doduo'] }), null).fillers, ['doduo']);
-  // Entre unités possédées, le gain de type passe avant les étoiles : Doduo ★ (gain 2) avant Rattata ★★ (gain 1).
-  const both = { ...base, units: { r: { id: 'r', line: 'rattata', star: 2 }, d: { id: 'd', line: 'doduo', star: 1 } }, board: { 0: 'r', 1: 'd' }, shop: [] };
-  assert.deepEqual(KT.targetComp(t, data, KT.readGame(both), null).fillers, ['doduo']);
+  const trio = { stop: '10:brock', core: ['pidgey', 'spearow', 'abra'], n: 50, win: 90, lo: 80 };
+  const units = (...list) => Object.fromEntries(list.map(([line, star]) => [line, { id: line, line, star }]));
+  const comp = (level, own, shop, cores = [trio]) => {
+    const t = KT.targetComp({ ...torre, stops, cores }, data,
+      KT.readGame({ ...save, round: 1009, level, units: own, board: Object.fromEntries(Object.keys(own).map((id, i) => [28 + i, id])), bench: [], shop }), null);
+    return [t.fillers, t.upgrades, t.replaced];
+  };
+  // Niveau 4, une place : Abo ★★ (coût 2) vaut plus que Rattata ★★ (coût 1) ; l'unité possédée la prend même sans type commun.
+  assert.deepEqual(comp(4, units(['rattata', 2], ['ekans', 2]), []), [['ekans'], [], []]);
+  assert.deepEqual(comp(4, units(['ekans', 1]), []), [['ekans'], [], []]);
+  // Le plan garde l'unité possédée quand la boutique change ; une carte de coût 4 vaut plus qu'un coût 1 ★, moins qu'un coût 1 ★★.
+  assert.deepEqual(comp(4, units(['rattata', 1]), ['rhyhorn']), [['rattata'], ['rhyhorn'], ['rattata']]);
+  assert.deepEqual(comp(4, units(['rattata', 1]), ['caterpie']), [['rattata'], [], []]);
+  assert.deepEqual(comp(4, units(['rattata', 2]), ['rhyhorn']), [['rattata'], [], []]);
+  // Miaouss et Mélofée : même coût, même type. À égalité de note, la carte ne remplace pas l'unité possédée.
+  assert.deepEqual(comp(4, units(['meowth', 1]), ['clefairy']), [['meowth'], [], []]);
+  // Place libre : la boutique la remplit ; à égalité, la lignée qui figure dans un trio gagnant de la fenêtre, puis le nom.
+  assert.deepEqual(comp(5, units(['rattata', 1]), ['doduo']), [['rattata', 'doduo'], [], []]);
+  assert.deepEqual(comp(4, {}, ['clefairy', 'meowth']), [['clefairy'], [], []]);
+  assert.deepEqual(comp(4, {}, ['clefairy', 'meowth'], [trio, { ...trio, core: ['meowth', 'abra', 'pidgey'] }]), [['meowth'], [], []]);
+});
+
+test('compléments : à l’étage 72, les unités fortes possédées passent avant les coûts 1 de la boutique', () => {
+  const units = Object.fromEntries([['giovanni', 2], ['koga', 2], ['samurai', 2], ['chansey', 1], ['dratini', 2], ['aerodactyl', 1], ['rhyhorn', 2], ['onix', 2]]
+    .map(([line, star]) => [line, { id: line, line, star }]));
+  const late = {
+    ...S57, round: 1071, level: 8, units, board: Object.fromEntries(Object.keys(units).map((id, i) => [28 + i, id])), bench: Array(9).fill(null),
+    shop: ['rattata', 'pidgey', 'dratini', 'weedle', 'lapras'], items: [],
+  };
+  const a = advise(late, { previous: { key: 'giovanni+koga+samurai', run: late.runSeed ?? null, next: null } });
+  assert.equal(a.target.key, 'giovanni+koga+samurai');
+  assert.deepEqual(a.target.fillers, ['dratini', 'rhyhorn', 'onix', 'chansey', 'aerodactyl']);
+  // Rattata, Roucool et Aspicot hors compo ; Lokhlass (coût 4) ne vaut pas plus que Leveinard ★ et Ptéra ★ déjà possédés.
+  assert.deepEqual(a.shop.map(brief), ['no Ignore', 'no Ignore', 'opt Si l’or', 'no Ignore', 'no Ignore']);
+  assert.deepEqual([a.shop[0].why, a.shop[4].why], ['hors compo cible', 'hors compo cible']);
 });
 
 test('compo cible : un trio monté en ★★ l’emporte sur l’inertie d’un trio non possédé', () => {
@@ -206,18 +261,25 @@ test('achat d’une carte ★ : les autres pastilles de la boutique ne changent 
   assert.deepEqual(after.shop.slice(1).map(brief), before.shop.slice(1).map(brief));
 });
 
-test('boutique : ★ 3ᵉ copie et cœur, ◆ si l’or, ✕ hors compo', () => {
+test('boutique : ★ 3ᵉ copie, cœur et place libre, ◆ si l’or, ✕ hors compo', () => {
   const a = advise(S57);
-  // Caninos et Ptéra (★, 8 pièces) laissent 30 : Magmar (3) ferait passer sous le palier.
-  assert.deepEqual(a.shop.map(brief), ['do Achète', 'do Achète', 'no Ignore', 'no Ignore', 'no Ignore']);
-  assert.match(a.shop[2].why, /^complément de la compo ; garde 30 pièces/);
-  assert.equal(brief(advise({ ...S57, gold: 41 }).shop[2]), 'opt Si l’or');
+  // Niveau 8, 4 lignées possédées : après Caninos et Ptéra (★, 8 pièces), Magmar (3) et Abo (2) remplissent deux places libres.
+  // Rattata, déjà possédé, attend le surplus : il reste 25 pièces.
+  assert.deepEqual(a.shop.map(brief), ['do Achète', 'do Achète', 'do Achète', 'no Ignore', 'do Achète']);
   assert.match(a.shop[0].why, /3ᵉ copie/);
   assert.match(a.shop[1].why, /cœur/);
-  const poor = advise({ ...S57, gold: 31 });
-  assert.equal(brief(poor.shop[2]), 'no Ignore');
+  assert.deepEqual([a.shop[2].why, a.shop[4].why], ['place libre sur le plateau', 'place libre sur le plateau']);
+  assert.match(a.shop[3].why, /^complément de la compo ; garde 30 pièces/);
+  assert.equal(brief(advise({ ...S57, gold: 60 }).shop[3]), 'opt Si l’or');
+  // Une place libre ne passe pas devant un ★ du trio : avec 7 pièces, Ptéra (4) manque d'or après Caninos (4).
+  assert.deepEqual(advise({ ...S57, gold: 7 }).shop.slice(1, 3).map(brief), ['opt Si l’or', 'no Ignore']);
+  // Niveau 5, 60 pièces : Goupix et Rattata tiennent les deux places ; Magmar (coût 3) vaut plus que Rattata ★, Abo est hors compo.
+  const five = advise({ ...S57, level: 5, xp: 0, gold: 60 });
+  assert.deepEqual([five.target.fillers, five.target.upgrades], [['vulpix', 'rattata'], ['magmar']]);
+  assert.deepEqual(five.shop.slice(2).map(m => `${brief(m)} : ${m.why}`),
+    ['opt Si l’or : plus fort que Rattata', 'opt Si l’or : renforce le plateau de la compo', 'no Ignore : hors compo cible']);
   const shiny = advise({ ...S57, shopShiny: [false, false, true, false, false] });
-  assert.equal(brief(shiny.shop[2]), 'do Achète');
+  assert.equal(shiny.shop[2].title, 'Achète Magmar shiny');
 });
 
 test('boutique : ★ seulement si l’or suffit, de gauche à droite ; le reste ne compte pas dans l’or engagé', () => {
@@ -228,13 +290,14 @@ test('boutique : ★ seulement si l’or suffit, de gauche à droite ; le reste 
 });
 
 test('vendre faute d’or pour un ★, et XP avant actualiser', () => {
-  // 3 pièces : Caninos (4, 3ᵉ copie) et Ptéra (4, cœur) passent en ◆ faute d'or, Rattata hors compo est à vendre.
-  const poor = advise({ ...S57, gold: 3 });
+  // Niveau 4, 3 pièces : Caninos (4, 3ᵉ copie) et Ptéra (4, cœur) passent en ◆ faute d'or, Rattata hors compo est à vendre.
+  const poor = advise({ ...S57_4, gold: 3 });
   assert.deepEqual(poor.shop.slice(0, 2).map(brief), ['opt Si l’or', 'opt Si l’or']);
   assert.deepEqual([brief(poor.bench[2]), poor.bench[2].why], ['no Vends', 'il manque de l’or pour un achat conseillé']);
-  // 42 pièces, 4 XP manquants : ★ (8) puis XP (4) laissent 30 ; actualiser passerait sous le palier.
-  const lvl = advise({ ...S57, gold: 42, xp: 92 });
-  assert.deepEqual([brief(lvl.xp), brief(lvl.reroll)], ['do Monte', 'no Garde l’or']);
+  // 47 pièces, 4 XP manquants : ★ (13) puis XP (4) laissent 30 ; pas d'actualisation avant le niveau 9.
+  const lvl = advise({ ...S57, gold: 47, xp: 92 });
+  assert.deepEqual([brief(lvl.xp), lvl.xp.why, brief(lvl.reroll), lvl.reroll.why],
+    ['do Monte', 'niveau 9 pour 4 pièces', 'no Garde l’or', 'd’abord le niveau 9']);
 });
 
 test('boutique sans statistiques : seules les 3ᵉ copies sont marquées', () => {
@@ -246,18 +309,68 @@ test('boutique sans statistiques : seules les 3ᵉ copies sont marquées', () =>
   assert.equal(a.code, null);
 });
 
-test('actualiser et XP selon le palier et le tout jouer', () => {
-  // Caninos et Ptéra (★, 8 pièces) passent avant : 38 − 8 − 2 < 30.
-  assert.equal(brief(advise(S57).reroll), 'no Garde l’or');
-  assert.equal(brief(advise({ ...S57, gold: 40 }).reroll), 'do Actualise');
-  assert.equal(brief(advise({ ...S57, gold: 31, round: 1059 }).reroll), 'do Actualise');
-  assert.equal(advise({ ...S57, gold: 9, round: 1059 }).reroll, null);
-  assert.equal(brief(advise(S57).xp), 'no Attends');
-  assert.equal(brief(advise({ ...S57, xp: 92, gold: 42 }).xp), 'do Monte');
+const why = m => m && `${brief(m)} : ${m.why}`;
+
+test('XP : niveau visé par étage, sans passer sous le palier ; niveau entier en tout jouer', () => {
+  assert.deepEqual([5, 6, 11, 12, 20, 29, 30, 44, 45, 64, 65].map(KT.levelGoal), [0, 5, 5, 6, 7, 7, 8, 8, 9, 9, 10]);
+  // S57 : niveau 8 à l'étage 57, niveau 9 visé. Les ★ (13) laissent 25 pièces sur 38.
+  assert.equal(why(advise(S57).xp), 'no Attends : garde 30 pièces pour les intérêts');
+  assert.equal(why(advise({ ...S57, gold: 60 }).xp), 'do Monte : niveau 9 visé à cet étage ; 61 XP avant le niveau 9');
+  assert.equal(why(advise({ ...S57, xp: 92, gold: 47 }).xp), 'do Monte : niveau 9 pour 4 pièces');
   assert.equal(brief(advise({ ...S57, xp: 92 }).xp), 'no Attends');
+  // Niveau maximal : 9 avant l'étage 60, 10 ensuite.
   assert.equal(advise({ ...S57, level: 9 }).xp, null);
   assert.equal(advise({ ...S57, round: 1059, level: 9 }).xp, null);
-  assert.equal(brief(advise({ ...S57, round: 1059, level: 9, xp: 118 }).xp), 'do Monte');
+  assert.equal(why(advise({ ...S57, round: 1059, level: 9, xp: 118 }).xp), 'do Monte : tout jouer : niveau 10 pour 4 pièces');
+});
+
+test('actualiser : après le niveau visé, pour une lignée trouvable, sans passer sous le palier', () => {
+  assert.equal(why(advise(S57).reroll), 'no Garde l’or : d’abord le niveau 9');
+  // Niveau 9, le maximum à l'étage 57 : trio cherché jusqu'à ★★★. Sur 46 pièces, les ★ (13) et Rattata ◆ (1) laissent 32.
+  const nine = gold => advise({ ...S57, level: 9, gold }).reroll;
+  assert.equal(why(nine(46)), 'do Actualise : cherche Ptéra (coût 4 : 36 %), Minidraco (coût 4 : 36 %), Caninos (coût 4 : 36 %) au niveau 9');
+  assert.equal(why(nine(45)), 'no Garde l’or : tu passerais sous 30 pièces');
+  assert.equal(why(advise({ ...S57, gold: 31, round: 1059 }).reroll), 'do Actualise : tout jouer : chercher les copies de la compo');
+  assert.equal(advise({ ...S57, gold: 9, round: 1059 }).reroll, null);
+});
+
+// Trio Giovanni + Koga + Samouraï (coût 5) possédé en ★★ à l'étage 78, 120 pièces, boutique sans intérêt.
+const late = (level, extra = {}) => {
+  const units = Object.fromEntries(['giovanni', 'koga', 'samurai'].map(line => [line, { id: line, line, star: 2 }]));
+  return {
+    ...S57, round: 1077, level, xp: 0, gold: 120, units, board: { 28: 'giovanni', 29: 'koga', 30: 'samurai' }, bench: Array(9).fill(null),
+    shop: [null, null, null, null, null], items: [], ...extra,
+  };
+};
+const LATE_TRIO = { previous: { key: 'giovanni+koga+samurai', run: S57.runSeed ?? null, next: null } };
+
+test('or en trop : XP quand rien n’est à chercher, puis ★★★ du trio au niveau maximal', () => {
+  // Niveau 8, niveau 10 visé : l'XP passe avant tout.
+  const eight = advise(late(8), LATE_TRIO);
+  assert.equal(eight.target.key, 'giovanni+koga+samurai');
+  assert.deepEqual([why(eight.xp), why(eight.reroll)], ['do Monte : niveau 10 visé à cet étage ; 96 XP avant le niveau 9', null]);
+  // Niveau 10 : plus d'XP, les ★★★ du trio se cherchent (coût 5 : 20 %).
+  const ten = advise(late(10), LATE_TRIO);
+  assert.equal(ten.xp, null);
+  assert.equal(why(ten.reroll), 'do Actualise : cherche Miaouss de Giovanni (coût 5 : 20 %), Smogo de Koga (coût 5 : 20 %), Scarabrute du Samouraï (coût 5 : 20 %) au niveau 10');
+});
+
+test('actualiser : lignée introuvable à ce niveau → XP ; fusion à une copie cherchée', () => {
+  // Étage 5, sans niveau visé. Trio Onix + Kabuto + Rhinocorne à trouver, niveau 3 : les coûts 3 et 4 ne sortent pas.
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const t = { ...torre, stops, cores: [{ stop: '10:brock', core: ['onix', 'kabuto', 'rhyhorn'], n: 50, win: 90, lo: 80 }] };
+  const empty = { ...save, round: 1004, level: 3, xp: 0, gold: 40, units: {}, board: {}, bench: [], shop: [], attempts: 0 };
+  const lost = advise(empty, { torre: t });
+  assert.equal(why(lost.reroll), 'no Garde l’or : Onix (coût 3 : 0 %) au niveau 3 : monte d’abord');
+  assert.equal(why(lost.xp), 'do Monte : rien à chercher en boutique à ce niveau ; 8 XP avant le niveau 4');
+  // Trio complet en ★★ : rien à chercher, sauf la lignée à une copie d'une fusion.
+  const units = Object.fromEntries(['onix', 'kabuto', 'rhyhorn'].map(line => [line, { id: line, line, star: 2 }]));
+  const full = { ...empty, level: 4, units, board: { 28: 'onix', 29: 'kabuto', 30: 'rhyhorn' } };
+  assert.deepEqual([advise(full, { torre: t }).reroll, brief(advise(full, { torre: t }).xp)], [null, 'do Monte']);
+  const pair = { ...full, units: { ...units, a: { id: 'a', line: 'rattata', star: 1 }, b: { id: 'b', line: 'rattata', star: 1 } }, bench: ['a', 'b'] };
+  const rolled = advise(pair, { torre: t });
+  assert.equal(why(rolled.reroll), 'do Actualise : cherche Rattata (coût 1 : 60 %) au niveau 4');
+  assert.equal(why(rolled.xp), 'no Attends : l’or va d’abord à l’actualisation');
 });
 
 test('vendre : unité du banc hors compo et sans paire, banc presque plein', () => {
@@ -313,12 +426,14 @@ test('compo suivante : inertie de 30 points dans la même partie', () => {
 });
 
 test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamais sous le palier ni en tout jouer', () => {
-  const shop = { ...S57, shop: ['chansey', 'lapras', 'magmar', 'rattata', 'ekans'] };
-  // 36 pièces : Magmar (3, compo cible) passe avant Leveinard (4) malgré sa place ; Leveinard ferait passer sous 30.
-  const a = advise({ ...shop, gold: 36 });
+  // Niveau 4, 4 lignées possédées : aucune place libre, Goupix ★★ seul complément ; Leveinard et Lokhlass ne servent que la
+  // compo suivante. L'XP (4, niveau 9 visé) passe avant les ◆.
+  const shop = { ...S57, level: 4, xp: 0, shop: ['chansey', 'lapras', 'vulpix', 'rattata', 'ekans'] };
+  // 38 pièces : XP (4), puis Goupix (2, compo cible) passe avant Leveinard (4) malgré sa place ; Leveinard ferait passer sous 30.
+  const a = advise({ ...shop, gold: 38 });
   assert.deepEqual(a.shop.slice(0, 3).map(brief), ['no Ignore', 'no Ignore', 'opt Si l’or']);
   assert.equal(a.shop[0].why, 'compo des étages 80–100 ; garde 30 pièces pour les intérêts');
-  // 40 pièces : Magmar (3), puis Leveinard (4) en gardant 30 et l'actualisation (2) ; Lokhlass ne passe plus.
+  // 40 pièces : XP (4), Goupix (2), puis Leveinard (4) en gardant 30 ; Lokhlass ne passe plus.
   const b = advise({ ...shop, gold: 40 });
   assert.deepEqual(b.shop.slice(0, 3).map(brief), ['opt Si l’or', 'no Ignore', 'opt Si l’or']);
   assert.equal(b.shop[0].why, 'prépare la compo des étages 80–100');
@@ -329,22 +444,21 @@ test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamai
   const third = { ...shop, gold: 60, units: { ...S57.units, x: { id: 'x', line: 'chansey', star: 1 }, y: { id: 'y', line: 'chansey', star: 1 } } };
   assert.equal(advise(third).shop[0].why, 'prépare la compo des étages 80–100');
   assert.equal(brief(advise({ ...third, hp: 30 }).shop[0]), 'no Ignore');
-  // Compo cible incomplète : l'actualisation (2) passe avant Leveinard (4) ; 35 pièces ne suffisent pas aux deux.
-  const roll = advise({ ...S57, gold: 35, shop: ['chansey', 'rattata', 'ekans', null, null] });
-  assert.equal(roll.shop[0].why, 'compo des étages 80–100 ; l’or va d’abord à l’actualisation pour la compo cible');
-  assert.equal(brief(roll.reroll), 'do Actualise');
-  assert.equal(brief(advise({ ...S57, gold: 36, shop: ['chansey', 'rattata', 'ekans', null, null] }).shop[0]), 'opt Si l’or');
-  // Actualisation non conseillée (31 pièces) : rien n'est réservé pour elle, Chenipan (1) garde le palier.
-  const cheap = advise({ ...EMPTY10, gold: 31, shop: ['caterpie', null, null, null, null] },
+  // Étage 5 (aucun niveau visé), trio à trouver : l'actualisation (2) passe avant Chenipan (1) ; 32 pièces ne suffisent pas aux deux.
+  const early = gold => advise({ ...EMPTY10, round: 1004, gold, shop: ['caterpie', null, null, null, null] },
     { torre: twoWindows([[['caterpie', 'pidgey', 'rattata'], 80]]) });
-  assert.deepEqual([brief(cheap.shop[0]), brief(cheap.reroll)], ['opt Si l’or', 'no Garde l’or']);
+  assert.equal(early(32).shop[0].why, 'compo des étages 19–27 ; l’or va d’abord à l’actualisation pour la compo cible');
+  assert.equal(brief(early(32).reroll), 'do Actualise');
+  assert.deepEqual([brief(early(33).shop[0]), brief(early(33).reroll)], ['opt Si l’or', 'do Actualise']);
+  // Actualisation non conseillée (31 pièces) : rien n'est réservé pour elle, Chenipan (1) garde le palier.
+  assert.deepEqual([brief(early(31).shop[0]), brief(early(31).reroll)], ['opt Si l’or', 'no Garde l’or']);
 });
 
-// S57 : porteur Minidraco ★★ physique (idéal Bandeau Choix, Ceinture Force, Lentilscope), attaquants Goupix ★★ spécial (idéal
+// S57_4 : porteur Minidraco ★★ physique (idéal Bandeau Choix, Ceinture Force, Lentilscope), attaquants Goupix ★★ spécial (idéal
 // Lunettes Choix, Lentilscope, Vive Griffe) et Caninos physique (idéal Lentilscope, Bandeau Choix, Ceinture Force) ; aucun tank.
 // À venir : Ptéra (cœur cible non possédé), Leveinard et Lokhlass (compo suivante).
 const withItems = (items, held = {}) => ({
-  ...S57, items, units: Object.fromEntries(Object.entries(S57.units).map(([k, u]) => [k, held[k] ? { ...u, items: held[k] } : u])),
+  ...S57_4, items, units: Object.fromEntries(Object.entries(S57.units).map(([k, u]) => [k, held[k] ? { ...u, items: held[k] } : u])),
 });
 // Trois objets mixtes, qui conviennent à tous les attaquants.
 const FULL3 = ['life-orb', 'scope-lens', 'shell-bell'];
@@ -375,7 +489,7 @@ test('objet qui convient au profil : stat d’attaque, défensif au tank, offens
 });
 
 test('objets : paire idéale, composant seul vers sa recette, composant gardé pour une lignée à venir', () => {
-  const a = advise(S57);
+  const a = advise(S57_4);
   assert.deepEqual(a.bag.map(m => m.title), ['PV Plus → Minidraco', 'Garde Fer', 'Calcium → Goupix']);
   assert.match(a.bag[0].why, /PV tout de suite ; plus tard avec Carbone : Ceinture Force, meilleur objet de sa lignée en Tour$/);
   assert.equal(a.bag[1].why, 'Cuiller Tordue pour Lokhlass, à venir');
@@ -524,7 +638,7 @@ test('Aimant : un objet offensif mixte sur un tank est dit « offensif sur un ta
 
 test('vente : Pokémon hors des deux compos qui porte des objets, gardé s’il sert à la compo suivante', () => {
   const lay = {
-    ...S57, units: { ...S57.units, e: { ...S57.units.e, items: ['protein'] }, f: { id: 'f', line: 'lapras', star: 1, items: ['iron'] } },
+    ...S57_4, units: { ...S57.units, e: { ...S57.units.e, items: ['protein'] }, f: { id: 'f', line: 'lapras', star: 1, items: ['iron'] } },
     bench: ['b', 'c', 'e', 'f', null, null, null, null, null],
   };
   const a = advise(lay);
@@ -567,10 +681,10 @@ test('objets idéaux : 3 objets complets de la lignée exacte, ≥ 20 combats, p
 });
 
 test('récompense d’objet : compléter la recette idéale, sinon préparer celle d’une lignée à venir', () => {
-  const a = advise({ ...S57, itemReward: ['protein', 'carbos', 'zinc'] });
+  const a = advise({ ...S57_4, itemReward: ['protein', 'carbos', 'zinc'] });
   assert.deepEqual(a.reward.map(brief), [null, 'do Prends', null]);
   assert.equal(a.reward[1].why, 'complète Ceinture Force sur Minidraco');
-  const later = advise({ ...S57, itemReward: ['iron', 'zinc'] });
+  const later = advise({ ...S57_4, itemReward: ['iron', 'zinc'] });
   assert.deepEqual([brief(later.reward[0]), later.reward[0].why], ['do Prends', 'Cuiller Tordue pour Lokhlass, à venir']);
 });
 
@@ -618,10 +732,11 @@ test('ancrage : conseillé si la compo vise une forme ancrée non encore choisie
 
 test('formation : code KT1 trié par cellule, Pokémon bien placé gardé, porteur côté choisi', () => {
   // S57 : Minidraco (case 29 → cellule 1, mêlée au premier rang) garde sa case ; Goupix (31 → 3, distance au premier rang) part
-  // au fond ; Caninos (mêlée, au banc) et Ptéra prennent les cases libres de l'avant depuis le centre.
+  // au fond ; Rattata (tank, au banc) prend le centre de l'avant, puis Ptéra, Caninos et Abo (mêlée) les cases libres depuis le centre.
   assert.equal(advise(S57).code,
-    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;dratini:2:1:choice-band.focus-sash.scope-lens;growlithe:1:2:scope-lens.choice-band.focus-sash;'
-    + 'aerodactyl:1:3;vulpix:2:21:choice-specs.scope-lens.quick-claw;magmar:1:23');
+    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;dratini:2:1:choice-band.focus-sash.scope-lens;aerodactyl:1:2;'
+    + 'rattata:1:3:eviolite.rocky-helmet.leftovers;growlithe:1:4:scope-lens.choice-band.focus-sash;ekans:1:5;'
+    + 'vulpix:2:21:choice-specs.scope-lens.quick-claw;magmar:1:23');
   assert.match(advise(S57, { side: 'right' }).code, /magmar:1:25;vulpix:2:27:choice-specs.scope-lens.quick-claw$/);
 });
 
@@ -648,8 +763,8 @@ const BENCH = ids => [...ids, ...Array(9 - ids.length).fill(null)];
 const moves = (save, extra) => advise(save, extra).moves.map(m => `${m.title} — ${m.why}`);
 
 test('déplacements : d’abord libérer la case, puis poser depuis le banc', () => {
-  // S57 : Goupix (distance) quitte la case avant-colonne 4 ; Caninos (mêlée) est posé à côté de Minidraco.
-  assert.deepEqual(moves(S57), ['Déplace Goupix — avant, colonne 4 → fond, colonne 1', 'Pose Caninos — avant, colonne 3']);
+  // S57 : Goupix (distance) quitte la case avant-colonne 4 pour Rattata (tank) ; Caninos (mêlée) est posé à côté.
+  assert.deepEqual(moves(S57), ['Déplace Goupix — avant, colonne 4 → fond, colonne 1', 'Pose Rattata — avant, colonne 4', 'Pose Caninos — avant, colonne 5']);
   assert.ok(advise(S57).moves.every(m => m.level === 'do' && m.label === ''));
   // Déjà bien placé partout : aucun déplacement.
   assert.deepEqual(moves({ ...S57, level: 2, board: { 29: 'a', 31: 'b' }, bench: BENCH(['c', 'd', 'e']) }), []);
@@ -735,7 +850,7 @@ test('shiny : lignée shiny si sa copie de meilleure étoile l’est, +2 points 
   assert.equal(carry(lower), 'Orbe Vie → Minidraco');
   const stops = KT.nextStops(torre.stops, 57);
   const core = ['aerodactyl', 'dratini', 'growlithe'];
-  assert.equal(KT.coreScore(core, stops, new Map(), KT.readGame(shiny)) - KT.coreScore(core, stops, new Map(), KT.readGame(S57)), 2);
+  assert.equal(KT.coreScore(core, stops, new Map(), KT.readGame(shiny), data) - KT.coreScore(core, stops, new Map(), KT.readGame(S57), data), 2);
 });
 
 test('shiny : « s » après l’étoile dans le code KT1', () => {
@@ -757,10 +872,10 @@ test('shiny : départage le porteur, le tank et le remplissage', () => {
   } }).bag[0];
   assert.deepEqual([tank(false).title, tank(false).why], ['Protecteur → Bulbizarre', 'objet défensif pour un tank']);
   assert.equal(tank(true).title, 'Protecteur → Racaillou');
-  // Remplissage : Goupix et Magmar 1★ apportent le même type ; le shiny passe devant.
-  const fill = shiny => withUnits({ d: { id: 'd', line: 'vulpix', star: 1, shiny }, m: { id: 'm', line: 'magmar', star: 1 } },
-    { level: 4, bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
-  assert.deepEqual(advise(fill(false)).target.fillers, ['magmar']);
+  // Remplissage : Goupix et Pyroli 1★ ont le même coût et le même type ; le shiny passe devant.
+  const fill = shiny => withUnits({ d: { id: 'd', line: 'vulpix', star: 1, shiny }, m: { id: 'm', line: 'flareon', star: 1 } },
+    { level: 4, shop: [], bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
+  assert.deepEqual(advise(fill(false)).target.fillers, ['flareon']);
   assert.deepEqual(advise(fill(true)).target.fillers, ['vulpix']);
 });
 
@@ -772,7 +887,8 @@ test('shiny : pas de « Vends » jusqu’à l’étage 120, boutique sans raison
   assert.equal(advise(full).bench[3], null);
   assert.equal(advise({ ...full, round: 1199 }).bench[3].title, 'Vends Abo');
   // Goupix 2★ normal (remplissage) : une carte 1★ shiny ne change pas la copie jouée.
-  const above = withUnits({}, { shop: ['vulpix', 'aerodactyl', 'magmar', 'rattata', 'ekans'], shopShiny: [true, false, false, false, false] });
+  // 45 pièces : les ★ (9) et l'XP (4) laissent 32.
+  const above = withUnits({}, { gold: 45, shop: ['vulpix', 'aerodactyl', 'magmar', 'rattata', 'ekans'], shopShiny: [true, false, false, false, false] });
   assert.deepEqual([brief(advise(above).shop[0]), advise(above).shop[0].why], ['opt Si l’or', 'renforce le plateau de la compo']);
   const owned = withUnits({ m: { id: 'm', line: 'magmar', star: 1, shiny: true } },
     { shopShiny: [false, false, true, false, false], bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
@@ -871,6 +987,16 @@ test('tranches et règles d’or corrigées', () => {
   assert.deepEqual([KT.guideFor(161).from, KT.guideFor(999).to], [161, Infinity]);
   assert.ok(KT.GOLD_RULES.some(r => r.includes('+3 au plus') && r.includes('30 pièces')));
   assert.ok(KT.GOLD_RULES.every(r => !r.includes('+5')));
+  assert.ok(KT.GOLD_RULES.some(r => r.includes('XP jusqu’au niveau visé (5 dès l’étage 6, 6 dès l’étage 12, 7 dès l’étage 20, 8 dès l’étage 30, 9 dès l’étage 45, 10 dès l’étage 65)')));
+  assert.ok(KT.GOLD_RULES.some(r => r === 'Tout jouer sur un combat sous 45 % de victoires, sous 40 PV, ou sur un étage rejoué à partir de l’étage 50.'));
+});
+
+test('en-tête du panneau : raison du tout jouer', () => {
+  const head = s => headHtml({ advice: advise(s), torre, floor: KT.floorFromSave(JSON.stringify(s)) });
+  assert.match(head({ ...S57, attempts: 1 }), /Tout jouer : étage rejoué\./);
+  assert.match(head({ ...S57, attempts: 1, hp: 30 }), /Tout jouer : PV sous 40\./);
+  assert.match(head({ ...S57, round: 1059 }), /Tout jouer : combat difficile\./);
+  assert.match(head(S57), /Étage 60 \(Électhor, 40,8 %\) : tout jouer\./);
 });
 
 test('en-tête : pages d’entrée du jeu couvertes, autres pages exclues', () => {
