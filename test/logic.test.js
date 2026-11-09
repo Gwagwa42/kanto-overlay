@@ -485,6 +485,16 @@ test('formation : un tank à distance (Onix) passe au premier rang avant la mêl
   assert.match(code, /;onix:2:3/);
 });
 
+test('objets : une copie gardée par composant à venir, pas d’Aimant si la fusion suffit, effet contraire tu', () => {
+  // Cuiller Tordue de Lokhlass demande un Fer : les deux autres vont aux Pokémon possédés.
+  assert.deepEqual(advise(withItems(['iron', 'iron', 'iron'])).bag.map(brief), ['opt Garde', 'do → Minidraco', 'do → Goupix']);
+  // Minidraco plein porte une Protéine seule : la Protéine du sac fusionne en Bandeau Choix, l'Aimant ne sert pas.
+  const lone = advise(withItems(['magnet', 'protein', 'protein'], { a: ['life-orb', 'shell-bell', 'protein'] }));
+  assert.deepEqual(lone.bag.map(m => m && m.title), [null, 'Protéine → Minidraco', 'Protéine → Goupix']);
+  // Protéine seule sur Goupix (spécial) : son effet n'est pas annoncé, seule la recette compte.
+  assert.equal(lone.bag[2].why, 'plus tard avec Carbone : Lentilscope, meilleur objet de sa lignée en Tour');
+});
+
 test('vente : Pokémon hors des deux compos qui porte des objets, gardé s’il sert à la compo suivante', () => {
   const lay = {
     ...S57, units: { ...S57.units, e: { ...S57.units.e, items: ['protein'] }, f: { id: 'f', line: 'lapras', star: 1, items: ['iron'] } },
@@ -495,14 +505,20 @@ test('vente : Pokémon hors des deux compos qui porte des objets, gardé s’il 
   assert.equal(a.bench[3], null);
 });
 
-test('objets visés : portés, prêts ou composants manquants ; un objet prêt prend ses composants au sac', () => {
+test('objets visés : lus sur l’état final des conseils du sac, portés d’abord', () => {
   const aimsOf = save => Object.fromEntries(advise(save).aims.map(x => [x.unit.line, x.aims.map(y => `${y.id}:${y.state}:${y.missing.join('+')}`)]));
-  // Un objet incomplet ne prend rien : chaque Pokémon voit ce qui lui manque par rapport au sac entier.
+  // Lu après les conseils du sac : PV Plus posé sur Minidraco (Ceinture Force), Protéine sur Caninos (Bandeau Choix), Calcium sur
+  // Goupix (Lunettes Choix) ; ce qui est posé ailleurs manque.
   assert.deepEqual(aimsOf(withItems(['hp-up', 'calcium', 'protein'], { a: ['choice-band'] })), {
-    dratini: ['choice-band:worn:', 'focus-sash:missing:carbos', 'scope-lens:missing:carbos'],
-    vulpix: ['choice-specs:missing:calcium', 'scope-lens:missing:carbos', 'quick-claw:missing:carbos'],
-    growlithe: ['scope-lens:missing:carbos', 'choice-band:missing:protein', 'focus-sash:missing:carbos'],
+    dratini: ['choice-band:worn:', 'focus-sash:missing:carbos', 'scope-lens:missing:protein+carbos'],
+    vulpix: ['choice-specs:missing:calcium', 'scope-lens:missing:protein+carbos', 'quick-claw:missing:carbos'],
+    growlithe: ['scope-lens:missing:carbos', 'choice-band:missing:protein', 'focus-sash:missing:hp-up+carbos'],
   });
+  // Lentilscope au sac : posée sur Caninos (rang 1 de ses idéaux), la section le dit prête pour lui seul.
+  const lens = aimsOf(withItems(['scope-lens']));
+  assert.deepEqual([lens.growlithe[0], lens.dratini[2]], ['scope-lens:ready:', 'scope-lens:missing:protein+carbos']);
+  // Objets portés qui conviennent d'abord.
+  assert.deepEqual(aimsOf(withItems([], { a: FULL3 })).dratini, ['life-orb:worn:', 'scope-lens:worn:', 'shell-bell:worn:']);
   // Protéine + Carbone : Lentilscope prête pour Minidraco (porteur, servi d'abord), plus pour les suivants.
   const ready = aimsOf(withItems(['protein', 'carbos']));
   assert.equal(ready.dratini[2], 'scope-lens:ready:');
