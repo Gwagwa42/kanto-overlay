@@ -276,11 +276,11 @@ test('boutique : ★ 3ᵉ copie, cœur et place libre, ◆ si l’or, ✕ hors c
   // Une place libre ne passe pas devant un ★ du trio : avec 7 pièces, Ptéra (4) manque d'or après Caninos (4).
   assert.deepEqual(advise({ ...S57, gold: 7 }).shop.slice(1, 3).map(brief), ['opt Si l’or', 'no Ignore']);
   // Niveau 9 (niveau visé atteint), 6 lignées possédées pour 6 places de compléments : Magmar (coût 3) vaut plus que Rattata ★,
-  // dont la copie n'est plus conseillée ; Abo ne vaut pas mieux.
+  // qui reste dans la compo tant que Magmar n'est pas acheté ; Abo ne vaut pas mieux.
   const own = Object.fromEntries(['oddish', 'squirtle', 'geodude', 'machop'].map(line => [line, { id: line, line, star: 2 }]));
   const nine = advise({ ...S57, level: 9, gold: 60, units: { ...S57.units, ...own }, bench: ['b', 'c', 'e', ...Object.keys(own), null, null] });
   assert.deepEqual([nine.target.upgrades, nine.target.replaced], [['magmar'], ['rattata']]);
-  assert.deepEqual(nine.shop.slice(2).map(why), ['opt Si l’or : plus fort que Rattata', 'no Ignore : complément à remplacer par une carte mieux notée', 'no Ignore : hors compo cible']);
+  assert.deepEqual(nine.shop.slice(2).map(why), ['opt Si l’or : plus fort que Rattata', 'opt Si l’or : renforce le plateau de la compo', 'no Ignore : hors compo cible']);
   // Niveau 8, 5 places : Rattata est déjà hors compo, Magmar vaut plus que Carapuce ★★ ; sous le niveau visé, il passe après l'XP.
   assert.equal(why(advise({ ...S57, level: 8, gold: 60, units: { ...S57.units, ...own }, bench: ['b', 'c', 'e', ...Object.keys(own), null, null] }).shop[2]),
     'no Ignore : plus fort que Carapuce ; l’or va d’abord à l’XP');
@@ -319,11 +319,19 @@ const why = m => m && `${brief(m)} : ${m.why}`;
 
 test('XP : niveau visé par étage, sans passer sous le palier ; niveau entier en tout jouer', () => {
   assert.deepEqual([5, 6, 11, 12, 20, 29, 30, 44, 45, 64, 65].map(KT.levelGoal), [0, 5, 5, 6, 7, 7, 8, 8, 9, 9, 10]);
+  // Le niveau visé ne dépasse jamais le niveau ouvert (9, puis 10 à l'étage 60) : sinon ni XP ni actualisation ne seraient conseillées.
+  for (let floor = 1; floor <= 200; floor++) assert.ok(KT.levelGoal(floor) <= (floor >= 60 ? 10 : 9), `étage ${floor}`);
   // S57 : niveau 8 à l'étage 57, niveau 9 visé. Les ★ (13) laissent 25 pièces sur 38.
   assert.equal(why(advise(S57).xp), 'no Attends : garde 30 pièces pour les intérêts');
   assert.equal(why(advise({ ...S57, gold: 60 }).xp), 'do Monte : niveau 9 visé à cet étage ; 61 XP avant le niveau 9');
   assert.equal(why(advise({ ...S57, xp: 92, gold: 47 }).xp), 'do Monte : niveau 9 pour 4 pièces');
   assert.equal(brief(advise({ ...S57, xp: 92 }).xp), 'no Attends');
+  // Niveau 7 à 4 XP du niveau 8, niveau 9 visé : le surplus (16 pièces sur 59, après les ★) reste engagé au-delà de ces 4 pièces,
+  // la copie de Rattata attend.
+  const two = advise({ ...S57, level: 7, xp: 36, gold: 59 });
+  assert.deepEqual([why(two.xp), why(two.shop[3])], ['do Monte : niveau 8 pour 4 pièces', 'no Ignore : complément de la compo ; l’or va d’abord à l’XP']);
+  // Tout jouer : un complément trop cher manque d'or, il n'y a plus de palier à garder.
+  assert.equal(why(advise({ ...S57, gold: 13, hp: 30 }).shop[3]), 'no Ignore : complément de la compo ; il manque de l’or');
   // Niveau maximal : 9 avant l'étage 60, 10 ensuite (étage 62, hors tout jouer).
   assert.equal(advise({ ...S57, level: 9 }).xp, null);
   assert.equal(brief(advise({ ...S57, round: 1061, level: 9, xp: 118, gold: 60 }).xp), 'do Monte');
@@ -400,6 +408,11 @@ test('lignée du trio inconnue des données : ni malus, ni actualisation pour el
     { torre: { ...torre, stops, cores: [{ stop: '10:brock', core, n: 50, win: 90, lo: 80 }] } });
   assert.equal(a.target.key, 'newmon+pidgey+spearow');
   assert.equal(why(a.reroll), 'do Actualise : cherche Roucool (coût 1 : 6 %), Piafabec (coût 1 : 6 %) au niveau 9');
+  // Tout jouer : aucune chance n'est lue, la lignée inconnue se cherche comme les autres.
+  const own = Object.fromEntries(['pidgey', 'spearow'].map(line => [line, { id: line, line, star: 3 }]));
+  const allIn = advise({ ...save, round: 1004, level: 9, xp: 0, gold: 10, hp: 30, attempts: 0, units: own, board: {}, bench: ['pidgey', 'spearow'], shop: [] },
+    { torre: { ...torre, stops, cores: [{ stop: '10:brock', core, n: 50, win: 90, lo: 80 }] } });
+  assert.equal(why(allIn.reroll), 'do Actualise : tout jouer : chercher les copies de la compo');
 });
 
 test('vendre : unité du banc hors compo et sans paire, banc presque plein', () => {
