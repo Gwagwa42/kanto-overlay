@@ -495,6 +495,33 @@ test('objets : une copie gardée par composant à venir, pas d’Aimant si la fu
   assert.equal(lone.bag[2].why, 'plus tard avec Carbone : Lentilscope, meilleur objet de sa lignée en Tour');
 });
 
+test('objets visés et Aimant : objet gardé après l’Aimant prêt pour lui seul, emblème jamais retiré, motifs exacts', () => {
+  const aims = save => Object.fromEntries(advise(save).aims.map(x => [x.unit.line, x.aims.map(y => `${y.id}:${y.state}`)]));
+  // Bandeau Choix complet gardé pour Minidraco après l'Aimant : prêt pour lui, pas « manque Protéine ».
+  const band = withItems(['magnet', 'choice-band'], { a: ['life-orb', 'shell-bell', 'hp-up'] });
+  assert.equal(advise(band).bag[1].why, 'pour Minidraco, après l’Aimant');
+  assert.ok(aims(band).dratini.includes('choice-band:ready'));
+  // Deux Protéine gardées pour Minidraco : Caninos ne les compte pas.
+  const proteins = aims(withItems(['magnet', 'protein', 'protein'], { a: ['life-orb', 'shell-bell', 'hp-up'] }));
+  assert.ok(proteins.dratini.includes('choice-band:ready'));
+  assert.ok(proteins.growlithe.includes('choice-band:missing'));
+  // Composant seul porté sans son complément au sac : l'Aimant fait place à Lentilscope ; un emblème n'est jamais retiré.
+  const lens = advise(withItems(['magnet', 'scope-lens'], { a: ['life-orb', 'shell-bell', 'carbos'] })).bag[0];
+  assert.equal(lens.why, 'retire Orbe Vie ; Lentilscope prêt au sac');
+  const emblem = advise(withItems(['magnet', 'scope-lens'], { a: ['emblem-fire', 'choice-band', 'focus-sash'] })).bag[0];
+  assert.equal(emblem, null);
+});
+
+test('Aimant : un objet offensif mixte sur un tank est dit « offensif sur un tank »', () => {
+  const t = { ...torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }],
+    cores: [{ stop: '10:brock', core: ['geodude', 'bulbasaur', 'abra'], n: 50, win: 90, lo: 80 }] };
+  const a = KT.advise({ torre: t, data, lang, side: 'left', previous: null, save: {
+    ...save, round: 1009, level: 3, shop: [], bench: ['g'], board: {}, items: ['magnet'],
+    units: { g: { id: 'g', line: 'geodude', star: 1, items: ['life-orb'] } },
+  } });
+  assert.equal(a.bag[0].why, 'retire Orbe Vie (offensif sur un tank)');
+});
+
 test('vente : Pokémon hors des deux compos qui porte des objets, gardé s’il sert à la compo suivante', () => {
   const lay = {
     ...S57, units: { ...S57.units, e: { ...S57.units.e, items: ['protein'] }, f: { id: 'f', line: 'lapras', star: 1, items: ['iron'] } },
