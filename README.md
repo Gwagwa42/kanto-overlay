@@ -7,13 +7,22 @@ Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](ht
   ta partie** : quoi acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, lesquels retirer, quelle
   récompense et quelle bénédiction prendre, quand ancrer une forme ;
 - la compo cible écrite dans le **Planificateur** du jeu à chaque changement, sous le nom « Plan kanto-overlay », et activée :
-  ses ombres s'affichent sur le plateau. Le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos — avant, colonne 4 ») ;
+  ses ombres s'affichent sur le plateau. Le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos », avant, colonne 4) ;
 - un bouton **Copier la formation** : le même code `KT1;…`, pour le partager ou le coller à la main (Planificateur → Coller un code)
   si l'écriture automatique échoue ;
 - les règles d'or (intérêts, actualisation, shinies) pour la tranche d'étages en cours.
 
 Les conseils apparaissent aussi en **pastilles** sur le jeu : ★ fais-le, ◆ si l'or le permet, ✕ évite. Survoler une pastille (ou la
-sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rien. La même liste figure dans le panneau.
+sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rien.
+
+En tête du panneau, toujours visibles : l'or à dépenser au-dessus du palier, l'alerte « tout jouer » et le prochain boss avec son
+taux de victoire. Dessous, quatre onglets : **Tour** (les conseils ★ et ◆, les ✕ regroupés sous « N à éviter »), **Compo** (compo
+cible, compo suivante, objets visés, copie de la formation), **Boss** (taux, premier essai, essais moyens, meilleurs trios) et
+**Règles** (règles d'or de la tranche). Replié, le panneau garde l'étage, l'or à dépenser et le premier conseil ★.
+
+Le menu ⚙ règle le thème (auto, clair, sombre), les pastilles affichées par niveau, la largeur (320 ou 380 px), la taille du texte,
+l'opacité du fond (100, 90 ou 85 % : en deçà, le texte secondaire passe sous un contraste de 4,5:1 sur les zones claires du jeu en
+thème sombre, sombres en thème clair) et la zone du porteur dans la formation. Les réglages sont gardés dans le navigateur.
 
 Pages où il s'affiche : les pages d'entrée du jeu, `https://einoow.com/` et `/kanto-tactics`, `/tower`, `/pvp`, `/duo`, `/nuzlocke`
 (avec ou sans `?…`), ainsi que `https://einoow.com/playables/kanto-tactics/…`. Le jeu change de mode sans changer d'adresse : le panneau
@@ -51,11 +60,11 @@ barre le remet en haut à droite.
   - Retrait : l'Aimant du sac va sur un Pokémon de la compo qui porte un objet contraire à son profil, sinon sur un Pokémon plein
     dont un objet idéal attend au sac (l'objet, ou ses composants, est alors gardé pour lui), enfin sur un Pokémon posé hors des
     deux compos qui porte des objets. Au banc, un tel Pokémon est à vendre : il rend ses objets au sac.
-  - « Objets visés », sous les conseils : pour chaque Pokémon de la compo, ses 3 objets visés, portés (✓), prêts au sac (●) ou
+  - « Objets visés », dans l'onglet Compo : pour chaque Pokémon de la compo, ses 3 objets visés, portés (✓), prêts au sac (●) ou
     avec les composants qui manquent (○).
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
 - **Formation** : la compo cible dans la limite du niveau. Chaque Pokémon a sa zone : tanks (profil) au premier rang, porteur à
-  distance au fond, dans la zone choisie (bouton « Porteur » : coin gauche, centre ou coin droit ; aucune statistique publique ne
+  distance au fond, dans la zone choisie (option Porteur du menu ⚙ : coin gauche, centre ou coin droit ; aucune statistique publique ne
   départage ces placements), mêlée devant, distance au fond. Un Pokémon déjà dans sa zone garde sa case ; les autres prennent la
   première case libre (avant depuis le centre, fond depuis la zone du porteur). Les déplacements sont listés dans l'ordre où les
   faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors formation si le plateau est plein.
@@ -97,4 +106,5 @@ node --test test/          # logique : étage, boss, trios, noms, compo cible, �
 node scripts/preview.mjs   # pages d'aperçu par état dans build/, puis la commande de rendu imprimée
 ```
 
-Maquettes validées : `docs/design/mockups/2026-11-05-panneau-tour.html`, `docs/design/mockups/2026-11-05-conseils.html`.
+Maquette validée du panneau : `docs/design/mockups/2026-11-09-refonte.html` (onglets, options, verre clair et sombre) ; captures
+`docs/design/captures/refonte-*.webp`.
