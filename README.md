@@ -21,8 +21,8 @@ cible, compo suivante, objets visés, copie de la formation), **Boss** (taux, pr
 **Règles** (règles d'or de la tranche). Replié, le panneau garde l'étage, l'or à dépenser et le premier conseil ★.
 
 Le menu ⚙ règle le thème (auto, clair, sombre), les pastilles affichées par niveau, la largeur (320 ou 380 px), la taille du texte,
-l'opacité du fond (100, 90 ou 85 % : en deçà, le texte secondaire passe sous un contraste de 4,5:1 sur les zones claires du jeu)
-et la zone du porteur dans la formation. Les réglages sont gardés dans le navigateur.
+l'opacité du fond (100, 90 ou 85 % : en deçà, le texte secondaire passe sous un contraste de 4,5:1 sur les zones claires du jeu en
+thème sombre, sombres en thème clair) et la zone du porteur dans la formation. Les réglages sont gardés dans le navigateur.
 
 Pages où il s'affiche : les pages d'entrée du jeu, `https://einoow.com/` et `/kanto-tactics`, `/tower`, `/pvp`, `/duo`, `/nuzlocke`
 (avec ou sans `?…`), ainsi que `https://einoow.com/playables/kanto-tactics/…`. Le jeu change de mode sans changer d'adresse : le panneau
