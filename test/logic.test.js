@@ -897,3 +897,14 @@ test('niveaux de taux et formats français', () => {
   assert.equal(KT.pct(96), '96,0 %');
   assert.equal(KT.shortDate('2026-10-31'), '31 oct.');
 });
+
+test('options du panneau : valeurs inconnues ramenées aux défauts, valeurs connues gardées', () => {
+  const ui = { theme: 'bogus', width: 'wide', text: 'huge', alpha: '75', side: 'nowhere', tab: 'zzz', pins: { no: false } };
+  KT.checkUi(ui);
+  assert.deepEqual(ui, { theme: 'auto', width: 'wide', text: 'normal', alpha: '90', side: 'left', tab: 'tour', pins: { do: true, opt: true, no: false } });
+  const ok = { theme: 'light', width: 'compact', text: 'small', alpha: '80', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true } };
+  KT.checkUi(ok);
+  assert.deepEqual(ok, { theme: 'light', width: 'compact', text: 'small', alpha: '80', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true } });
+  // Chaque zone du porteur a son option, dans l'ordre de la table des zones.
+  assert.deepEqual(KT.OPTIONS.find(o => o.key === 'side').values, [['left', 'Coin gauche'], ['center', 'Centre'], ['right', 'Coin droit']]);
+});

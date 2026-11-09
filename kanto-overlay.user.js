@@ -955,6 +955,24 @@ const KT = (() => {
     right: { name: 'coin droit', cols: [4, 5, 6], order: [6, 4, 2, 0, 5, 1, 3] },
   };
 
+  const TABS = [['tour', 'Tour'], ['compo', 'Compo'], ['boss', 'Boss'], ['rules', 'Règles']];
+  const capital = s => s[0].toUpperCase() + s.slice(1);
+  // Options du menu ⚙ : clé de l'objet ui, valeurs [valeur, libellé] dans l'ordre affiché, valeur par défaut.
+  const OPTIONS = [
+    { key: 'theme', label: 'Thème', values: [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']], def: 'auto' },
+    { key: 'width', label: 'Largeur', values: [['compact', 'Compacte'], ['wide', 'Large']], def: 'compact' },
+    { key: 'text', label: 'Texte', values: [['small', 'Petit'], ['normal', 'Normal'], ['large', 'Grand']], def: 'normal' },
+    { key: 'alpha', label: 'Fond', values: [['100', 'Opaque'], ['90', '90 %'], ['80', '80 %']], def: '90' },
+    { key: 'side', label: 'Porteur à distance (formation)', values: Object.entries(CARRY_ZONES).map(([k, z]) => [k, capital(z.name)]), def: 'left' },
+  ];
+  // Valeurs inconnues du stockage (modifié à la main, version antérieure) ramenées aux valeurs par défaut : une zone de porteur
+  // inconnue ferait échouer la formation à chaque lecture de la sauvegarde.
+  function checkUi(ui) {
+    for (const o of OPTIONS) if (!o.values.some(([v]) => v === ui[o.key])) ui[o.key] = o.def;
+    if (!TABS.some(([t]) => t === ui.tab)) ui.tab = 'tour';
+    ui.pins = { do: true, opt: true, no: true, ...ui.pins };
+  }
+
   // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). Chaque Pokémon a ses cases
   // par préférence : tank au premier rang puis devant, porteur à distance dans la zone choisie du fond (coin gauche, centre ou
   // coin droit) puis au fond, mêlée devant (depuis le centre), distance au fond (depuis cette zone). Déjà sur une case de sa
@@ -1158,13 +1176,13 @@ const KT = (() => {
     SOURCES, SAVE_KEY, UI_KEY, PLAN_NAME, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
-    boardCell, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey,
+    boardCell, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
   };
 })();
 
 const CSS = `
 :host { all: initial; }
-/* Jetons : seuls littéraux de couleur, de taille et d'ombre de la feuille. Thème sombre par défaut, clair par data-scheme. */
+/* Jetons : couleurs, ombres, espacements, rayons et tailles de texte. Thème sombre par défaut, clair par data-scheme. */
 .kt-root {
   /* Pastilles : couleurs Okabe-Ito fixes, posées sur le jeu toujours sombre ; bord sombre + liseré blanc = contraste sur les deux fonds */
   --kp-do-bg:#0072b2; --kp-do-fg:#fff; --kp-opt-bg:#fff; --kp-opt-fg:#141a33; --kp-no-bg:#f0e442; --kp-no-fg:#141a33;
@@ -1374,16 +1392,6 @@ const COMPACT_BELOW = 64;
 // Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
 const TIP_HALF = 120;
 
-const TABS = [['tour', 'Tour'], ['compo', 'Compo'], ['boss', 'Boss'], ['rules', 'Règles']];
-const capital = s => s[0].toUpperCase() + s.slice(1);
-// Options du menu ⚙ : clé de l'objet ui, valeurs [valeur, libellé] dans l'ordre affiché, valeur par défaut.
-const OPTIONS = [
-  { key: 'theme', label: 'Thème', values: [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']], def: 'auto' },
-  { key: 'width', label: 'Largeur', values: [['compact', 'Compacte'], ['wide', 'Large']], def: 'compact' },
-  { key: 'text', label: 'Texte', values: [['small', 'Petit'], ['normal', 'Normal'], ['large', 'Grand']], def: 'normal' },
-  { key: 'alpha', label: 'Fond', values: [['100', 'Opaque'], ['90', '90 %'], ['80', '80 %']], def: '90' },
-  { key: 'side', label: 'Porteur à distance (formation)', values: Object.entries(KT.CARRY_ZONES).map(([k, z]) => [k, capital(z.name)]), def: 'left' },
-];
 const PIN_NAME = { do: 'Faire', opt: 'Si l’or', no: 'Éviter' };
 const ICON = {
   gear: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg>',
@@ -1396,21 +1404,21 @@ const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 // Conseils de partie seulement à l'étage de la sauvegarde : un étage saisi à la main ne sert qu'au prochain boss.
 const onSaveFloor = state => state.save !== null && state.floor === KT.floorFromSave(state.lastRaw);
 
-// Valeurs inconnues du stockage (modifié à la main, version antérieure) ramenées aux valeurs par défaut : une zone de porteur
-// inconnue ferait échouer la formation à chaque lecture de la sauvegarde.
-function checkUi(ui) {
-  for (const o of OPTIONS) if (!o.values.some(([v]) => v === ui[o.key])) ui[o.key] = o.def;
-  if (!TABS.some(([t]) => t === ui.tab)) ui.tab = 'tour';
-  ui.pins = { do: true, opt: true, no: true, ...ui.pins };
-}
 
 const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
 const LEVEL_ORDER = { do: 0, opt: 1, no: 2 };
 // Un conseil par titre (la même consigne peut viser plusieurs cases du jeu), du plus pressant au moins pressant.
+// Calculé une fois par conseil : l'onglet Tour, son compteur et le résumé replié le lisent à chaque rendu.
+const marksOf = new WeakMap();
 function sortedMarks(a) {
-  const seen = new Set();
-  return allMarks(a).sort((x, y) => LEVEL_ORDER[x.level] - LEVEL_ORDER[y.level]).filter(m => !seen.has(m.title) && seen.add(m.title));
+  if (!marksOf.has(a)) {
+    const seen = new Set();
+    marksOf.set(a, allMarks(a).sort((x, y) => LEVEL_ORDER[x.level] - LEVEL_ORDER[y.level]).filter(m => !seen.has(m.title) && seen.add(m.title)));
+  }
+  return marksOf.get(a);
 }
+// Lignes de l'onglet Tour hors « à éviter » : conseils ★ et ◆, puis bénédictions inconnues.
+const todoCount = a => sortedMarks(a).filter(m => m.level !== 'no').length + a.unknownOffer.length;
 const symHtml = level => `<span class="kt-sym kp-${level}" role="img" aria-label="${LEVEL_NAME[level]}">${SYM[level]}</span>`;
 const markHtml = m => `<li>${symHtml(m.level)}<span><span class="t">${esc(m.title)}</span><span class="why">${esc(m.why)}</span></span></li>`;
 
@@ -1460,14 +1468,15 @@ function compoHtml(state, ui) {
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${a.next ? `<p class="kt-label"><span>Ensuite</span><span>${esc(KT.floorRange(a.next.stops))}</span></p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
 ${aimsHtml(a, ui)}
-<button class="kt-copy" data-act="copy">Copier la formation</button>
+<button class="kt-copy" id="kt-copy" data-act="copy">Copier la formation</button>
 <p class="kt-hint">Porteur à distance : fond, ${KT.CARRY_ZONES[ui.side].name} (options ⚙).</p>`;
 }
 
 function bossTabHtml(state) {
   if (!state.torre) return '<p class="kt-msg">Statistiques de la Tour indisponibles.</p>';
   const stop = KT.nextBossStop(state.torre.stops, state.floor);
-  if (!stop) return '<p class="kt-msg">Les statistiques publiques s’arrêtent avant ce boss.</p>';
+  // L'en-tête dit déjà qu'aucun boss n'est connu après cet étage.
+  if (!stop) return '<p class="kt-msg">Pas de trio à afficher.</p>';
   const names = KT.namer(state.lang);
   const mine = state.advice?.target?.key;
   const cores = KT.topCores(state.torre.cores, stop.stop);
@@ -1517,11 +1526,14 @@ function headHtml(state) {
 }
 
 function tabsHtml(state, ui) {
-  const count = state.advice ? sortedMarks(state.advice).filter(m => m.level !== 'no').length : 0;
-  return `<div class="kt-tabs" role="tablist" aria-label="Sections">${TABS.map(([id, name]) => {
+  const count = state.advice ? todoCount(state.advice) : 0;
+  return `<div class="kt-tabs" role="tablist" aria-label="Sections">${KT.TABS.map(([id, name]) => {
     const on = id === ui.tab;
-    const badge = id === 'tour' && count ? ` <span class="count" aria-label="${count} conseils">${count}</span>` : '';
-    return `<button role="tab" id="kt-tab-${id}" data-act="tab" data-tab="${id}" aria-selected="${on}" aria-controls="kt-tabpanel" tabindex="${on ? 0 : -1}">${name}${badge}</button>`;
+    // Nom accessible sur l'onglet (aria-label ignoré sur un span) ; il commence par le texte visible (WCAG 2.5.3).
+    const counted = id === 'tour' && count;
+    const badge = counted ? ` <span class="count" aria-hidden="true">${count}</span>` : '';
+    const label = counted ? ` aria-label="${name} ${count} conseils"` : '';
+    return `<button role="tab" id="kt-tab-${id}" data-act="tab" data-tab="${id}" aria-selected="${on}" aria-controls="kt-tabpanel" tabindex="${on ? 0 : -1}"${label}>${name}${badge}</button>`;
   }).join('')}</div>`;
 }
 
@@ -1547,7 +1559,7 @@ function optionsHtml(ui) {
     `<label><input type="radio" name="${o.key}" value="${v}"${ui[o.key] === v ? ' checked' : ''}><span>${name}</span></label>`).join('')}</div></fieldset>`;
   const pins = `<fieldset><legend>Pastilles sur le jeu</legend><div class="kt-checks">${Object.keys(SYM).map(l =>
     `<label><input type="checkbox" name="pins" value="${l}"${ui.pins[l] ? ' checked' : ''}><span>${SYM[l]} ${PIN_NAME[l]}</span></label>`).join('')}</div></fieldset>`;
-  return `<h2>Options</h2>${seg(OPTIONS[0])}${pins}${OPTIONS.slice(1).map(seg).join('')}
+  return `<h2>Options</h2>${seg(KT.OPTIONS[0])}${pins}${KT.OPTIONS.slice(1).map(seg).join('')}
 <p class="kt-hint">Alt+K replie le panneau ; double-clic sur la barre pour le remettre en haut à droite.</p>`;
 }
 
@@ -1770,7 +1782,7 @@ async function loadSources(state) {
 
 function mount() {
   const ui = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
-  checkUi(ui);
+  KT.checkUi(ui);
   const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
 
   const host = document.createElement('div');
@@ -1869,7 +1881,10 @@ function mount() {
     panel.classList.toggle('is-menu', menuOpen);
     opts.hidden = !menuOpen;
     menu.setAttribute('aria-expanded', String(menuOpen));
-    toggle.innerHTML = ui.collapsed ? ICON.down : ICON.up;
+    if (toggle.dataset.collapsed !== String(ui.collapsed)) {
+      toggle.dataset.collapsed = String(ui.collapsed);
+      toggle.innerHTML = ui.collapsed ? ICON.down : ICON.up;
+    }
     toggle.setAttribute('aria-label', ui.collapsed ? 'Déplier le panneau' : 'Replier le panneau');
     toggle.setAttribute('aria-expanded', String(!ui.collapsed));
     src.textContent = state.source;
@@ -1878,8 +1893,11 @@ function mount() {
     // Réécrire seulement ce qui change : un focus ou une bulle ouverte survit aux réécritures de la sauvegarde.
     const html = panelHtml(state, ui);
     if (html !== lastHtml) {
+      // Le focus clavier (onglet, bouton Copier) survit à la réécriture, qui suit chaque changement de la sauvegarde.
+      const focused = body.contains(root.activeElement) ? root.activeElement.id : '';
       body.innerHTML = html;
       lastHtml = html;
+      if (focused) root.getElementById(focused)?.focus();
     }
     const sum = summaryHtml(state);
     if (sum !== lastSummary) {
@@ -1953,11 +1971,7 @@ function mount() {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'dec') setManual(Math.max(1, (state.floor ?? 2) - 1));
     if (act === 'inc') setManual((state.floor ?? 0) + 1);
-    if (act === 'toggle') {
-      ui.collapsed = !ui.collapsed;
-      saveUi();
-      render();
-    }
+    if (act === 'toggle') collapse();
     if (act === 'menu') {
       menuOpen = !menuOpen;
       if (menuOpen) opts.innerHTML = optionsHtml(ui);
@@ -1978,21 +1992,36 @@ function mount() {
     }
   });
   input.addEventListener('change', () => setManual(Number.parseInt(input.value, 10)));
-  // Onglet choisi gardé entre deux sessions ; le focus le suit, le contenu étant réécrit.
+  // Replier ferme aussi le menu : déplié, le panneau revient aux onglets.
+  function collapse() {
+    ui.collapsed = !ui.collapsed;
+    menuOpen = false;
+    saveUi();
+    render();
+  }
+  // Échap dans le menu le ferme et rend le focus au bouton ⚙.
+  opts.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    menuOpen = false;
+    render();
+    menu.focus();
+  });
+  // Onglet choisi gardé entre deux sessions.
   function showTab(tab) {
     ui.tab = tab;
     saveUi();
     render();
-    root.getElementById(`kt-tab-${tab}`)?.focus();
   }
   // Onglets au clavier (motif ARIA tablist) : flèches, Début et Fin.
   panel.addEventListener('keydown', e => {
     if (!e.target.matches('[role="tab"]')) return;
-    const i = TABS.findIndex(([t]) => t === ui.tab);
-    const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: TABS.length - 1 }[e.key];
+    const i = KT.TABS.findIndex(([t]) => t === ui.tab);
+    const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: KT.TABS.length - 1 }[e.key];
     if (to === undefined) return;
     e.preventDefault();
-    showTab(TABS[(to + TABS.length) % TABS.length][0]);
+    const tab = KT.TABS[(to + KT.TABS.length) % KT.TABS.length][0];
+    showTab(tab);
+    root.getElementById(`kt-tab-${tab}`).focus();
   });
   opts.addEventListener('change', e => {
     const { name, value, checked } = e.target;
@@ -2008,7 +2037,9 @@ function mount() {
   // les chiffres tapés et les flèches des onglets et des options. Alt+K passe, pour replier le panneau depuis un champ.
   for (const type of ['keydown', 'keyup', 'keypress']) {
     panel.addEventListener(type, e => {
-      if (e.target.matches('input, [role="tab"]') && !(e.altKey && e.code === 'KeyK')) e.stopPropagation();
+      // Échap remonte depuis un onglet : la fenêtre s'en sert pour fermer la bulle survolée (WCAG 1.4.13).
+      const passes = (e.altKey && e.code === 'KeyK') || (e.key === 'Escape' && e.target.matches('[role="tab"]'));
+      if (e.target.matches('input, [role="tab"]') && !passes) e.stopPropagation();
     });
   }
   // Sections repliables : état gardé entre deux rendus et deux sessions.
@@ -2032,9 +2063,7 @@ function mount() {
     }
     if (!e.altKey || e.code !== 'KeyK') return;
     e.preventDefault();
-    ui.collapsed = !ui.collapsed;
-    saveUi();
-    render();
+    collapse();
   });
   window.addEventListener('resize', () => {
     place();
