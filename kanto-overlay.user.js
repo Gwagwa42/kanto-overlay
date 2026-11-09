@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.0.0
+// @version      2.1.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -59,6 +59,25 @@ const KT = (() => {
   const BASE_INTEREST = 3;
   const FORTUNE_INTEREST = 2;
   const PATH_SIZE = 3;
+  // Chances (%) des coûts 1 à 5 en boutique selon le niveau du joueur.
+  const SHOP_ODDS = {
+    1: [100, 0, 0, 0, 0], 2: [100, 0, 0, 0, 0], 3: [75, 25, 0, 0, 0], 4: [60, 30, 10, 0, 0], 5: [50, 36, 13, 1, 0],
+    6: [36, 42, 19, 3, 0], 7: [22, 32, 34, 12, 0], 8: [14, 22, 32, 26, 6], 9: [6, 14, 27, 36, 17], 10: [4, 10, 24, 42, 20],
+  };
+  // Niveau 10 ouvert à partir de cet étage.
+  const LEVEL_10_FROM = 60;
+  // Chance à partir de laquelle un coût vaut une actualisation (seuil des robots du jeu, engine-*.js).
+  const FINDABLE = 15;
+  // Niveau visé à partir d'un étage (choix de jeu) : la Tour ne donne que 1 XP par étage, le niveau s'achète. Les coûts 4
+  // sortent au niveau 8, les coûts 5 au niveau 9, atteint avant Électhor (étage 60).
+  const LEVEL_GOALS = [[6, 5], [12, 6], [20, 7], [30, 8], [45, 9], [65, 10]];
+  // Un étage rejoué se joue à fond à partir de celui-ci : une défaite y coûte 12 PV et plus, et la suivante supprime les intérêts.
+  const RETRY_ALL_IN_FROM = 50;
+  // Puissance d'une unité selon son coût et son étoile (estimation des robots du jeu, engine-*.js) ; un point de traitGain
+  // vaut TRAIT_WEIGHT.
+  const COST_POWER = 0.35;
+  const STAR_POWER = [1, 1.9, 3.6];
+  const TRAIT_WEIGHT = 0.25;
   const MAX_ITEMS = 3;
   // Composants défensifs ; Protéine (Attaque), Calcium (Atq. Spé.) et Carbone (vitesse d'attaque) sont offensifs.
   const DEFENSE = ['hp-up', 'iron', 'zinc'];
@@ -153,6 +172,12 @@ const KT = (() => {
     venonat: { c: 2, t: ['bug', 'poison'], s: [48, 49], range: 3 },
   };
   const lineInfo = (data, base) => data?.lines[base] ?? LINES_V41[base];
+  const levelGoal = floor => LEVEL_GOALS.reduce((goal, [from, level]) => (floor >= from ? level : goal), 0);
+  const maxLevel = floor => (floor >= LEVEL_10_FROM ? 10 : 9);
+  // Chance (%) de voir le coût de la lignée dans une case de boutique à ce niveau ; 0 pour un coût ou un niveau inconnu.
+  const shopOdds = (data, level, base) => SHOP_ODDS[level]?.[lineInfo(data, base)?.c - 1] ?? 0;
+  const findable = (data, level, base) => shopOdds(data, level, base) >= FINDABLE;
+  const unitPower = (cost, star) => (1 + COST_POWER * (cost - 1)) * STAR_POWER[star - 1];
 
   // Conseils du guide (non vérifiés) par tranche d'étages.
   const GUIDE = [
@@ -164,8 +189,9 @@ const KT = (() => {
   ];
   const GOLD_RULES = [
     'Intérêts : +1 pièce par tranche de 10, +3 au plus en Tour → garder 30 pièces (+2 avec la voie Fortune complète).',
+    `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${LEVEL_GOALS.map(([from, level]) => `${level} dès l’étage ${from}`).join(', ')}), puis actualisation pour les copies trouvables, puis XP.`,
     'Actualisation à 2 pièces : ne pas en enchaîner pour un shiny.',
-    'Dépenser avant un boss difficile, reconstituer après une victoire facile.',
+    `Tout jouer sur un combat sous ${HARD_WIN} % de victoires, sous ${LOW_HP} PV, ou sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}.`,
   ];
 
   const isObject = o => o !== null && typeof o === 'object' && !Array.isArray(o);
@@ -303,6 +329,8 @@ const KT = (() => {
     return {
       floor: floorOf(save.round),
       gold: save.gold, level: save.level, xp: save.xp, hp: save.hp,
+      // Défaites déjà subies à cet étage.
+      attempts: save.attempts ?? 0,
       units,
       bench: save.bench ?? [],
       shop: save.shop ?? [],
@@ -319,35 +347,66 @@ const KT = (() => {
   const bestStar = (game, base) => Math.max(0, ...unitsOf(game, base).map(u => u.star));
   // Lignée shiny : sa copie de meilleure étoile l'est (celle que décrivent la progression et le code KT1).
   const shinyLine = (game, base) => unitsOf(game, base).some(u => u.shiny && u.star === bestStar(game, base));
-  const ones = (game, base) => unitsOf(game, base).filter(u => u.star === 1).length;
+  const copies = (game, base, star) => unitsOf(game, base).filter(u => u.star === star).length;
+  const ones = (game, base) => copies(game, base, 1);
   const pathCount = (boons, path) => boons.filter(b => boonPath(b) === path).length;
 
   function goldFloor(boons) {
     return 10 * (BASE_INTEREST + (pathCount(boons, 'fortune') >= PATH_SIZE ? FORTUNE_INTEREST : 0));
   }
 
-  // « Tout jouer » : le combat de l'étage courant est un mur, ou les PV sont bas.
+  // « Tout jouer » : le combat de l'étage courant est un mur, les PV sont bas, ou l'étage est rejoué (RETRY_ALL_IN_FROM).
   function economy(game, stops) {
     const here = stops.find(s => s.floor === game.floor);
     const floor = goldFloor(game.boons);
-    const allIn = game.hp < LOW_HP || (here !== undefined && here.win < HARD_WIN);
+    const lowHp = game.hp < LOW_HP;
+    const retry = game.attempts > 0 && game.floor >= RETRY_ALL_IN_FROM;
+    const allIn = lowHp || retry || (here !== undefined && here.win < HARD_WIN);
     const nextWall = stops.find(s => s.win < HARD_WIN) ?? null;
-    return { gold: game.gold, floor, spend: allIn ? game.gold : Math.max(0, game.gold - floor), allIn, lowHp: game.hp < LOW_HP, nextWall };
+    return { gold: game.gold, floor, spend: allIn ? game.gold : Math.max(0, game.gold - floor), allIn, lowHp, retry, nextWall };
   }
 
   function lineLo(torre, id) {
     return torre.lines.find(l => l.line === id)?.lo ?? torre.lines.find(l => l.line === baseLine(id))?.lo ?? 0;
   }
 
-  function coreScore(core, stops, coresByStop, game) {
+  // Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
+  function coreScore(core, stops, coresByStop, game, data) {
     const total = stops.reduce((s, st) => s + st.weight, 0);
     const key = coreKey(core);
     const stat = stops.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop)?.get(key)?.lo ?? 0), 0) / total;
     const owned = core.reduce((s, id) => {
-      const star = bestStar(game, baseLine(id));
-      return s + (star >= 1 ? OWNED_BONUS : 0) + (star >= 2 ? OWNED_BONUS : 0) + (shinyLine(game, baseLine(id)) ? SHINY_BONUS : 0);
+      const base = baseLine(id);
+      const star = bestStar(game, base);
+      if (star === 0) return s - (lineInfo(data, base) && !findable(data, game.level, base) ? OWNED_BONUS : 0);
+      return s + OWNED_BONUS + (star >= 2 ? OWNED_BONUS : 0) + (shinyLine(game, base) ? SHINY_BONUS : 0);
     }, 0);
     return stat + owned;
+  }
+
+  // Trios d'au moins MIN_FIGHTS combats de chaque combat, par clé de trio.
+  const coresAt = (torre, stops) => new Map(stops.map(st => [st.stop, new Map(torre.cores
+    .filter(c => c.stop === st.stop && c.n >= MIN_FIGHTS)
+    .map(c => [coreKey(c.core), c]))]));
+
+  // Force de chaque lignée de base sur une fenêtre de combats : écart, pondéré par la difficulté des combats, entre le taux de
+  // victoire des trios où elle figure (pondéré par leurs combats) et celui du combat. Un combat sans trio pour elle compte zéro.
+  function lineStrength(coresByStop, stops) {
+    const total = stops.reduce((s, st) => s + st.weight, 0);
+    const strength = new Map();
+    for (const st of stops) {
+      const sums = new Map();
+      for (const c of coresByStop.get(st.stop).values()) {
+        for (const base of new Set(c.core.map(baseLine))) {
+          const sum = sums.get(base) ?? { n: 0, win: 0 };
+          sum.n += c.n;
+          sum.win += c.n * c.win;
+          sums.set(base, sum);
+        }
+      }
+      for (const [base, x] of sums) strength.set(base, (strength.get(base) ?? 0) + (st.weight * (x.win / x.n - st.win)) / total);
+    }
+    return strength;
   }
 
   // Seuils de type franchis ou approchés en ajoutant une lignée à l'équipe.
@@ -365,17 +424,13 @@ const KT = (() => {
 
   // Meilleur trio sur une fenêtre de combats (+INERTIA pour le trio précédent), avec sa preuve : le trio sur le combat le plus
   // dur où il a des statistiques.
-  function bestCore(torre, game, stops, previousKey) {
-    if (!stops.length) return null;
-    const coresByStop = new Map(stops.map(st => [st.stop, new Map(torre.cores
-      .filter(c => c.stop === st.stop && c.n >= MIN_FIGHTS)
-      .map(c => [coreKey(c.core), c]))]));
+  function bestCore(coresByStop, data, game, stops, previousKey) {
     const candidates = new Map();
     for (const m of coresByStop.values()) for (const [key, c] of m) candidates.set(key, c.core);
     if (!candidates.size) return null;
     let best = null;
     for (const [key, core] of candidates) {
-      const score = coreScore(core, stops, coresByStop, game) + (key === previousKey ? INERTIA : 0);
+      const score = coreScore(core, stops, coresByStop, game, data) + (key === previousKey ? INERTIA : 0);
       if (!best || score > best.score) best = { key, core: [...core], score };
     }
     const proof = [...stops].sort((a, b) => b.weight - a.weight)
@@ -383,31 +438,49 @@ const KT = (() => {
     return { key: best.key, core: best.core, stops, proof };
   }
 
+  // Compo cible : le meilleur trio, puis fillers, le remplissage jusqu'au niveau par les lignées possédées les mieux notées ;
+  // la boutique ne complète que les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une
+  // carte de boutique vaut une ★) et types apportés à la compo ; à égalité, possédée, shiny, puis la plus forte sur ces combats.
+  // upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ; replaced : ces compléments.
   function targetComp(torre, data, game, previousKey) {
-    const best = bestCore(torre, game, nextStops(torre.stops, game.floor, HORIZON), previousKey);
+    const stops = nextStops(torre.stops, game.floor, HORIZON);
+    const coresByStop = coresAt(torre, stops);
+    const best = bestCore(coresByStop, data, game, stops, previousKey);
     if (!best) return null;
-    const chosen = best.core.map(baseLine);
-    const pool = [...new Set([...game.units.map(u => baseLine(u.line)), ...game.shop.filter(Boolean)])].filter(b => lineInfo(data, b));
-    // Remplissage jusqu'au niveau : lignées qui apportent un type à la compo, les unités possédées d'abord ; la boutique ne
-    // complète que les places restantes.
+    const core = best.core.map(baseLine);
+    const known = b => lineInfo(data, b) && !core.includes(b);
+    const mine = [...new Set(game.units.map(u => baseLine(u.line)))].filter(known);
+    const cards = [...new Set(game.shop.filter(Boolean))].filter(b => known(b) && !mine.includes(b));
+    const strength = lineStrength(coresByStop, stops);
     const owned = b => Number(bestStar(game, b) > 0);
-    const fillers = [];
-    while (chosen.length < game.level) {
-      const next = pool
-        .filter(b => !chosen.includes(b) && traitGain(data, chosen, b) > 0)
-        .sort((a, b) => owned(b) - owned(a) || traitGain(data, chosen, b) - traitGain(data, chosen, a)
-          || bestStar(game, b) - bestStar(game, a) || Number(shinyLine(game, b)) - Number(shinyLine(game, a))
-          || lineLo(torre, b) - lineLo(torre, a) || a.localeCompare(b))[0];
-      if (!next) break;
-      chosen.push(next);
-      fillers.push(next);
-    }
-    return { ...best, fillers };
+    // Meilleures lignées de chaque liste, une liste après l'autre, jusqu'au niveau.
+    const fill = pools => {
+      const chosen = [...core];
+      const score = b => unitPower(lineInfo(data, b).c, Math.max(1, bestStar(game, b))) + TRAIT_WEIGHT * traitGain(data, chosen, b);
+      for (const pool of pools) {
+        while (chosen.length < game.level) {
+          const next = pool
+            .filter(b => !chosen.includes(b))
+            .sort((a, b) => score(b) - score(a) || owned(b) - owned(a) || Number(shinyLine(game, b)) - Number(shinyLine(game, a))
+              || (strength.get(b) ?? 0) - (strength.get(a) ?? 0) || a.localeCompare(b))[0];
+          if (!next) break;
+          chosen.push(next);
+        }
+      }
+      return chosen.slice(core.length);
+    };
+    const fillers = fill([mine, cards]);
+    const mixed = fill([[...mine, ...cards]]);
+    const upgrades = mixed.filter(b => cards.includes(b) && !fillers.includes(b));
+    // Autant de compléments possédés que de cartes, les moins bien notés.
+    const replaced = upgrades.length ? fillers.filter(b => owned(b) && !mixed.includes(b)).slice(-upgrades.length) : [];
+    return { ...best, fillers, upgrades: upgrades.slice(0, replaced.length), replaced };
   }
 
   // Trio des 9 combats suivants (10 à 18), à préparer avec le surplus ; null s'il est déjà la compo cible.
-  function nextComp(torre, game, target, previousKey) {
-    const next = bestCore(torre, game, nextStops(torre.stops, game.floor, 2 * HORIZON).slice(HORIZON), previousKey);
+  function nextComp(torre, data, game, target, previousKey) {
+    const stops = nextStops(torre.stops, game.floor, 2 * HORIZON).slice(HORIZON);
+    const next = bestCore(coresAt(torre, stops), data, game, stops, previousKey);
     return next && next.key !== target.key ? next : null;
   }
 
@@ -427,16 +500,19 @@ const KT = (() => {
 
   const proofText = (p, names) => (p ? `${p.c.core.map(names.line).join(' · ')} : ${pct(p.c.win)} contre ${bossName(p.st.boss)} ${p.st.floor} (${p.c.n} combats, au moins ${pct(p.c.lo)})` : '');
 
-  // Marques de la boutique et or restant. Priorités : ★ (de gauche à droite), puis l'or réservé par reserve(or restant)
-  // (l'XP conseillée), puis les ◆ de la compo cible, puis l'actualisation, puis les ◆ de la compo suivante (hors tout jouer).
-  // short : un ★ a été rétrogradé faute d'or (déclenche « Vends »).
-  function shopMarks(game, target, next, data, eco, names, reserve) {
+  // Marques de la boutique et or restant. Priorités : ★ du trio, des 3ᵉ copies et des shinies (de gauche à droite), puis ★ des
+  // places libres, puis l'or réservé par reserve(or restant) (l'XP conseillée), puis les ◆ de la compo cible, puis
+  // l'actualisation si rolls(or restant) la conseille, puis les ◆ de la compo suivante (hors tout jouer). Les ★ ne s'arrêtent
+  // pas au palier. short : un ★ a été rétrogradé faute d'or (déclenche « Vends »).
+  function shopMarks(game, target, next, data, eco, names, reserve, rolls) {
     const core = target ? target.core.map(baseLine) : [];
     const wanted = targetBases(target);
     const later = nextBases(next);
     const proof = proofText(target?.proof, names);
     let left = game.gold;
     let short = false;
+    const upgrades = target?.upgrades ?? [];
+    const stronger = target ? `plus fort que ${target.replaced.map(names.line).join(', ')}` : '';
     const buy = (cost, name, why, detail = '') => {
       // Coût inconnu (données de jeu indisponibles) : le conseil ne peut pas vérifier l'or.
       if (cost !== undefined && cost > left) {
@@ -448,7 +524,9 @@ const KT = (() => {
     };
     const cards = game.shop.map((base, i) => base && {
       base, name: names.line(base), cost: lineInfo(data, base)?.c, triple: ones(game, base) === 2,
-      inTarget: wanted.includes(base), inCore: core.includes(base), inNext: later.includes(base), shiny: game.shopShiny[i],
+      inTarget: wanted.includes(base) || upgrades.includes(base), inCore: core.includes(base), inNext: later.includes(base), shiny: game.shopShiny[i],
+      // Lignée de la compo pas encore possédée : elle remplit une place libre du plateau.
+      fills: wanted.includes(base) && bestStar(game, base) === 0, upgrade: upgrades.includes(base),
     });
     const marks = cards.map(c => {
       if (!c) return null;
@@ -460,7 +538,21 @@ const KT = (() => {
       if (c.shiny && c.inTarget && bestStar(game, c.base) <= 1 && !shinyLine(game, c.base)) return buy(c.cost, `${c.name} shiny`, '+10 % PV, défenses et dégâts');
       return undefined;
     });
-    left -= reserve(left);
+    // Places libres, après les ★ ci-dessus et seulement si l'or leur a suffi : une copie par lignée.
+    const filled = new Set();
+    cards.forEach((c, i) => {
+      if (!c || marks[i] !== undefined || short || !c.fills || filled.has(c.base) || c.cost > left) return;
+      filled.add(c.base);
+      marks[i] = buy(c.cost, c.name, 'place libre sur le plateau');
+    });
+    const reserved = reserve(left);
+    left -= reserved;
+    // Motif d'un ✕ faute d'or : l'XP réservée quand la carte tenait sans elle, sinon le palier (aucun en tout jouer).
+    const hold = cost => {
+      if (eco.allIn) return 'il manque de l’or';
+      const beforeXp = cost !== undefined && left + reserved - cost >= eco.floor && left - cost < eco.floor;
+      return beforeXp ? 'l’or va d’abord à l’XP' : `garde ${eco.floor} pièces pour les intérêts`;
+    };
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
       if (!target) {
@@ -470,11 +562,14 @@ const KT = (() => {
       const fits = c.cost !== undefined && (eco.allIn ? c.cost <= left : left - c.cost >= eco.floor);
       if ((c.inTarget || (c.triple && !c.inNext)) && fits) {
         left -= c.cost;
-        marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, c.triple ? '3ᵉ copie hors compo' : 'renforce le plateau de la compo');
+        let why = 'renforce le plateau de la compo';
+        if (c.triple) why = '3ᵉ copie hors compo';
+        else if (c.upgrade) why = stronger;
+        marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, why);
       }
     });
-    // L'actualisation conseillée (voir rerollMark) passe avant la compo suivante.
-    const reroll = target && targetIncomplete(game, target) && left - REROLL_COST >= eco.floor ? REROLL_COST : 0;
+    // L'actualisation conseillée passe avant la compo suivante.
+    const reroll = rolls(left) ? REROLL_COST : 0;
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
       if (c.inNext && !c.inTarget) {
@@ -485,33 +580,56 @@ const KT = (() => {
           marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, `prépare la compo des ${range}`, proofText(next.proof, names));
           return;
         }
-        let why = `compo des ${range} ; garde ${eco.floor} pièces pour les intérêts`;
+        let why = `compo des ${range} ; ${hold(c.cost)}`;
         if (eco.allIn) why = 'tout jouer : l’or va à la compo cible';
         else if (fits) why = `compo des ${range} ; l’or va d’abord à l’actualisation pour la compo cible`;
         marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, why);
         return;
       }
-      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `complément de la compo ; garde ${eco.floor} pièces pour les intérêts` : 'hors compo cible');
+      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `${c.upgrade ? stronger : 'complément de la compo'} ; ${hold(c.cost)}` : 'hors compo cible');
     });
     return { marks, left, short };
   }
 
-  function targetIncomplete(game, target) {
-    return target.core.some(id => bestStar(game, baseLine(id)) < 2);
+  // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal), et toute lignée qui a
+  // 2 copies ★ (la 3ᵉ donne la ★★) ou 2 copies ★★ (la 3ᵉ ★★ donne la ★★★).
+  function seekLines(game, target) {
+    const core = target.core.map(baseLine);
+    const coreStar = game.level >= maxLevel(game.floor) ? 3 : 2;
+    return targetBases(target).filter(base => bestStar(game, base) < 3
+      && ((core.includes(base) && bestStar(game, base) < coreStar) || ones(game, base) === 2 || copies(game, base, 2) === 2));
   }
 
-  // committed : or des achats ★ déjà conseillés dans la boutique, à retirer avant d'actualiser ou de monter.
-  function rerollMark(game, target, eco, left) {
-    if (!target || !targetIncomplete(game, target)) return null;
+  // left : or restant après les achats conseillés. Hors tout jouer, le niveau visé passe avant l'actualisation, et seules
+  // les lignées trouvables à ce niveau la justifient ; au niveau maximal, où l'or n'a plus d'autre emploi, toute lignée qui
+  // sort en boutique. Une lignée qui ne devient trouvable qu'à un niveau plus haut est annoncée ; un coût 1 ou 2, qui sort
+  // de moins en moins, ne donne aucun conseil, ni une lignée de coût inconnu.
+  function rerollMark(game, target, data, eco, names, left) {
+    const wanted = target ? seekLines(game, target) : [];
+    if (!wanted.length) return null;
     if (eco.allIn) return left >= REROLL_COST ? mark('do', 'Actualise', 'Actualise', 'tout jouer : chercher les copies de la compo') : null;
-    if (left - REROLL_COST >= eco.floor) return mark('do', 'Actualise', 'Actualise', `surplus au-dessus de ${eco.floor} pièces après les achats`);
-    return mark('no', 'Garde l’or', 'N’actualise pas', `tu passerais sous ${eco.floor} pièces`);
+    const seek = wanted.filter(base => lineInfo(data, base));
+    const keep = why => mark('no', 'Garde l’or', 'N’actualise pas', why);
+    const goal = levelGoal(game.floor);
+    if (game.level < goal) return keep(`d’abord le niveau ${goal}`);
+    const odds = base => `${names.line(base)} (coût ${lineInfo(data, base).c} : ${shopOdds(data, game.level, base)} %)`;
+    const top = game.level >= maxLevel(game.floor);
+    const found = seek.filter(base => (top ? shopOdds(data, game.level, base) > 0 : findable(data, game.level, base)));
+    if (!found.length) {
+      const levels = Array.from({ length: maxLevel(game.floor) - game.level }, (_, i) => game.level + 1 + i);
+      const reach = base => levels.find(level => findable(data, level, base));
+      const later = seek.find(reach);
+      return later ? keep(`${odds(later)} au niveau ${game.level} : à chercher au niveau ${reach(later)}`) : null;
+    }
+    if (left - REROLL_COST < eco.floor) return keep(`tu passerais sous ${eco.floor} pièces`);
+    return mark('do', 'Actualise', 'Actualise', `cherche ${found.map(odds).join(', ')} au niveau ${game.level}`);
   }
 
-  // Renvoie la marque et l'or qu'elle engage.
-  function xpMark(game, eco, left) {
-    const max = game.floor >= 60 ? 10 : 9;
-    if (game.level >= max) return { mark: null, cost: 0 };
+  // Renvoie la marque et l'or qu'elle engage. left : or restant après les achats conseillés. spare : aucune actualisation
+  // n'est conseillée, l'or au-dessus du palier va au niveau suivant. Sous le niveau visé, tout le surplus utile à ce niveau
+  // est engagé : les ◆ de la boutique passent après.
+  function xpMark(game, eco, left, spare) {
+    if (game.level >= maxLevel(game.floor)) return { mark: null, cost: 0 };
     const missing = XP_TO_NEXT[game.level] - game.xp;
     const toLevel = Math.ceil(missing / XP_COST) * XP_COST;
     if (eco.allIn) {
@@ -519,10 +637,20 @@ const KT = (() => {
         ? { mark: mark('do', 'Monte', 'Achète de l’XP', `tout jouer : niveau ${game.level + 1} pour ${toLevel} pièces`), cost: toLevel }
         : { mark: null, cost: 0 };
     }
-    if (missing <= XP_COST && left - XP_COST >= eco.floor) {
-      return { mark: mark('do', 'Monte', 'Achète de l’XP', `niveau ${game.level + 1} pour ${XP_COST} pièces`), cost: XP_COST };
+    const wait = why => ({ mark: mark('no', 'Attends', 'N’achète pas d’XP', why), cost: 0 });
+    if (left - XP_COST < eco.floor) return wait(`garde ${eco.floor} pièces pour les intérêts`);
+    const buy = why => ({ mark: mark('do', 'Monte', 'Achète de l’XP', why), cost: XP_COST });
+    const quick = `niveau ${game.level + 1} pour ${XP_COST} pièces`;
+    const next = `${missing} XP avant le niveau ${game.level + 1}`;
+    const goal = levelGoal(game.floor);
+    if (game.level < goal) {
+      const toGoal = XP_TO_NEXT.slice(game.level, goal).reduce((sum, xp) => sum + xp, 0) - game.xp;
+      const cost = Math.min(Math.ceil(toGoal / XP_COST), Math.floor((left - eco.floor) / XP_COST)) * XP_COST;
+      return { ...buy(missing <= XP_COST ? quick : `niveau ${goal} visé à cet étage ; ${next}`), cost };
     }
-    return { mark: mark('no', 'Attends', 'N’achète pas d’XP', `encore ${missing} XP ; l’XP gratuite arrive à chaque étage`), cost: 0 };
+    if (missing <= XP_COST) return buy(quick);
+    if (spare) return buy(`rien à chercher en boutique à ce niveau ; ${next}`);
+    return wait('l’or va d’abord à l’actualisation');
   }
 
   function sellMarks(game, target, next, names, short) {
@@ -1071,12 +1199,16 @@ const KT = (() => {
     const eco = economy(game, stops);
     const same = previous?.run === run ? previous : null;
     const target = torre && data ? targetComp(torre, data, game, same?.key ?? null) : null;
-    const next = target ? nextComp(torre, game, target, same?.next ?? null) : null;
+    const next = target ? nextComp(torre, data, game, target, same?.next ?? null) : null;
+    const rerollWith = left => rerollMark(game, target, data, eco, names, left);
     let xp;
     const shop = shopMarks(game, target, next, data, eco, names, left => {
-      xp = xpMark(game, eco, left);
+      xp = xpMark(game, eco, left, false);
       return xp.cost;
-    });
+    }, left => rerollWith(left)?.level === 'do');
+    const reroll = rerollWith(shop.left);
+    // L'or que ni un achat ni une actualisation n'engage va au niveau suivant.
+    if (xp.mark?.level !== 'do' && reroll?.level !== 'do') xp = xpMark(game, eco, shop.left, true);
     const choice = offerChoiceMarks(data, game, eco, names);
     const profiles = target ? lineProfiles(torre, data) : null;
     const holders = target ? holdersOf(torre, data, game, target, profiles) : [];
@@ -1087,7 +1219,7 @@ const KT = (() => {
     return {
       game, eco, target, next, names, run,
       shop: shop.marks,
-      reroll: rerollMark(game, target, eco, shop.left),
+      reroll,
       xp: xp.mark,
       bench: sellMarks(game, target, next, names, shop.short),
       bag: items.marks,
@@ -1175,7 +1307,7 @@ const KT = (() => {
   return {
     SOURCES, SAVE_KEY, UI_KEY, PLAN_NAME, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
-    baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
+    baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, levelGoal, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
   };
 })();
@@ -1523,7 +1655,7 @@ function headHtml(state) {
   if (e) {
     parts.push(`<p class="kt-gold"><span class="kt-coin" aria-hidden="true"></span>Or <b>${e.gold}</b> → <span class="spend">${e.spend} à dépenser</span><span class="m">palier ${e.floor} · +${e.floor / 10}</span></p>`);
     let wall = '';
-    if (e.allIn) wall = e.lowHp ? 'Tout jouer : PV sous 40.' : 'Tout jouer : combat difficile.';
+    if (e.allIn) wall = `Tout jouer : ${e.lowHp ? 'PV sous 40' : e.retry ? 'étage rejoué' : 'combat difficile'}.`;
     else if (e.nextWall) wall = `Étage ${e.nextWall.floor} (${esc(KT.bossName(e.nextWall.boss))}, ${KT.pct(e.nextWall.win)}) : tout jouer.`;
     if (wall) parts.push(`<p class="kt-warn"><span class="kt-sym kp-no" aria-hidden="true">▼</span>${wall}</p>`);
   }
@@ -2140,5 +2272,5 @@ function mount() {
 }
 
 // Les tests reçoivent aussi le pilote du Planificateur, joué sur un faux DOM.
-if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, PlannerError };
+if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, PlannerError };
 else mount();
