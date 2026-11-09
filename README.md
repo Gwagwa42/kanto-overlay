@@ -36,14 +36,33 @@ barre le remet en haut à droite.
 
 - **Compo cible** : parmi les trios d'au moins 20 combats des 9 prochains combats (élites comprises, environ 20 étages), celui dont la
   borne basse du taux de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat, avec un bonus pour
-  les Pokémon que tu possèdes déjà. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
-  Le reste du plateau est rempli par les lignées qui renforcent ses types : tes unités d'abord, puis la boutique pour les places
-  restantes.
+  les Pokémon que tu possèdes déjà et un malus de 10 points par Pokémon à trouver dont le coût sort à moins de 15 % en boutique à ton
+  niveau. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
+  Le reste du plateau est rempli par tes unités les mieux notées, puis par la boutique pour les places restantes (★ « place libre »).
+  La note d'une unité est sa puissance, `(1 + 0,35 × (coût − 1))` × 1, 1,9 ou 3,6 selon l'étoile, plus 0,25 par type renforcé et
+  0,5 par seuil de type franchi ; à égalité, l'unité possédée, la shiny, puis la lignée qui gagne le plus dans les trios de ces
+  combats. Une carte de boutique mieux notée qu'un de tes compléments est conseillée en ◆ (« plus fort que Rattata ») : elle
+  n'entre dans la compo qu'une fois achetée, pour que le plan ne change pas à chaque actualisation. Un complément possédé reçoit
+  des objets comme les autres Pokémon de la compo.
 - **Compo suivante** : le même calcul sur les 9 combats d'après (« Ensuite · étages 80–100 » sous la compo cible), affiché quand
   le trio diffère. On la prépare avec le surplus : ◆ en boutique pour ses Pokémon après ceux de la compo cible et son actualisation,
   sans passer sous le palier ni en tout jouer, et pas de « Vends » pour eux au banc tant que l'or suffit aux ★ de la compo cible.
 - **Économie** : intérêts plafonnés à +3 en Tour, donc palier de 30 pièces (50 avec la voie Fortune complète). On ne dépense que le
-  surplus, sauf en **tout jouer** : combat de l'étage sous 45 % de victoires, ou PV sous 40.
+  surplus, sauf en **tout jouer** : combat de l'étage sous 45 % de victoires, PV sous 40, ou étage rejoué après une défaite à partir
+  de l'étage 50 (une nouvelle défaite y coûte 12 PV et plus, et supprime les intérêts de la manche).
+- **Or au-dessus du palier** : il ne rapporte rien, il est dépensé dans cet ordre.
+  1. Les achats ★ : trio, 3ᵉ copie, shiny qui devient la meilleure copie, place libre. Eux seuls peuvent faire passer sous le
+     palier : une place vide ou un Pokémon du trio manquant coûte plus qu'un intérêt.
+  2. L'XP jusqu'au niveau visé : 5 dès l'étage 6, 6 dès 12, 7 dès 20, 8 dès 30, 9 dès 45, 10 dès 65. La Tour ne donne que 1 XP
+     par étage : le niveau s'achète. Tant qu'il n'est pas atteint, le surplus y va par tranches de 4 pièces : pas d'actualisation,
+     et les ◆ n'ont que le reste.
+  3. Les ◆ de la compo cible.
+  4. L'actualisation, s'il y a quelque chose à chercher dont le coût sort à 15 % ou plus à ton niveau : un Pokémon du trio sous ★★,
+     ou un Pokémon de la compo qui a 2 copies ★ ou 2 copies ★★. Au niveau maximal, le trio se cherche jusqu'à ★★★ et le seuil de
+     15 % ne vaut plus : l'or n'a pas d'autre emploi. Une lignée trouvable seulement plus haut est annoncée (« Kabuto (coût 4 :
+     12 %) au niveau 7 : à chercher au niveau 8 ») ; un coût 1 ou 2, qui sort de moins en moins, ne donne aucun conseil.
+  5. Les ◆ de la compo suivante.
+  6. L'XP avec ce qui reste, jusqu'au niveau maximal (9, puis 10 à partir de l'étage 60).
 - **Profil de chaque lignée** : lu sur les objets qu'elle porte en Tour. Elle est tank si la moitié au moins de leurs composants
   sont défensifs (PV Plus, Fer, Zinc), spéciale si le Calcium l'emporte sur la Protéine, physique sinon. Exemples : Ronflex et Machop
   tanks, Minidraco et Caninos attaquants physiques, Abra et Goupix attaquants spéciaux.
@@ -93,9 +112,11 @@ types). Conformément à ses conditions, chaque source est gardée **une heure**
 (`ETag`) ; en cas d'erreur, la dernière copie sert et le pied du panneau en donne la date.
 
 L'API publique s'arrête aux règles 40 alors que la Tour tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
-le script (seuils d'XP, plafond d'intérêts, voies et noms des bénédictions, coût, types et portée de 24 lignées, effet d'un shiny :
-+10 % de PV, dégâts et défenses, transmis par la fusion). La liste des shinies à saisir par tranche d'étages vient d'un guide et n'est
-pas vérifiée.
+le script (seuils d'XP, 1 XP gratuite par étage, chances de chaque coût en boutique par niveau, plafond d'intérêts, intérêts perdus
+sur une deuxième défaite au même étage, voies et noms des bénédictions, coût, types et portée de 24 lignées, effet d'un shiny :
++10 % de PV, dégâts et défenses, transmis par la fusion). La puissance d'une unité et le seuil de 15 % sont ceux des robots du jeu.
+La courbe de niveaux visés est un choix de jeu : aucune statistique publique ne donne le niveau des joueurs en Tour. La liste des
+shinies à saisir par tranche d'étages vient d'un guide et n'est pas vérifiée.
 
 Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pokémon Company.
 
