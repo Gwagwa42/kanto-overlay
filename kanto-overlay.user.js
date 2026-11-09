@@ -347,7 +347,8 @@ const KT = (() => {
   const bestStar = (game, base) => Math.max(0, ...unitsOf(game, base).map(u => u.star));
   // Lignée shiny : sa copie de meilleure étoile l'est (celle que décrivent la progression et le code KT1).
   const shinyLine = (game, base) => unitsOf(game, base).some(u => u.shiny && u.star === bestStar(game, base));
-  const ones = (game, base) => unitsOf(game, base).filter(u => u.star === 1).length;
+  const copies = (game, base, star) => unitsOf(game, base).filter(u => u.star === star).length;
+  const ones = (game, base) => copies(game, base, 1);
   const pathCount = (boons, path) => boons.filter(b => boonPath(b) === path).length;
 
   function goldFloor(boons) {
@@ -369,7 +370,7 @@ const KT = (() => {
     return torre.lines.find(l => l.line === id)?.lo ?? torre.lines.find(l => l.line === baseLine(id))?.lo ?? 0;
   }
 
-  // Une lignée à trouver dont le coût ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
+  // Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
   function coreScore(core, stops, coresByStop, game, data) {
     const total = stops.reduce((s, st) => s + st.weight, 0);
     const key = coreKey(core);
@@ -377,7 +378,7 @@ const KT = (() => {
     const owned = core.reduce((s, id) => {
       const base = baseLine(id);
       const star = bestStar(game, base);
-      if (star === 0) return s - (findable(data, game.level, base) ? 0 : OWNED_BONUS);
+      if (star === 0) return s - (lineInfo(data, base) && !findable(data, game.level, base) ? OWNED_BONUS : 0);
       return s + OWNED_BONUS + (star >= 2 ? OWNED_BONUS : 0) + (shinyLine(game, base) ? SHINY_BONUS : 0);
     }, 0);
     return stat + owned;
@@ -470,7 +471,10 @@ const KT = (() => {
     };
     const fillers = fill([mine, cards]);
     const mixed = fill([[...mine, ...cards]]);
-    return { ...best, fillers, upgrades: mixed.filter(b => !fillers.includes(b)), replaced: fillers.filter(b => !mixed.includes(b)) };
+    const upgrades = mixed.filter(b => cards.includes(b) && !fillers.includes(b));
+    // Autant de compléments possédés que de cartes, les moins bien notés.
+    const replaced = upgrades.length ? fillers.filter(b => owned(b) && !mixed.includes(b)).slice(-upgrades.length) : [];
+    return { ...best, fillers, upgrades: replaced.length ? upgrades : [], replaced };
   }
 
   // Trio des 9 combats suivants (10 à 18), à préparer avec le surplus ; null s'il est déjà la compo cible.
@@ -496,9 +500,10 @@ const KT = (() => {
 
   const proofText = (p, names) => (p ? `${p.c.core.map(names.line).join(' · ')} : ${pct(p.c.win)} contre ${bossName(p.st.boss)} ${p.st.floor} (${p.c.n} combats, au moins ${pct(p.c.lo)})` : '');
 
-  // Marques de la boutique et or restant. Priorités : ★ (de gauche à droite), puis l'or réservé par reserve(or restant)
-  // (l'XP conseillée), puis les ◆ de la compo cible, puis l'actualisation si rolls(or restant) la conseille, puis les ◆ de la
-  // compo suivante (hors tout jouer). short : un ★ a été rétrogradé faute d'or (déclenche « Vends »).
+  // Marques de la boutique et or restant. Priorités : ★ du trio, des 3ᵉ copies et des shinies (de gauche à droite), puis ★ des
+  // places libres, puis l'or réservé par reserve(or restant) (l'XP conseillée), puis les ◆ de la compo cible, puis
+  // l'actualisation si rolls(or restant) la conseille, puis les ◆ de la compo suivante (hors tout jouer). Les ★ ne s'arrêtent
+  // pas au palier. short : un ★ a été rétrogradé faute d'or (déclenche « Vends »).
   function shopMarks(game, target, next, data, eco, names, reserve, rolls) {
     const core = target ? target.core.map(baseLine) : [];
     const wanted = targetBases(target);
@@ -507,6 +512,7 @@ const KT = (() => {
     let left = game.gold;
     let short = false;
     const upgrades = target?.upgrades ?? [];
+    const stronger = target ? `plus fort que ${target.replaced.map(names.line).join(', ')}` : '';
     const buy = (cost, name, why, detail = '') => {
       // Coût inconnu (données de jeu indisponibles) : le conseil ne peut pas vérifier l'or.
       if (cost !== undefined && cost > left) {
@@ -521,6 +527,8 @@ const KT = (() => {
       inTarget: wanted.includes(base) || upgrades.includes(base), inCore: core.includes(base), inNext: later.includes(base), shiny: game.shopShiny[i],
       // Lignée de la compo pas encore possédée : elle remplit une place libre du plateau.
       fills: wanted.includes(base) && bestStar(game, base) === 0, upgrade: upgrades.includes(base),
+      // Complément qu'une carte mieux notée remplacerait : pas de copie de plus.
+      replaced: (target?.replaced ?? []).includes(base),
     });
     const marks = cards.map(c => {
       if (!c) return null;
@@ -535,11 +543,15 @@ const KT = (() => {
     // Places libres, après les ★ ci-dessus et seulement si l'or leur a suffi : une copie par lignée.
     const filled = new Set();
     cards.forEach((c, i) => {
-      if (!c || marks[i] !== undefined || short || !c.fills || filled.has(c.base) || c.cost === undefined || c.cost > left) return;
+      if (!c || marks[i] !== undefined || short || !c.fills || filled.has(c.base) || c.cost > left) return;
       filled.add(c.base);
       marks[i] = buy(c.cost, c.name, 'place libre sur le plateau');
     });
-    left -= reserve(left);
+    const reserved = reserve(left);
+    left -= reserved;
+    // Motif d'un ✕ faute d'or : l'XP réservée quand la carte tenait sans elle, sinon le palier.
+    const hold = cost => (cost !== undefined && left + reserved - cost >= eco.floor && left - cost < eco.floor
+      ? 'l’or va d’abord à l’XP' : `garde ${eco.floor} pièces pour les intérêts`);
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
       if (!target) {
@@ -547,11 +559,11 @@ const KT = (() => {
         return;
       }
       const fits = c.cost !== undefined && (eco.allIn ? c.cost <= left : left - c.cost >= eco.floor);
-      if ((c.inTarget || (c.triple && !c.inNext)) && fits) {
+      if (((c.inTarget && !c.replaced) || (c.triple && !c.inNext)) && fits) {
         left -= c.cost;
         let why = 'renforce le plateau de la compo';
         if (c.triple) why = '3ᵉ copie hors compo';
-        else if (c.upgrade) why = `plus fort que ${target.replaced.map(names.line).join(', ')}`;
+        else if (c.upgrade) why = stronger;
         marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, why);
       }
     });
@@ -567,47 +579,56 @@ const KT = (() => {
           marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, `prépare la compo des ${range}`, proofText(next.proof, names));
           return;
         }
-        let why = `compo des ${range} ; garde ${eco.floor} pièces pour les intérêts`;
+        let why = `compo des ${range} ; ${hold(c.cost)}`;
         if (eco.allIn) why = 'tout jouer : l’or va à la compo cible';
         else if (fits) why = `compo des ${range} ; l’or va d’abord à l’actualisation pour la compo cible`;
         marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, why);
         return;
       }
-      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `complément de la compo ; garde ${eco.floor} pièces pour les intérêts` : 'hors compo cible');
+      let why = 'hors compo cible';
+      if (c.replaced) why = 'complément à remplacer par une carte mieux notée';
+      else if (c.inTarget) why = `${c.upgrade ? stronger : 'complément de la compo'} ; ${hold(c.cost)}`;
+      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, why);
     });
     return { marks, left, short };
   }
 
-  // Niveau à atteindre avant toute actualisation, dans la limite du niveau ouvert à cet étage.
-  const goalLevel = game => Math.min(levelGoal(game.floor), maxLevel(game.floor));
-
-  // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal), et toute lignée à une
-  // copie d'une fusion (2 copies ★ ou 2 copies ★★).
-  function seekLines(game, target) {
+  // Lignées de la compo, de coût connu, qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal), et toute
+  // lignée qui a 2 copies ★ (la 3ᵉ donne la ★★) ou 2 copies ★★ (la 3ᵉ ★★ donne la ★★★).
+  function seekLines(game, target, data) {
     const core = target.core.map(baseLine);
     const coreStar = game.level >= maxLevel(game.floor) ? 3 : 2;
-    const twos = base => unitsOf(game, base).filter(u => u.star === 2).length;
-    return targetBases(target).filter(base => bestStar(game, base) < 3
-      && ((core.includes(base) && bestStar(game, base) < coreStar) || ones(game, base) === 2 || twos(base) === 2));
+    return targetBases(target).filter(base => lineInfo(data, base) && bestStar(game, base) < 3
+      && ((core.includes(base) && bestStar(game, base) < coreStar) || ones(game, base) === 2 || copies(game, base, 2) === 2));
   }
 
   // left : or restant après les achats conseillés. Hors tout jouer, le niveau visé passe avant l'actualisation, et seules
-  // les lignées trouvables à ce niveau la justifient.
+  // les lignées trouvables à ce niveau la justifient ; au niveau maximal, où l'or n'a plus d'autre emploi, toute lignée qui
+  // sort en boutique. Une lignée qui ne devient trouvable qu'à un niveau plus haut est annoncée ; un coût 1 ou 2, qui sort
+  // de moins en moins, ne donne aucun conseil.
   function rerollMark(game, target, data, eco, names, left) {
-    const seek = target ? seekLines(game, target) : [];
+    const seek = target ? seekLines(game, target, data) : [];
     if (!seek.length) return null;
     if (eco.allIn) return left >= REROLL_COST ? mark('do', 'Actualise', 'Actualise', 'tout jouer : chercher les copies de la compo') : null;
     const keep = why => mark('no', 'Garde l’or', 'N’actualise pas', why);
-    if (game.level < goalLevel(game)) return keep(`d’abord le niveau ${goalLevel(game)}`);
+    const goal = levelGoal(game.floor);
+    if (game.level < goal) return keep(`d’abord le niveau ${goal}`);
     const odds = base => `${names.line(base)} (coût ${lineInfo(data, base).c} : ${shopOdds(data, game.level, base)} %)`;
-    const found = seek.filter(base => findable(data, game.level, base));
-    if (!found.length) return keep(`${odds(seek[0])} au niveau ${game.level} : monte d’abord`);
+    const top = game.level >= maxLevel(game.floor);
+    const found = seek.filter(base => (top ? shopOdds(data, game.level, base) > 0 : findable(data, game.level, base)));
+    if (!found.length) {
+      const levels = Array.from({ length: maxLevel(game.floor) - game.level }, (_, i) => game.level + 1 + i);
+      const reach = base => levels.find(level => findable(data, level, base));
+      const later = seek.find(reach);
+      return later ? keep(`${odds(later)} au niveau ${game.level} : à chercher au niveau ${reach(later)}`) : null;
+    }
     if (left - REROLL_COST < eco.floor) return keep(`tu passerais sous ${eco.floor} pièces`);
     return mark('do', 'Actualise', 'Actualise', `cherche ${found.map(odds).join(', ')} au niveau ${game.level}`);
   }
 
   // Renvoie la marque et l'or qu'elle engage. left : or restant après les achats conseillés. spare : aucune actualisation
-  // n'est conseillée, l'or au-dessus du palier va au niveau suivant.
+  // n'est conseillée, l'or au-dessus du palier va au niveau suivant. Sous le niveau visé, tout le surplus utile à ce niveau
+  // est engagé : les ◆ de la boutique passent après.
   function xpMark(game, eco, left, spare) {
     if (game.level >= maxLevel(game.floor)) return { mark: null, cost: 0 };
     const missing = XP_TO_NEXT[game.level] - game.xp;
@@ -622,7 +643,12 @@ const KT = (() => {
     const buy = why => ({ mark: mark('do', 'Monte', 'Achète de l’XP', why), cost: XP_COST });
     if (missing <= XP_COST) return buy(`niveau ${game.level + 1} pour ${XP_COST} pièces`);
     const next = `${missing} XP avant le niveau ${game.level + 1}`;
-    if (game.level < goalLevel(game)) return buy(`niveau ${goalLevel(game)} visé à cet étage ; ${next}`);
+    const goal = levelGoal(game.floor);
+    if (game.level < goal) {
+      const toGoal = XP_TO_NEXT.slice(game.level, goal).reduce((sum, xp) => sum + xp, 0) - game.xp;
+      const cost = Math.min(Math.ceil(toGoal / XP_COST), Math.floor((left - eco.floor) / XP_COST)) * XP_COST;
+      return { ...buy(`niveau ${goal} visé à cet étage ; ${next}`), cost };
+    }
     if (spare) return buy(`rien à chercher en boutique à ce niveau ; ${next}`);
     return wait('l’or va d’abord à l’actualisation');
   }
