@@ -6,8 +6,10 @@ Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](ht
 - une **compo cible** choisie pour les 9 prochains combats (environ 20 étages) en partant de ton équipe, et des **conseils lus sur
   ta partie** : quoi acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, quelle
   récompense et quelle bénédiction prendre, quand ancrer une forme ;
-- un bouton **Copier la formation** : code `KT1;…` à coller dans le Planificateur du jeu (Planificateur → Coller un code), qui
-  affiche la compo cible sur le plateau ; le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos — avant, colonne 4 ») ;
+- la compo cible écrite dans le **Planificateur** du jeu à chaque changement, sous le nom « Plan kanto-overlay », et activée :
+  ses ombres s'affichent sur le plateau. Le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos — avant, colonne 4 ») ;
+- un bouton **Copier la formation** : le même code `KT1;…`, pour le partager ou le coller à la main (Planificateur → Coller un code)
+  si l'écriture automatique échoue ;
 - les règles d'or (intérêts, actualisation, shinies) pour la tranche d'étages en cours.
 
 Les conseils apparaissent aussi en **pastilles** sur le jeu : ★ fais-le, ◆ si l'or le permet, ✕ évite. Survoler une pastille (ou la
@@ -43,6 +45,13 @@ barre le remet en haut à droite.
   le coin choisi (bouton « Porteur »), mêlée devant, distance au fond. Un Pokémon déjà dans sa zone garde sa case ; les autres
   prennent la première case libre (avant depuis le centre, fond depuis le coin). Les déplacements sont listés dans l'ordre où les
   faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors formation si le plateau est plein.
+- **Planificateur** : quand la formation change, le script ouvre le Planificateur depuis la barre du jeu, supprime l'ancien
+  « Plan kanto-overlay », colle le code et referme ; on voit l'écran s'ouvrir un instant et le jeu joue son bruit de clic. La CSP
+  du site empêche d'atteindre les plans du jeu autrement que par son interface. Au-delà de 10 plans par mode, le jeu efface le
+  plus ancien : le script supprime donc l'ancien plan avant de coller, et ne colle rien si tu as déjà 10 plans Tour (le panneau te
+  demande d'en supprimer un). Rien n'est fait pendant un glisser, quand le focus est dans le panneau, sous une modale du jeu ou
+  quand le Planificateur est déjà ouvert (nouvel essai 2 s plus tard) ; en affichage portrait, où le bouton de la barre ouvre un
+  menu, le panneau invite à copier le code. Si l'interface du jeu a changé, le panneau le signale et le bouton Copier reste.
 - **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny »
   dans la compo cible, ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, et s'écrit `ligne:2s:…` dans
   le code KT1. Une unité shiny n'est pas proposée à la vente jusqu'à l'étage 120.
@@ -70,7 +79,7 @@ Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pok
 ## Développement
 
 ```sh
-node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1
+node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur
 node scripts/preview.mjs   # pages d'aperçu par état dans build/, puis la commande de rendu imprimée
 ```
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      1.5.0
+// @version      1.6.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -35,6 +35,8 @@ const KT = (() => {
   const CACHE_MAX_AGE = 3600 * 1000;
   const SAVE_KEY = 'kanto-tactics-save-tower';
   const UI_KEY = 'kt-overlay:ui';
+  // Nom du plan dans le Planificateur du jeu : il distingue le plan du panneau des plans du joueur.
+  const PLAN_NAME = 'Plan kanto-overlay';
   // Le jeu numérote les manches de la Tour à partir de 1000 : étage = round − 1000 + 1 (assets/route-*.js).
   const ROUND_BASE = 1000;
   const MIN_FIGHTS = 20;
@@ -870,7 +872,7 @@ const KT = (() => {
   }
   function kt1Code(units, rules) {
     const parts = units.map(u => `${u.line}:${u.star}${u.shiny ? 's' : ''}:${u.cell}${u.items.length ? `:${u.items.join('.')}` : ''}`);
-    return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent('Plan kanto-overlay')}`, ...parts].join(';');
+    return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent(PLAN_NAME)}`, ...parts].join(';');
   }
 
   // previous : { key, run, next } des derniers trios choisis (compo cible, compo suivante) ; l'inertie ne vaut que dans la même
@@ -982,7 +984,7 @@ const KT = (() => {
   const shortDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
   return {
-    SOURCES, SAVE_KEY, UI_KEY, GOLD_RULES, BOONS, lineInfo, loadJson,
+    SOURCES, SAVE_KEY, UI_KEY, PLAN_NAME, GOLD_RULES, BOONS, lineInfo, loadJson,
     parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
     baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, topHolders, floorRange,
@@ -1054,12 +1056,12 @@ const CSS = `
 .kt-copy { flex: 1; height: 32px; border: 0; border-radius: 8px; background: var(--kt-good-bg); color: var(--kt-good-fg); font: 600 14px var(--kt-font); cursor: pointer; }
 .kt-side { height: 32px; padding: 0 var(--kt-space-2); font-size: 12px; }
 .kt-copy:focus-visible { outline: 2px solid var(--kt-focus); outline-offset: 2px; }
-.kt-copied { padding: 0 var(--kt-space-3) var(--kt-space-2); font-size: 12px; color: var(--kt-muted); overflow-wrap: anywhere; }
-.kt-copied:empty, .kt-alert:empty { display: none; }
+.kt-status { padding: 0 var(--kt-space-3) var(--kt-space-2); font-size: 12px; color: var(--kt-muted); overflow-wrap: anywhere; }
+.kt-status:empty, .kt-alert:empty { display: none; }
 .kt-alert { padding: var(--kt-space-3) var(--kt-space-3) 0; }
 .kt.is-collapsed .kt-alert { display: none; }
-.kt-copied code { font-size: 12px; user-select: all; }
-.kt.is-collapsed .kt-copied { display: none; }
+.kt-status code { font-size: 12px; user-select: all; }
+.kt.is-collapsed .kt-status { display: none; }
 
 /* Pastilles */
 .kp-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
@@ -1205,10 +1207,120 @@ function footHtml(state) {
   return `Du ${esc(KT.shortDate(state.torre.from))} au ${esc(KT.shortDate(state.torre.to))}${cached}${uncached} · Data: <a href="https://einoow.com" target="_blank" rel="noopener">Kanto Tactics · einoow.com</a>`;
 }
 
-function copiedHtml(state) {
-  if (state.copied === null) return '';
-  return state.copied.ok ? 'Code copié : colle-le dans Planificateur → Coller un code.'
-    : `Copie refusée par le navigateur : sélectionne le code et copie-le.<br><code>${esc(state.advice?.code ?? '')}</code>`;
+function statusHtml(state) {
+  if (state.copied !== null) {
+    return state.copied.ok ? 'Code copié : colle-le dans Planificateur → Coller un code.'
+      : `Copie refusée par le navigateur : sélectionne le code et copie-le.<br><code>${esc(state.advice?.code ?? '')}</code>`;
+  }
+  const p = state.planner;
+  const code = state.advice?.code;
+  if (!code) return '';
+  if (p.code !== code) {
+    return isPortrait()
+      ? 'Planificateur non mis à jour en affichage portrait : copie le code et colle-le dans Planificateur → Coller un code.' : '';
+  }
+  return p.error ? `Planificateur non mis à jour (${esc(p.error)}) : copie le code et colle-le dans Planificateur → Coller un code.`
+    : `Planificateur à jour : « ${esc(KT.PLAN_NAME)} » est le plan actif.`;
+}
+
+// Planificateur du jeu. La CSP du site (script-src 'self') oblige Violentmonkey à injecter le script en contexte content,
+// d'où le store des plans est hors d'atteinte : le plan passe par l'interface, comme à la main (Coller un code). Les anciens
+// plans du panneau (même nom) sont supprimés avant le collage, et rien n'est collé quand 10 plans restent : chaque collage
+// crée un plan, et au-delà de 10 plans par mode le jeu évince le plus ancien non actif, qui serait un plan du joueur.
+// Sélecteurs relevés dans le code du jeu (règles 41).
+const PLANNER = {
+  chip: '.pln-inbar .pln-chip',
+  veil: '.pln-veil',
+  input: '.pln-paste input',
+  paste: '.pln-paste button',
+  error: '.pln-err',
+  item: '.pln-list li',
+  name: '.pln-name',
+  del: '.pln-btn.del',
+};
+const PLANNER_MAX_PLANS = 10;
+const PLANNER_WAIT_MS = 3000;
+// Le premier affichage charge le module du Planificateur à la demande.
+const PLANNER_OPEN_MS = 10000;
+// Interface du jeu différente de celle relevée : affichée dans le panneau, le bouton Copier reste le recours.
+class PlannerError extends Error {}
+// En portrait, le bouton du Planificateur ouvre un menu au lieu du Planificateur.
+const isPortrait = () => document.documentElement.dataset.layout === 'portrait';
+// Requête dans le Planificateur ouvert, refaite à chaque fois : React a pu remplacer les nœuds entre deux étapes.
+const inPlanner = sel => document.querySelector(`${PLANNER.veil} ${sel}`);
+
+// Attend que test() rende une valeur vraie, vérifiée à chaque image ; rejette avec message après ms.
+function waitFor(test, message, ms = PLANNER_WAIT_MS) {
+  const start = performance.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      const v = test();
+      if (v) resolve(v);
+      else if (performance.now() - start > ms) reject(new PlannerError(message));
+      else requestAnimationFrame(tick);
+    };
+    tick();
+  });
+}
+
+// Colle code dans le Planificateur de la partie Tour affichée. Rend false sans rien toucher quand ce n'est pas le moment :
+// pas de partie Tour à l'écran, modale du jeu ou Planificateur déjà ouverts, écran portrait. Rejette avec PlannerError si
+// l'interface du jeu ne répond pas comme prévu ou si 10 plans du joueur remplissent déjà le mode. Le Planificateur est
+// refermé et le focus rendu.
+async function pastePlan(code) {
+  const chip = document.querySelector(PLANNER.chip);
+  if (!document.querySelector(TOWER_HUD) || !chip || document.querySelector(PLANNER.veil) || document.querySelector('.modal')
+    || isPortrait()) return false;
+  // Le Planificateur prend le focus à l'ouverture et ne le rend pas.
+  const back = document.activeElement;
+  chip.click();
+  try {
+    await waitFor(() => document.querySelector(PLANNER.veil), 'le Planificateur ne s’ouvre pas', PLANNER_OPEN_MS);
+    const items = () => [...document.querySelectorAll(`${PLANNER.veil} ${PLANNER.item}`)];
+    const stale = () => items().find(li => li.querySelector(PLANNER.name)?.textContent === KT.PLAN_NAME);
+    for (let li = stale(); li; li = stale()) {
+      const del = li.querySelector(PLANNER.del);
+      if (!del) throw new PlannerError('bouton Supprimer introuvable');
+      del.click();
+      await waitFor(() => !li.isConnected, 'ancien plan non supprimé');
+    }
+    if (items().length >= PLANNER_MAX_PLANS) throw new PlannerError(`${PLANNER_MAX_PLANS} plans Tour déjà enregistrés, supprimes-en un`);
+    const field = await waitFor(() => inPlanner(PLANNER.input), 'champ Coller un code introuvable');
+    // Setter natif : le même dans les deux contextes d'injection, sans passer par celui que React pose sur le champ.
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, code);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    const button = await waitFor(() => !inPlanner(PLANNER.paste)?.disabled && inPlanner(PLANNER.paste), 'bouton Coller un code introuvable');
+    button.click();
+    // Le jeu ne vide le champ que si le code est accepté.
+    const pasted = await waitFor(() => (inPlanner(PLANNER.error) ? 'refusé' : inPlanner(PLANNER.input)?.value === '' && 'collé'), 'collage sans réponse');
+    if (pasted === 'refusé') throw new PlannerError('code refusé par le jeu');
+  } finally {
+    // Un clic sur le voile lui-même ferme le Planificateur ; cherché à nouveau, React a pu remplacer le nœud.
+    document.querySelector(PLANNER.veil)?.click();
+    back?.focus?.({ preventScroll: true });
+  }
+  return true;
+}
+
+// Tente code une seule fois dans le Planificateur, même en échec, pour ne pas le rouvrir toutes les 2 s : l'erreur reste dans
+// planner jusqu'au prochain changement de compo. Rend true quand planner a changé. Une erreur autre que PlannerError (bug du
+// script) est notée puis relancée.
+async function syncPlanner(planner, code, paste = pastePlan) {
+  if (!code || code === planner.code || planner.running) return false;
+  planner.running = true;
+  let pasted;
+  try {
+    pasted = await paste(code);
+    planner.error = null;
+  } catch (e) {
+    planner.error = e.message;
+    if (!(e instanceof PlannerError)) throw e;
+    console.warn('kanto-overlay : Planificateur', e);
+  } finally {
+    planner.running = false;
+    if (pasted !== false) planner.code = code;
+  }
+  return pasted !== false;
 }
 
 // Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien).
@@ -1299,7 +1411,7 @@ async function loadSources(state) {
 
 function mount() {
   const ui = { x: null, y: 16, collapsed: false, guide: true, side: 'left', target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
-  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
@@ -1315,7 +1427,7 @@ function mount() {
   </div>
   <div class="kt-alert" role="alert"></div>
   <div class="kt-body"></div>
-  <p class="kt-copied" role="status"></p>
+  <p class="kt-status" role="status"></p>
   <div class="kt-foot"></div>
 </div>
 <div class="kp-layer"></div>`;
@@ -1327,12 +1439,12 @@ function mount() {
   const foot = root.querySelector('.kt-foot');
   const toggle = root.querySelector('[data-act="toggle"]');
   const src = root.querySelector('.kt-src');
-  const status = root.querySelector('.kt-copied');
+  const status = root.querySelector('.kt-status');
   const alertBox = root.querySelector('.kt-alert');
   const pins = pinLayer(layer);
 
   let lastHtml = null;
-  let lastCopied = '';
+  let lastStatus = '';
   let lastAlert = '';
   let lastFoot = '';
 
@@ -1399,13 +1511,26 @@ function mount() {
         lastFoot = footer;
       }
     }
-    const copied = copiedHtml(state);
-    if (copied !== lastCopied) {
-      status.innerHTML = copied;
-      lastCopied = copied;
+    const statusText = statusHtml(state);
+    if (statusText !== lastStatus) {
+      status.innerHTML = statusText;
+      lastStatus = statusText;
     }
     place();
     pins.paint(state.advice);
+  }
+
+  // Le voile du Planificateur couperait un geste en cours sur le plateau ou le focus posé dans le panneau. Sans pointerup
+  // (relâché hors de la fenêtre), la perte de focus de la fenêtre libère le drapeau.
+  let pointerHeld = false;
+  window.addEventListener('pointerdown', () => { pointerHeld = true; }, true);
+  for (const type of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(type, () => { pointerHeld = false; }, true);
+  function plannerTick() {
+    if (pointerHeld || root.activeElement !== null) return;
+    syncPlanner(state.planner, state.advice?.code).then(changed => changed && render(), err => {
+      render();
+      throw err;
+    });
   }
 
   function setManual(floor) {
@@ -1455,7 +1580,7 @@ function mount() {
       navigator.clipboard.writeText(state.advice.code).then(() => {
         // Vider puis réécrire : un lecteur d'écran n'annonce pas un statut dont le texte ne change pas.
         status.textContent = '';
-        lastCopied = '';
+        lastStatus = '';
         state.copied = { ok: true };
         requestAnimationFrame(render);
       }, () => {
@@ -1530,7 +1655,10 @@ function mount() {
 
   render();
   pollSave();
-  setInterval(pollSave, 2000);
+  setInterval(() => {
+    pollSave();
+    plannerTick();
+  }, 2000);
 
   loadSources(state).then(() => {
     compute();
@@ -1542,5 +1670,6 @@ function mount() {
   });
 }
 
-if (typeof module !== 'undefined') module.exports = KT;
+// Les tests reçoivent aussi le pilote du Planificateur, joué sur un faux DOM.
+if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, PlannerError };
 else mount();
