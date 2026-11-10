@@ -1,21 +1,25 @@
 'use strict';
 // Campagne : aventure Kanto aux trois difficultés, autres aventures. Fixture : extrait de modes.camp (campana.json du
 // 31 octobre au 9 novembre 2026, copie du 10) : tous les stops, lines et stars ; par stop, les 20 trios d'au moins 20 combats
-// les plus joués ; les holders d'au moins 50 combats. Partie de test : le scénario S57 passé en campagne au combat 15.
+// les plus joués ; les holders d'au moins 50 combats. Parties de test : une vraie sauvegarde Kanto (save-kanto.json), et la même
+// avec l'équipe du scénario S57 au combat 15.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const KT = require('../kanto-overlay.user.js');
 const { modes } = require('./fixtures/campana.json');
 const data = require('./fixtures/data.json');
-const lang = require('./fixtures/lang.json');
+const { adviseOn } = require('./helpers.js');
 const S57 = require('./fixtures/s57.js');
 
 const camp = modes.camp;
-// Combat 15 (Sbire Rocket) en Légende, Morgane choisie au 4ᵉ badge et Koga au 5ᵉ.
-const CAMP = { ...S57, mode: 'campaign', round: 14, league: 3, gymOrder: ['sabrina', 'koga'], level: 6, gold: 47, tower: undefined };
+// Vraie sauvegarde Kanto : Légende, combat 5, relevée le 10 novembre 2026.
+const KANTO = require('./fixtures/save-kanto.json');
+// Combat 15 (Sbire Rocket) : la sauvegarde Kanto avec l'équipe, la boutique et le sac de S57, Morgane choisie au 4ᵉ badge et
+// Koga au 5ᵉ.
+const TEAM = ['units', 'board', 'bench', 'shop', 'shopShiny', 'items', 'xp', 'hp', 'anchor'];
+const CAMP = { ...KANTO, ...Object.fromEntries(TEAM.map(k => [k, S57[k]])), round: 14, gymOrder: ['sabrina', 'koga'], level: 6, gold: 47 };
 const mode = (save, adventure = 'kanto') => KT.modeContext(KT.CAMPAIGN, save, adventure);
-const advise = (save, adventure = 'kanto', extra = {}) =>
-  KT.advise({ stats: camp, data, lang, save, previous: null, side: 'left', mode: mode(save, adventure), ...extra });
+const advise = (save, adventure = 'kanto', extra = {}) => adviseOn(save, { stats: camp, mode: mode(save, adventure), ...extra });
 
 // localStorage simulé : clé → sauvegarde.
 const storage = saves => {
@@ -51,6 +55,17 @@ test('sauvegarde lue : la plus récente parmi Tour, Kanto, autres aventures et N
   // Difficulté hors de 1 à 3, ou Tour : Normal.
   assert.equal(mode({ league: 7 }).league, 1);
   assert.equal(KT.modeContext(KT.TOWER, { league: 3 }).penalty, 0);
+});
+
+test('vraie sauvegarde Kanto (Légende, combat 5) : lue, économie, compo et code KT1', () => {
+  const raw = JSON.stringify(KANTO);
+  const found = KT.latestSave(storage({ 'kanto-tactics-save': raw }));
+  assert.deepEqual([found.mode.id, found.mode.adventure, found.mode.league, KT.floorFromSave(raw, found.mode)], ['campaign', 'kanto', 3, 5]);
+  const a = advise(KT.parseSave(raw));
+  assert.deepEqual([a.eco.floor, a.eco.spend, a.eco.allIn], [40, 0, false]);
+  assert.deepEqual([a.target.core, a.target.fillers], [['bulbasaur', 'nidoran', 'oddish'], ['ponyta']]);
+  assert.match(a.code, /^KT1;r41;xm=adv;xn=Plan%20kanto-overlay;nidoran:1:2;bulbasaur:2:3:/);
+  assert.deepEqual(a.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Mystherbe — 3ᵉ rangée, colonne 4 → 3ᵉ rangée, colonne 1']);
 });
 
 test('combat de campagne = manche + 1 ; statistiques de campagne acceptées', () => {

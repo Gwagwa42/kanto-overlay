@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour et campagne
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.5.1
+// @version      2.5.2
 // @description  Tour de combat et campagne (aventures, trois difficultés) de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -144,8 +144,9 @@ const KT = (() => {
   // Campagne : modes.camp de l'API mélange les aventures, sous des arrêts « N:Libellé » (N = manche + 1, libellé = fin du nom
   // espagnol de la manche jouée, après le dernier « · »). Arrêts possibles de chaque aventure, relevés dans les manches du jeu
   // (route-*.js, ul) ; les événements n'ont pas de statistiques. Safari, Lavanda et Rocket chargent leurs manches par un module
-  // chiffré : absentes, elles reçoivent une compo sans trio (targetComp). bosses : manches de badge, de Ligue et Mewtwo ; sans
-  // liste, chaque combat compte comme boss. gyms : manches des champions dont l'ordre suit gymOrder de la sauvegarde.
+  // chiffré : absentes, elles reçoivent une compo sans trio (targetComp). Méthode de relevé : README, Développement. bosses :
+  // manches de badge, de Ligue et Mewtwo ; sans liste, chaque combat compte comme boss. gyms : manches des champions dont
+  // l'ordre suit gymOrder de la sauvegarde.
   const ADVENTURES = {
     kanto: {
       name: 'Kanto',
@@ -232,9 +233,10 @@ const KT = (() => {
   // (route-*.js, roster) : utilisées seulement quand data.json ne connaît pas la lignée. hit : stats d'attaque qui la servent
   // (attackKit). 'atk' : ses attaques de base comptent (tout rôle sauf mage, soutien et spécial) ; aucune de ces lignées n'a
   // de capacité physique sans cela, d'où basic lu sur 'atk'. 'spa' : une capacité suit l'Atq. Spé. Absent pour Chétiflor et
-  // Mimitoss, à deux formes.
+  // Mimitoss, à deux formes. range : celle de la définition propre de la lignée (_s), qui l'emporte sur sa ligne de base
+  // (Smogo, tank de mêlée ; Chétiflor, portée 2).
   const LINES_V41 = {
-    bellsprout: { c: 2, t: ['grass', 'poison'], s: [69, 70, 71], range: 1 },
+    bellsprout: { c: 2, t: ['grass', 'poison'], s: [69, 70, 71], range: 2 },
     clefairy: { c: 2, t: ['normal'], s: [35, 36], range: 3, hit: ['spa'] },
     doduo: { c: 2, t: ['normal', 'flying'], s: [84, 85], range: 1, hit: ['atk'] },
     drowzee: { c: 3, t: ['psychic'], s: [96, 97], range: 3, hit: ['spa'] },
@@ -244,7 +246,7 @@ const KT = (() => {
     horsea: { c: 2, t: ['water'], s: [116, 117], range: 3, hit: ['atk', 'spa'] },
     kabuto: { c: 4, t: ['rock', 'water'], s: [140, 141], range: 1, hit: ['atk', 'spa'] },
     kangaskhan: { c: 4, t: ['normal'], s: [115], range: 1, hit: ['atk'] },
-    koffing: { c: 2, t: ['poison'], s: [109, 110], range: 3, hit: ['atk', 'spa'] },
+    koffing: { c: 2, t: ['poison'], s: [109, 110], range: 1, hit: ['atk', 'spa'] },
     krabby: { c: 1, t: ['water'], s: [98, 99], range: 1, hit: ['atk'] },
     lickitung: { c: 3, t: ['normal'], s: [108], range: 1, hit: ['atk'] },
     mankey: { c: 1, t: ['fighting'], s: [56, 57], range: 1, hit: ['atk'] },
@@ -268,13 +270,17 @@ const KT = (() => {
   // hud : barre de progression du mode affiché, qui montre les pastilles ; xm : mode du code KT1 (teamCode-*.js : pvp, tower, adv).
   const TOWER = {
     id: 'tower', stats: 'torre', name: 'Tour', where: 'en Tour', label: 'Étage', unit: 'étage', units: 'étages', the: 'l’étage', at: 'à l’étage', here: 'à cet étage', xm: 'tower', hud: '.topbar .rtrack.tw',
-    interest: BASE_INTEREST, freeXp: 1, levelGoals: LEVEL_GOALS, levelCap: floor => (floor >= LEVEL_10_FROM ? 10 : 9),
+    interest: BASE_INTEREST, levelGoals: LEVEL_GOALS, levelCap: floor => (floor >= LEVEL_10_FROM ? 10 : 9),
     retryFrom: RETRY_ALL_IN_FROM, shinyKeepTo: SHINY_KEEP_TO, floorOf: round => Math.max(1, Math.floor(round) - ROUND_BASE + 1),
+    // Morceaux des règles d'or propres au mode (goldRules) ; hasLeague : le mode a des difficultés, qui durcissent le seuil de
+    // « tout jouer ».
+    fortuneNote: ` (+${FORTUNE_INTEREST} avec la voie Fortune complète)`, xpNote: '', retryNote: `sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}`, hasLeague: false,
   };
   const CAMPAIGN = {
     id: 'campaign', stats: 'camp', name: 'Campagne', where: 'en campagne', label: 'Combat', unit: 'combat', units: 'combats', the: 'le combat', at: 'au combat', here: 'à ce combat', xm: 'adv',
-    hud: '.topbar .rtrack:not(.tw):not(.pt-track)', interest: 4, freeXp: 2, levelGoals: CAMPAIGN_LEVEL_GOALS, levelCap: () => 9,
+    hud: '.topbar .rtrack:not(.tw):not(.pt-track)', interest: 4, levelGoals: CAMPAIGN_LEVEL_GOALS, levelCap: () => 9,
     retryFrom: 1, shinyKeepTo: Infinity, floorOf: round => Math.max(1, Math.floor(round) + 1),
+    fortuneNote: '', xpNote: ' La campagne donne 2 XP par combat.', retryNote: 'sur un combat rejoué', hasLeague: true,
   };
 
   // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null) et difficulté. Sans league (sauvegarde
@@ -375,16 +381,15 @@ const KT = (() => {
   }
 
   function goldRules(mode) {
-    const tower = mode.id === TOWER.id;
     const goals = mode.levelGoals.map(([from, level]) => `${level} dès ${mode.the} ${Math.max(1, from - mode.league + 1)}`).join(', ');
     const hard = HARD_WIN + mode.penalty;
+    const league = mode.penalty ? `${LEAGUES[mode.league]} : ${HARD_WIN} % plus ${mode.penalty} points, les taux publics mêlant les trois difficultés`
+      : LEAGUES[mode.league];
     return [
-      tower ? 'Intérêts : +1 pièce par tranche de 10, +3 au plus en Tour → garder 30 pièces (+2 avec la voie Fortune complète).'
-        : `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus en campagne → garder ${10 * mode.interest} pièces.`,
-      `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation pour les copies trouvables, puis XP.${tower ? '' : ` La campagne donne ${mode.freeXp} XP par combat.`}`,
+      `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus ${mode.where} → garder ${10 * mode.interest} pièces${mode.fortuneNote}.`,
+      `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation pour les copies trouvables, puis XP.${mode.xpNote}`,
       'Actualisation à 2 pièces : ne pas en enchaîner pour un shiny.',
-      tower ? `Tout jouer sur un combat sous ${hard} % de victoires, sous ${LOW_HP} PV, ou sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}.`
-        : `Tout jouer sur un combat sous ${hard} % de victoires (${mode.penalty ? `${LEAGUES[mode.league]} : ${HARD_WIN} % plus ${mode.penalty} points, les taux publics mêlant les trois difficultés` : LEAGUES[mode.league]}), sous ${LOW_HP} PV, ou sur un combat rejoué.`,
+      `Tout jouer sur un combat sous ${hard} % de victoires${mode.hasLeague ? ` (${league})` : ''}, sous ${LOW_HP} PV, ou ${mode.retryNote}.`,
     ];
   }
 
@@ -450,7 +455,16 @@ const KT = (() => {
   // champion dont gymOrder fixe le choix, celui-là seul. share : part des combats de la manche (ses variantes sont tirées au
   // sort ; à une manche de champion pas encore choisi, c'est la part de chaque champion dans les choix des joueurs) ;
   // fightWin : taux de victoire de la manche, moyenne de ses variantes pondérée par share ; fight : libellés de ses variantes.
+  // Calculés une fois par couple (arrêts de l'API, mode) : le rendu et chaque conseil les relisent plusieurs fois.
+  const modeStopsMemo = new WeakMap();
   function modeStops(stops, mode) {
+    if (!modeStopsMemo.has(stops)) modeStopsMemo.set(stops, new WeakMap());
+    const memo = modeStopsMemo.get(stops);
+    if (!memo.has(mode)) memo.set(mode, readModeStops(stops, mode));
+    return memo.get(mode);
+  }
+
+  function readModeStops(stops, mode) {
     const parsed = stops.map(s => ({ ...s, ...parseStop(s.stop) }));
     if (mode.id === TOWER.id) return parsed.map(s => ({ ...s, share: 1, fightWin: s.win, fight: [s.boss] }));
     const table = mode.adv?.stops;
@@ -496,6 +510,7 @@ const KT = (() => {
     return ahead.filter(s => floors.includes(s.floor))
       .map(s => ({ ...s, weight: s.share * Math.max(1, 100 - (s.win - mode.penalty)) }));
   }
+  const totalWeight = stops => stops.reduce((sum, st) => sum + st.weight, 0);
 
   function topCores(cores, stop, limit = 3) {
     return cores
@@ -601,10 +616,6 @@ const KT = (() => {
 
   const findLine = (stats, id) => stats.lines.find(l => l.line === id);
 
-  function lineLo(stats, id) {
-    return findLine(stats, id)?.lo ?? findLine(stats, baseLine(id))?.lo ?? 0;
-  }
-
   // Écart de victoire rétréci d'une forme : vers 0 pour la lignée de base, vers celui de sa lignée de base pour une forme
   // ancrée, souvent peu jouée ; 0 sans statistiques.
   function shrunkGap(stats, id) {
@@ -631,7 +642,7 @@ const KT = (() => {
 
   // Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
   function coreScore(core, stops, coresByStop, game, data) {
-    const total = stops.reduce((s, st) => s + st.weight, 0);
+    const total = totalWeight(stops);
     const key = coreKey(core);
     const stat = stops.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop)?.get(key)?.lo ?? 0), 0) / total;
     const owned = core.reduce((s, id) => {
@@ -643,15 +654,26 @@ const KT = (() => {
     return stat + owned;
   }
 
-  // Trios d'au moins MIN_FIGHTS combats de chaque combat, par clé de trio.
-  const coresAt = (stats, stops) => new Map(stops.map(st => [st.stop, new Map(stats.cores
-    .filter(c => c.stop === st.stop && c.n >= MIN_FIGHTS)
-    .map(c => [coreKey(c.core), c]))]));
+  // Trios d'au moins MIN_FIGHTS combats de chaque combat, par clé de trio ; index des trios de l'API construit une fois par liste.
+  const coresMemo = new WeakMap();
+  function coresIndex(cores) {
+    if (!coresMemo.has(cores)) {
+      const index = new Map();
+      for (const c of cores) {
+        if (c.n < MIN_FIGHTS) continue;
+        if (!index.has(c.stop)) index.set(c.stop, new Map());
+        index.get(c.stop).set(coreKey(c.core), c);
+      }
+      coresMemo.set(cores, index);
+    }
+    return coresMemo.get(cores);
+  }
+  const coresAt = (stats, stops) => new Map(stops.map(st => [st.stop, coresIndex(stats.cores).get(st.stop) ?? new Map()]));
 
   // Force de chaque lignée de base sur une fenêtre de combats : écart, pondéré par la difficulté des combats, entre le taux de
   // victoire des trios où elle figure (pondéré par leurs combats) et celui du combat. Un combat sans trio pour elle compte zéro.
   function lineStrength(coresByStop, stops) {
-    const total = stops.reduce((s, st) => s + st.weight, 0);
+    const total = totalWeight(stops);
     const strength = new Map();
     for (const st of stops) {
       const sums = new Map();
@@ -697,25 +719,15 @@ const KT = (() => {
     return { key: best.key, core: best.core, stops, proof };
   }
 
-  // Compo cible : le meilleur trio, puis fillers, le remplissage jusqu'au niveau par les lignées possédées les mieux notées ;
-  // la boutique ne complète que les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une
-  // carte de boutique vaut une ★), au coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et
-  // types apportés à la compo ; l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte
-  // sur ces combats. upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ;
-  // replaced : ces compléments ; flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★ (flatThirdStar).
-  function targetComp(stats, data, game, previousKey) {
-    const stops = nextStops(stats.stops, game.floor, HORIZON, game.mode);
-    const coresByStop = coresAt(stats, stops);
-    // En campagne, sans trio noté sur ces combats (aventure sans table d'arrêts, Canela aux manches sans statistiques), la
-    // compo se fait sans trio : tes meilleures unités, puis la boutique.
-    const best = bestCore(coresByStop, data, game, stops, previousKey)
-      ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
-    if (!best) return null;
-    const core = best.core.map(baseLine);
+  // Compléments du trio core jusqu'au niveau (fillers) : les lignées possédées les mieux notées ; la boutique ne complète que
+  // les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une carte de boutique vaut une ★),
+  // au coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et types apportés à la compo ;
+  // l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte sur ces combats (strength).
+  // upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ; replaced : ces compléments.
+  function fillersOf(stats, data, game, core, strength) {
     const known = b => lineInfo(data, b) && !core.includes(b);
     const mine = [...new Set(game.units.map(u => baseLine(u.line)))].filter(known);
     const cards = [...new Set(game.shop.filter(Boolean))].filter(b => known(b) && !mine.includes(b));
-    const strength = lineStrength(coresByStop, stops);
     const owned = b => Number(bestStar(game, b) > 0);
     // Forme de la copie posée (fieldOrder, comme holdersOf) : la note décrit l'unité que la formation place.
     const form = b => unitsOf(game, b).sort(fieldOrder)[0]?.line ?? b;
@@ -741,9 +753,24 @@ const KT = (() => {
     const upgrades = mixed.filter(b => cards.includes(b) && !fillers.includes(b));
     // Autant de compléments possédés que de cartes, les moins bien notés.
     const replaced = upgrades.length ? fillers.filter(b => owned(b) && !mixed.includes(b)).slice(-upgrades.length) : [];
-    if (!core.length && !fillers.length) return null;
+    return { fillers, upgrades: upgrades.slice(0, replaced.length), replaced };
+  }
+
+  // Compo cible : le meilleur trio et ses compléments (fillersOf). flat : lignées du trio dont la ★★★ est nettement moins forte
+  // que la ★★ (flatThirdStar) ; strength : lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
+  function targetComp(stats, data, game, previousKey) {
+    const stops = nextStops(stats.stops, game.floor, HORIZON, game.mode);
+    const coresByStop = coresAt(stats, stops);
+    // En campagne, sans trio noté sur ces combats (aventure sans table d'arrêts, Canela aux manches sans statistiques), la
+    // compo se fait sans trio : tes meilleures unités, puis la boutique.
+    const best = bestCore(coresByStop, data, game, stops, previousKey)
+      ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
+    if (!best) return null;
+    const strength = lineStrength(coresByStop, stops);
+    const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), strength);
+    if (!best.core.length && !fillers.length) return null;
     const flat = best.core.filter(id => flatThirdStar(stats, id)).map(baseLine);
-    return { ...best, fillers, upgrades: upgrades.slice(0, replaced.length), replaced, flat };
+    return { ...best, fillers, upgrades, replaced, flat, strength };
   }
 
   // Trio des 9 combats suivants (10 à 18), à préparer avec le surplus ; null s'il est déjà la compo cible.
@@ -769,82 +796,89 @@ const KT = (() => {
 
   const proofText = (p, names) => (p ? `${p.c.core.map(names.line).join(' · ')} : ${pct(p.c.win)} contre ${bossName(p.st.boss)} ${p.st.floor} (${p.c.n} combats, au moins ${pct(p.c.lo)})` : '');
 
-  // Marques de la boutique et or restant. Priorités : ★ du trio, des 3ᵉ copies et des shinies (de gauche à droite), puis ★ des
-  // places libres, puis l'or réservé par reserve(or restant) (l'XP conseillée), puis les ◆ de la compo cible, puis
-  // l'actualisation si rolls(or restant) la conseille, puis les ◆ de la compo suivante (hors tout jouer). Les ★ ne s'arrêtent
-  // pas au palier. short : un ★ a été rétrogradé faute d'or (déclenche « Vends »).
-  function shopMarks(game, target, next, data, eco, names, reserve, rolls) {
-    const core = target ? target.core.map(baseLine) : [];
+  // Cartes de la boutique (null pour une case vide) et ce que la compo en attend.
+  function shopCards(game, target, next, data, names) {
     const wanted = targetBases(target);
+    const core = target ? target.core.map(baseLine) : [];
     const later = nextBases(next);
-    const proof = proofText(target?.proof, names);
-    let left = game.gold;
-    let short = false;
     const upgrades = target?.upgrades ?? [];
-    const stronger = target ? `plus fort que ${target.replaced.map(names.line).join(', ')}` : '';
-    const buy = (cost, name, why, detail = '') => {
-      // Coût inconnu (données de jeu indisponibles) : le conseil ne peut pas vérifier l'or.
-      if (cost !== undefined && cost > left) {
-        short = true;
-        return mark('opt', 'Si l’or', `Achète ${name} dès que possible`, `${why} ; il manque de l’or`, detail);
-      }
-      left -= cost ?? 0;
-      return mark('do', 'Achète', `Achète ${name}`, why, detail);
-    };
-    const cards = game.shop.map((base, i) => base && {
+    return game.shop.map((base, i) => base && {
       base, name: names.line(base), cost: lineInfo(data, base)?.c, triple: ones(game, base) === 2,
       inTarget: wanted.includes(base) || upgrades.includes(base), inCore: core.includes(base), inNext: later.includes(base), shiny: game.shopShiny[i],
       // Lignée de la compo pas encore possédée : elle remplit une place libre du plateau.
       fills: wanted.includes(base) && bestStar(game, base) === 0, upgrade: upgrades.includes(base),
-    });
-    const marks = cards.map(c => {
-      if (!c) return null;
+    }).map(c => c && { ...c, stronger: c.upgrade ? `plus fort que ${target.replaced.map(names.line).join(', ')}` : '' });
+  }
+
+  // ★ du trio, des 3ᵉ copies et des shinies, de gauche à droite ; ne s'arrêtent pas au palier. Un ★ que l'or ne couvre pas
+  // devient un ◆ « dès que possible » (short).
+  function starMarks(cards, marks, left, game, target, names) {
+    const proof = proofText(target?.proof, names);
+    let short = false;
+    cards.forEach((c, i) => {
+      if (!c) return;
+      let buy = null;
       if (c.triple && (c.inTarget || !target)) {
-        return buy(c.cost, c.name, c.inCore ? '3ᵉ copie, passe ★★ ; cœur de la compo cible' : '3ᵉ copie, passe ★★', c.inCore ? proof : '');
-      }
-      if (c.inCore) return buy(c.cost, c.name, 'cœur de la compo cible', proof);
+        buy = [c.name, c.inCore ? '3ᵉ copie, passe ★★ ; cœur de la compo cible' : '3ᵉ copie, passe ★★', c.inCore ? proof : ''];
+      } else if (c.inCore) buy = [c.name, 'cœur de la compo cible', proof];
       // +10 % tout de suite seulement si la carte devient la meilleure copie de sa lignée.
-      if (c.shiny && c.inTarget && bestStar(game, c.base) <= 1 && !shinyLine(game, c.base)) return buy(c.cost, `${c.name} shiny`, '+10 % PV, défenses et dégâts');
-      return undefined;
-    });
-    // Places libres, après les ★ ci-dessus et seulement si l'or leur a suffi : une copie par lignée.
-    const filled = new Set();
-    cards.forEach((c, i) => {
-      if (!c || marks[i] !== undefined || short || !c.fills || filled.has(c.base) || c.cost > left) return;
-      filled.add(c.base);
-      marks[i] = buy(c.cost, c.name, 'place libre sur le plateau');
-    });
-    const reserved = reserve(left);
-    left -= reserved;
-    // Motif d'un ✕ faute d'or : l'XP réservée quand la carte tenait sans elle, sinon le palier (aucun en tout jouer).
-    const hold = cost => {
-      if (eco.allIn) return 'il manque de l’or';
-      const beforeXp = cost !== undefined && left + reserved - cost >= eco.floor && left - cost < eco.floor;
-      return beforeXp ? 'l’or va d’abord à l’XP' : `garde ${eco.floor} pièces pour les intérêts`;
-    };
-    cards.forEach((c, i) => {
-      if (!c || marks[i] !== undefined) return;
-      if (!target) {
-        marks[i] = null;
+      else if (c.shiny && c.inTarget && bestStar(game, c.base) <= 1 && !shinyLine(game, c.base)) buy = [`${c.name} shiny`, '+10 % PV, défenses et dégâts'];
+      if (!buy) return;
+      const [name, why, detail = ''] = buy;
+      // Coût inconnu (données de jeu indisponibles) : le conseil ne peut pas vérifier l'or.
+      if (c.cost !== undefined && c.cost > left) {
+        short = true;
+        marks[i] = mark('opt', 'Si l’or', `Achète ${name} dès que possible`, `${why} ; il manque de l’or`, detail);
         return;
       }
-      const fits = c.cost !== undefined && (eco.allIn ? c.cost <= left : left - c.cost >= eco.floor);
-      if ((c.inTarget || (c.triple && !c.inNext)) && fits) {
-        left -= c.cost;
-        let why = 'renforce le plateau de la compo';
-        if (c.triple) why = '3ᵉ copie hors compo';
-        else if (c.upgrade) why = stronger;
-        marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, why);
-      }
+      left -= c.cost ?? 0;
+      marks[i] = mark('do', 'Achète', `Achète ${name}`, why, detail);
     });
-    // L'actualisation conseillée passe avant la compo suivante.
-    const reroll = rolls(left) ? REROLL_COST : 0;
+    return { left, short };
+  }
+
+  // ★ des places libres, après les ★ ci-dessus : une copie par lignée (spend la saute quand un ★ manque d'or).
+  function freeSlotMarks(cards, marks, left) {
+    const filled = new Set();
+    cards.forEach((c, i) => {
+      if (!c || marks[i] !== undefined || !c.fills || filled.has(c.base) || c.cost > left) return;
+      filled.add(c.base);
+      left -= c.cost ?? 0;
+      marks[i] = mark('do', 'Achète', `Achète ${c.name}`, 'place libre sur le plateau');
+    });
+    return left;
+  }
+
+  // ◆ de la compo cible (compléments, cartes plus fortes, 3ᵉ copies hors compo) qui gardent le palier ; en tout jouer, qui
+  // tiennent dans l'or restant.
+  function targetOptMarks(cards, marks, left, eco) {
+    cards.forEach((c, i) => {
+      if (!c || marks[i] !== undefined) return;
+      const fits = c.cost !== undefined && (eco.allIn ? c.cost <= left : left - c.cost >= eco.floor);
+      if (!(c.inTarget || (c.triple && !c.inNext)) || !fits) return;
+      left -= c.cost;
+      let why = 'renforce le plateau de la compo';
+      if (c.triple) why = '3ᵉ copie hors compo';
+      else if (c.upgrade) why = c.stronger;
+      marks[i] = mark('opt', 'Si l’or', eco.allIn ? `${c.name} si l’or suffit` : `${c.name} si l’or reste ≥ ${eco.floor}`, why);
+    });
+    return left;
+  }
+
+  // ◆ de la compo suivante (hors tout jouer, après l'actualisation conseillée, qui coûte rerollCost), puis ✕ pour le reste, avec
+  // le motif de l'or : l'XP réservée (xpCost) quand la carte tenait sans elle, sinon le palier.
+  function restMarks(cards, marks, left, game, eco, next, names, xpCost, rerollCost) {
+    const hold = cost => {
+      if (eco.allIn) return 'il manque de l’or';
+      const beforeXp = cost !== undefined && left + xpCost - cost >= eco.floor && left - cost < eco.floor;
+      return beforeXp ? 'l’or va d’abord à l’XP' : `garde ${eco.floor} pièces pour les intérêts`;
+    };
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
       if (c.inNext && !c.inTarget) {
         const range = floorRange(next.stops, game.mode);
         const fits = c.cost !== undefined && left - c.cost >= eco.floor;
-        if (!eco.allIn && fits && left - c.cost - reroll >= eco.floor) {
+        if (!eco.allIn && fits && left - c.cost - rerollCost >= eco.floor) {
           left -= c.cost;
           marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, `prépare la compo des ${range}`, proofText(next.proof, names));
           return;
@@ -855,9 +889,32 @@ const KT = (() => {
         marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, why);
         return;
       }
-      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `${c.upgrade ? stronger : 'complément de la compo'} ; ${hold(c.cost)}` : 'hors compo cible');
+      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `${c.upgrade ? c.stronger : 'complément de la compo'} ; ${hold(c.cost)}` : 'hors compo cible');
     });
-    return { marks, left, short };
+    return left;
+  }
+
+  // Dépenses du tour, dans l'ordre où l'or leur va : ★ de la boutique, ★ des places libres, XP réservée (xpMark), ◆ de la
+  // compo cible, actualisation (rerollMark), ◆ de la compo suivante. L'or que ni un achat ni une actualisation n'engage va au
+  // niveau suivant. Sans compo cible, seules les 3ᵉ copies sont marquées. short : un ★ a été rétrogradé faute d'or (déclenche
+  // « Vends »).
+  function spend(game, target, next, data, eco, names) {
+    const cards = shopCards(game, target, next, data, names);
+    const marks = cards.map(() => undefined);
+    const stars = starMarks(cards, marks, game.gold, game, target, names);
+    let left = stars.short ? stars.left : freeSlotMarks(cards, marks, stars.left);
+    const xp = xpMark(game, eco, left, false);
+    left -= xp.cost;
+    let reroll = null;
+    if (target) {
+      left = targetOptMarks(cards, marks, left, eco);
+      reroll = rerollMark(game, target, data, eco, names, left);
+      left = restMarks(cards, marks, left, game, eco, next, names, xp.cost, reroll?.level === 'do' ? REROLL_COST : 0);
+    }
+    const spare = xp.mark?.level !== 'do' && reroll?.level !== 'do';
+    return {
+      shop: marks.map(m => m ?? null), xp: spare ? xpMark(game, eco, left, true).mark : xp.mark, reroll, short: stars.short,
+    };
   }
 
   // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal, sauf ★★★ nettement moins
@@ -961,12 +1018,14 @@ const KT = (() => {
     return a === id ? b : a;
   };
 
+  const itemKind = (data, id) => data.items[id]?.k;
+
   // Composants qui donnent ses stats à un objet : inherits de l'API, qui diffère parfois de la recette (Casque Brut : PV Plus +
   // Fer, recette PV Plus + Protéine) ; vide pour les objets Choix, dont la recette porte la stat.
   function itemParts(data, id) {
+    if (itemKind(data, id) === 'part') return [id];
+    if (itemKind(data, id) !== 'full') return [];
     const item = data.items[id];
-    if (item?.k === 'part') return [id];
-    if (item?.k !== 'full') return [];
     return item.inherits?.length ? item.inherits.flatMap(x => Array(x.n).fill(x.part)) : item.recipe ?? [];
   }
 
@@ -1007,8 +1066,7 @@ const KT = (() => {
       const count = list => parts.filter(p => list.includes(p)).length;
       sum.n += h.n;
       sum.def += (h.n * count(DEFENSE)) / parts.length;
-      sum.atk += h.n * count(['protein']);
-      sum.spa += h.n * count(['calcium']);
+      for (const [part, stat] of Object.entries(ATTACK)) sum[stat] += h.n * count([part]);
       sums.set(base, sum);
     }
     return new Map([...sums].map(([base, x]) => {
@@ -1052,7 +1110,7 @@ const KT = (() => {
   // écarté : une forme ancrée (-aN) ne compte que pour elle-même ; le repli sur la lignée de base est dans idealItems.
   function topHolders(stats, data, line, profile) {
     return stats.holders
-      .filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full' && suits(data, profile, h.id) && !idleCrit(data, profile, h.id))
+      .filter(h => h.line === line && h.n >= MIN_FIGHTS && itemKind(data, h.id) === 'full' && suits(data, profile, h.id) && !idleCrit(data, profile, h.id))
       .sort((a, b) => b.lo - a.lo).slice(0, MAX_ITEMS);
   }
 
@@ -1065,13 +1123,14 @@ const KT = (() => {
   const rangeOf = (data, base) => Math.max(1, lineInfo(data, base)?.range ?? 1);
 
   // Porteurs : un Pokémon possédé par lignée de la compo cible (fieldOrder). Rôles lus sur le profil de la lignée : porteur
-  // (attaquant du cœur le mieux classé), tanks (aux PV max d'abord), puis les autres attaquants (★, puis lineLo).
+  // (attaquant du cœur le mieux classé), tanks (aux PV max d'abord), puis les autres attaquants (★, shiny, puis force sur les combats de la compo cible, lineStrength).
   function holdersOf(stats, data, game, target, profiles) {
     const own = targetBases(target)
       .map(b => unitsOf(game, b).sort(fieldOrder)[0])
       .filter(Boolean);
     const profile = u => profiles.get(baseLine(u.line)) ?? null;
-    const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || lineLo(stats, b.line) - lineLo(stats, a.line);
+    const strength = u => target.strength.get(baseLine(u.line)) ?? 0;
+    const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || strength(b) - strength(a);
     const hp = u => (lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0) * (u.shiny ? SHINY_HP : 1);
     const tanks = own.filter(u => profile(u)?.tank).sort((a, b) => hp(b) - hp(a));
     const attackers = own.filter(u => !tanks.includes(u)).sort(rank);
@@ -1090,6 +1149,195 @@ const KT = (() => {
 
   const bestWhy = mode => `meilleur objet de sa lignée ${mode.where}`;
 
+  // Objets du sac libres : ni posés par un conseil (★), ni gardés pour un Pokémon ou une lignée à venir.
+  const freeBag = (bag, marks, reserved) => bag.filter((id, i) => marks[i]?.level !== 'do' && !reserved.has(i));
+
+  // État des conseils du sac, partagé par itemMarks, magnetMarks, placePart et keepMarks. hs : porteurs (holdersOf) avec on, leurs objets
+  // à la fin des conseils de ce passage ; slots : places libres ; lone : composant seul porté ; loneAt : case du sac du
+  // composant seul conseillé dans ce passage ; after : paire à poser avant ; held : objets du sac gardés pour lui après
+  // l'Aimant ; emptied : vidé par un Aimant de ce passage. reserved : cases du sac gardées pour un Pokémon précis (après
+  // l'Aimant) ou pour une lignée à venir. needs : composants encore à réunir pour chaque recette idéale des lignées à venir,
+  // une copie gardée par composant demandé.
+  function itemState(data, game, holders, book, future, names) {
+    const hs = holders.map(h => {
+      const on = [...(h.unit.items ?? [])];
+      const lone = on.find(id => itemKind(data, id) === 'part') ?? null;
+      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, after: null, held: [], emptied: false };
+    });
+    const needs = future.flatMap(x => x.ideal.map(f => ({ x, f, left: [...(book.parts.get(f) ?? [])] })));
+    return { data, game, book, names, future, hs, needs, marks: game.bag.map(() => null), reserved: new Set(), best: bestWhy(game.mode) };
+  }
+
+  const idealTo = (h, full) => h.ideal.includes(full) && !h.on.includes(full);
+  const fusedWith = (s, h, id) => s.book.make.get(`${h.lone}+${id}`);
+  // Objets du sac de ce type pas encore conseillés.
+  const pendingIn = (s, k) => s.game.bag.map((id, i) => ({ id, i })).filter(x => s.marks[x.i] === null && itemKind(s.data, x.id) === k);
+  // Recettes idéales encore à faire du Pokémon qui contiennent ce composant.
+  const recipesWith = (s, h, id) => h.ideal.filter(f => idealTo(h, f) && s.book.parts.get(f)?.includes(id));
+  // Recettes idéales où ce composant manque encore. Une copie du composant seul du Pokémon ne sert que si une autre recette
+  // idéale le demande après sa fusion (deux recettes au moins qui le contiennent), ou si la recette le demande deux fois.
+  function missingIn(s, h, id) {
+    const all = recipesWith(s, h, id);
+    if (id !== h.lone || all.length >= 2) return all;
+    return all.filter(f => otherPart(s.book, f, id) === id);
+  }
+  // Pokémon de la compo qui attendent cet objet, ou un objet idéal où ce composant manque.
+  const takers = (s, id) => s.hs.filter(h => idealTo(h, id) || missingIn(s, h, id).length);
+  // Composant seul porté qui entre dans une recette idéale encore à faire ; sinon il bloque le Pokémon (Aimant).
+  const keptLone = (s, h) => recipesWith(s, h, h.lone).length > 0;
+
+  const putMark = (s, i, h, title, why) => {
+    s.marks[i] = mark('do', `→ ${h.who}`, title, why);
+  };
+  const pendingAfter = h => (h.after ? ` (après ${h.after})` : '');
+  const putPair = (s, i, j, h, a, b, why) => {
+    const both = `${s.names.item(a)} + ${s.names.item(b)}`;
+    putMark(s, i, h, `${both} → ${h.who}`, why + pendingAfter(h));
+    putMark(s, j, h, `${both} → ${h.who}`, why + pendingAfter(h));
+    h.after = both;
+  };
+  const putAlone = (s, i, h, id, why) => {
+    putMark(s, i, h, `${s.names.item(id)} → ${h.who}`, why + pendingAfter(h));
+    h.slots -= 1;
+    h.on.push(id);
+    Object.assign(h, { lone: id, loneAt: i });
+  };
+  // Fusion avec le composant seul du Pokémon : s'il a été conseillé dans ce passage, les deux bulles annoncent la paire. Sinon
+  // ce composant se pose avant tout autre conseillé ensuite au Pokémon, qui fusionnerait à sa place avec le composant porté.
+  const putFused = (s, i, h, id, why) => {
+    const made = fusedWith(s, h, id);
+    if (h.loneAt !== null) putPair(s, h.loneAt, i, h, h.lone, id, why);
+    else {
+      putMark(s, i, h, `${s.names.item(id)} → ${h.who}`, `fusionne avec ${s.names.item(h.lone)} : ${why}`);
+      h.after = s.names.item(id);
+    }
+    h.on[h.on.indexOf(h.lone)] = made;
+    Object.assign(h, { lone: null, loneAt: null });
+  };
+
+  // Paire idéale du sac : recette idéale d'un Pokémon libre, sans paire dans ce passage, dont l'autre composant attend dans le sac.
+  function idealPair(s, free, id, i) {
+    const waiting = pendingIn(s, 'part');
+    for (const h of free.filter(x => !x.after)) {
+      for (const f of recipesWith(s, h, id)) {
+        const j = waiting.find(p => p.i !== i && p.id === otherPart(s.book, f, id))?.i;
+        if (j !== undefined) return { h, f, ab: s.book.parts.get(f), j };
+      }
+    }
+    return null;
+  }
+
+  // Composant, première règle qui s'applique : complète une recette idéale, paire idéale du sac, entame une recette idéale
+  // d'un Pokémon que sa stat sert, attend un Pokémon de la compo qui ne peut pas le recevoir (motif dans keepMarks), reste au
+  // sac pour la recette idéale d'une lignée à venir.
+  function placePart(s, id, i) {
+    const { names, best } = s;
+    const done = s.hs.find(h => h.lone && idealTo(h, fusedWith(s, h, id)));
+    if (done) return putFused(s, i, done, id, `${names.item(fusedWith(s, done, id))}, ${best}`);
+    const free = s.hs.filter(h => h.slots > 0 && !h.lone);
+    const duo = idealPair(s, free, id, i);
+    if (duo) {
+      putPair(s, i, duo.j, duo.h, ...duo.ab, `${names.item(duo.f)}, ${best}`);
+      duo.h.slots -= 1;
+      duo.h.on.push(duo.f);
+      return;
+    }
+    const begun = free.filter(h => !idlePart(h.profile, id)).map(h => ({ h, f: recipesWith(s, h, id)[0] })).find(x => x.f);
+    if (begun) {
+      const other = names.item(otherPart(s.book, begun.f, id));
+      return putAlone(s, i, begun.h, id, `${names.effect(id) ?? 'son effet'} tout de suite ; plus tard avec ${other} : ${names.item(begun.f)}, ${best}`);
+    }
+    if (takers(s, id).length) return;
+    const later = s.needs.find(n => n.left.includes(id));
+    if (later) {
+      later.left.splice(later.left.indexOf(id), 1);
+      s.reserved.add(i);
+      s.marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, `${names.item(later.f)} pour ${later.x.who}, à venir`);
+    }
+  }
+
+  // Aimant : sur un Pokémon de la compo qui porte un objet contraire à son profil, puis sur un Pokémon plein dont un objet
+  // idéal attend au sac (complet, ou ses deux composants), ou sur un Pokémon bloqué par un composant seul hors de ses recettes
+  // idéales dont les deux composants d'une recette idéale attendent au sac (un objet complet se pose sans fusionner), enfin
+  // sur un Pokémon posé hors des deux compos qui porte des objets (au banc, la vente les rend : sellMarks). Il rend tous ses
+  // objets au sac : le Pokémon ne reçoit plus rien dans ce passage, les conseils suivent au passage d'après.
+  function magnetMarks(s, target) {
+    const { data, game, book, names } = s;
+    const count = id => freeBag(game.bag, s.marks, s.reserved).filter(x => x === id).length;
+    const inBag = f => {
+      const [a, b] = book.parts.get(f) ?? [];
+      return count(f) > 0 || (a !== undefined && (a === b ? count(a) >= 2 : count(a) > 0 && count(b) > 0));
+    };
+    // Un composant porté convient s'il entre dans un objet complet qui convient.
+    const fits = (h, id) => (itemKind(data, id) === 'part'
+      ? [...book.parts].some(([f, ab]) => ab.includes(id) && suits(data, h.profile, f))
+      : itemKind(data, id) === 'full' && suits(data, h.profile, id));
+    const wrong = h => h.on.find(id => ['part', 'full'].includes(itemKind(data, id)) && !fits(h, id));
+    const swap = h => {
+      const bad = wrong(h);
+      if (bad) return { why: `retire ${names.item(bad)} (${misfit(data, h.profile, bad)})`, ready: null };
+      // Une recette que le composant seul porté complète par fusion avec un composant du sac n'a pas besoin de place.
+      const fusable = x => h.lone !== null && book.parts.get(x)?.includes(h.lone) && count(otherPart(book, x, h.lone)) > 0;
+      const blocked = h.lone && !keptLone(s, h);
+      const ready = x => !h.on.includes(x) && !fusable(x) && inBag(x) && (h.slots === 0 || count(x) === 0);
+      const f = (h.slots === 0 || blocked) && h.ideal.find(ready);
+      const out = f && (blocked ? h.lone : h.on.find(x => ['part', 'full'].includes(itemKind(data, x)) && !h.ideal.includes(x)));
+      return out ? { why: `retire ${names.item(out)} ; ${names.item(f)} prêt au sac`, ready: f } : null;
+    };
+    const wanted = [...targetBases(target), ...s.future.map(x => x.base)];
+    const strays = game.units.filter(u => u.items?.length && boardCell(u.cell) !== null && !wanted.includes(baseLine(u.line)));
+    const targets = [...s.hs.filter(wrong), ...s.hs.filter(h => !wrong(h))];
+    for (const { i } of game.bag.map((id, j) => ({ id, i: j })).filter(x => x.id === 'magnet')) {
+      // Calculé à chaque Aimant : l'objet réservé par le précédent n'est plus au sac.
+      const m = targets.map(h => ({ h, ...swap(h) })).find(x => x.why);
+      if (!m) {
+        const u = strays.shift();
+        if (u) s.marks[i] = mark('do', `Retire de ${names.line(u.line)}`, `Aimant sur ${names.line(u.line)}`, 'hors des compos : récupère ses objets');
+        continue;
+      }
+      targets.splice(targets.indexOf(m.h), 1);
+      s.marks[i] = mark('do', `Retire de ${m.h.who}`, `Aimant sur ${m.h.who}`, m.why);
+      Object.assign(m.h, { slots: 0, lone: null, emptied: true });
+      // L'objet prêt attend l'Aimant au sac : le complet s'il y est, sinon ses deux composants.
+      if (!m.ready) continue;
+      const keep = id => {
+        const j = pendingIn(s, itemKind(data, id)).find(x => x.id === id).i;
+        s.marks[j] = mark('opt', 'Garde', `Garde ${names.item(id)}`, `pour ${m.h.who}, après l’Aimant`);
+        s.reserved.add(j);
+        m.h.held.push(id);
+      };
+      if (count(m.ready) > 0) keep(m.ready);
+      else book.parts.get(m.ready).forEach(keep);
+    }
+  }
+
+  // « Garde » sur ce qui reste au sac, avec ce qui empêche le Pokémon qui l'attend de le recevoir. Avec des places libres et sans
+  // composant seul, il ne reste que le composant dont la stat ne le sert pas (idlePart) : il se pose avec l'autre composant de
+  // la recette.
+  function keepMarks(s) {
+    const { names } = s;
+    const obstacle = (h, id) => {
+      if (h.emptied) return 'après l’Aimant';
+      if (h.slots === 0) return 'sans place libre';
+      if (h.lone) return keptLone(s, h) ? `une fois ${names.item(h.lone)} fusionné` : `bloqué par ${names.item(h.lone)} seul`;
+      const f = recipesWith(s, h, id)[0];
+      return `avec ${names.item(otherPart(s.book, f, id))} : ${names.item(f)}`;
+    };
+    for (const { id, i } of [...pendingIn(s, 'full'), ...pendingIn(s, 'part')]) {
+      // Le motif cite d'abord le Pokémon qui peut encore le recevoir, avec l'autre composant de la recette.
+      const all = takers(s, id);
+      const stuck = all.find(h => h.slots > 0 && !h.lone) ?? all[0];
+      const later = s.future.find(x => x.ideal.includes(id));
+      const worn = s.hs.find(h => h.ideal.includes(id) && h.on.includes(id));
+      let why = 'aucun Pokémon de la compo possédé';
+      if (stuck) why = `pour ${stuck.who}, ${obstacle(stuck, id)}`;
+      else if (later) why = `pour ${later.who}, à venir`;
+      else if (worn) why = `déjà sur ${worn.who}`;
+      else if (s.hs.length) why = 'hors des meilleurs objets de la compo';
+      s.marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, why);
+    }
+  }
+
   // Un Pokémon de la compo ne reçoit que ses objets idéaux (idealItems) : l'objet complet, ou un composant de l'un d'eux, va
   // tout de suite sur lui. Un composant posé seul donne déjà son effet et fusionne avec le prochain composant posé sur ce
   // Pokémon ; celui dont la stat ne le sert pas (idlePart : Protéine sur un spécial) attend au sac l'autre composant de la
@@ -1098,193 +1346,26 @@ const KT = (() => {
   // (l'ordre de pose ne serait plus clair). future : lignées à venir (futureLines), pour qui un composant reste au sac.
   // Renvoie aussi cet état final, pour le choix de la récompense.
   function itemMarks(data, game, holders, book, target, future, names) {
-    const marks = game.bag.map(() => null);
-    if (!target) return { marks, holders: [], reserved: new Set() };
-    const BEST = bestWhy(game.mode);
-    const kind = id => data.items[id]?.k;
-    const hs = holders.map(h => {
-      const on = [...(h.unit.items ?? [])];
-      const lone = on.find(id => kind(id) === 'part') ?? null;
-      // loneAt : case du sac du composant seul conseillé dans ce passage ; after : paire à poser avant.
-      // held : objets du sac gardés pour lui après l'Aimant ; emptied : vidé par un Aimant de ce passage.
-      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, after: null, held: [], emptied: false };
-    });
-    // Cases du sac gardées pour un Pokémon précis (après l'Aimant) ou pour une lignée à venir.
-    const reserved = new Set();
-    // Un composant porté convient s'il entre dans un objet complet qui convient (pour l'Aimant).
-    const fits = (h, id) => (kind(id) === 'part'
-      ? [...book.parts].some(([f, ab]) => ab.includes(id) && suits(data, h.profile, f))
-      : kind(id) === 'full' && suits(data, h.profile, id));
-    const ideal = (h, full) => h.ideal.includes(full) && !h.on.includes(full);
-    const fused = (h, id) => book.make.get(`${h.lone}+${id}`);
-    const pending = k => game.bag.map((id, i) => ({ id, i })).filter(x => marks[x.i] === null && kind(x.id) === k);
-    const after = h => (h.after ? ` (après ${h.after})` : '');
-    const put = (i, h, title, why) => {
-      marks[i] = mark('do', `→ ${h.who}`, title, why);
-    };
-    const full = (i, h, id, why) => {
-      put(i, h, `${names.item(id)} → ${h.who}`, why);
-      h.slots -= 1;
-      h.on.push(id);
-    };
-    const pair = (i, j, h, a, b, why) => {
-      const both = `${names.item(a)} + ${names.item(b)}`;
-      put(i, h, `${both} → ${h.who}`, why + after(h));
-      put(j, h, `${both} → ${h.who}`, why + after(h));
-      h.after = both;
-    };
-    const alone = (i, h, id, why) => {
-      put(i, h, `${names.item(id)} → ${h.who}`, why + after(h));
-      h.slots -= 1;
-      h.on.push(id);
-      Object.assign(h, { lone: id, loneAt: i });
-    };
-    // Fusion avec le composant seul du Pokémon : s'il a été conseillé dans ce passage, les deux bulles annoncent la paire. Sinon
-    // ce composant se pose avant tout autre conseillé ensuite au Pokémon, qui fusionnerait à sa place avec le composant porté.
-    const fuse = (i, h, id, why) => {
-      const made = fused(h, id);
-      if (h.loneAt !== null) pair(h.loneAt, i, h, h.lone, id, why);
-      else {
-        put(i, h, `${names.item(id)} → ${h.who}`, `fusionne avec ${names.item(h.lone)} : ${why}`);
-        h.after = names.item(id);
-      }
-      h.on[h.on.indexOf(h.lone)] = made;
-      Object.assign(h, { lone: null, loneAt: null });
-    };
-
-    // Recettes idéales encore à faire du Pokémon qui contiennent ce composant.
-    const recipesWith = (h, id) => h.ideal.filter(f => ideal(h, f) && book.parts.get(f)?.includes(id));
-    // Paire idéale du sac : recette idéale d'un Pokémon libre, sans paire dans ce passage, dont l'autre composant attend dans le sac.
-    const idealPair = (free, id, i) => {
-      const waiting = pending('part');
-      for (const h of free.filter(x => !x.after)) {
-        for (const f of recipesWith(h, id)) {
-          const ab = book.parts.get(f);
-          const j = waiting.find(p => p.i !== i && p.id === (ab[0] === id ? ab[1] : ab[0]))?.i;
-          if (j !== undefined) return { h, f, ab, j };
-        }
-      }
-      return null;
-    };
-    // Composants encore à réunir pour chaque recette idéale des lignées à venir : une copie gardée par composant demandé.
-    const needs = future.flatMap(x => x.ideal.map(f => ({ x, f, left: [...(book.parts.get(f) ?? [])] })));
-    // Pokémon de la compo qui attendent cet objet, ou un objet idéal dont c'est un composant.
-    const takers = id => hs.filter(h => ideal(h, id) || recipesWith(h, id).length);
-    // Composant seul porté qui entre dans une recette idéale encore à faire ; sinon il bloque le Pokémon (Aimant).
-    const kept = h => recipesWith(h, h.lone).length > 0;
-    // Composant, première règle qui s'applique : complète une recette idéale, paire idéale du sac, entame une recette idéale
-    // d'un Pokémon que sa stat sert, attend un Pokémon de la compo qui ne peut pas le recevoir (motif dans la boucle finale),
-    // reste au sac pour la recette idéale d'une lignée à venir.
-    const placePart = (id, i) => {
-      const done = hs.find(h => h.lone && ideal(h, fused(h, id)));
-      if (done) return fuse(i, done, id, `${names.item(fused(done, id))}, ${BEST}`);
-      const free = hs.filter(h => h.slots > 0 && !h.lone);
-      const duo = idealPair(free, id, i);
-      if (duo) {
-        pair(i, duo.j, duo.h, ...duo.ab, `${names.item(duo.f)}, ${BEST}`);
-        duo.h.slots -= 1;
-        duo.h.on.push(duo.f);
-        return;
-      }
-      const begun = free.filter(h => !idlePart(h.profile, id)).map(h => ({ h, f: recipesWith(h, id)[0] })).find(x => x.f);
-      if (begun) {
-        const other = names.item(otherPart(book, begun.f, id));
-        return alone(i, begun.h, id, `${names.effect(id) ?? 'son effet'} tout de suite ; plus tard avec ${other} : ${names.item(begun.f)}, ${BEST}`);
-      }
-      if (takers(id).length) return;
-      const later = needs.find(n => n.left.includes(id));
-      if (later) {
-        later.left.splice(later.left.indexOf(id), 1);
-        reserved.add(i);
-        marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, `${names.item(later.f)} pour ${later.x.who}, à venir`);
-      }
-    };
-
-    // Aimant : sur un Pokémon de la compo qui porte un objet contraire à son profil, puis sur un Pokémon plein dont un objet
-    // idéal attend au sac (complet, ou ses deux composants), ou sur un Pokémon bloqué par un composant seul hors de ses recettes
-    // idéales dont les deux composants d'une recette idéale attendent au sac (un objet complet se pose sans fusionner), enfin
-    // sur un Pokémon posé hors des deux compos qui porte des objets (au banc, la vente les rend : sellMarks). Il rend tous ses
-    // objets au sac : le Pokémon ne reçoit plus rien dans ce passage, les conseils suivent au passage d'après.
-    const count = id => pending(kind(id)).filter(x => x.id === id).length;
-    const inBag = f => {
-      const [a, b] = book.parts.get(f) ?? [];
-      return count(f) > 0 || (a !== undefined && (a === b ? count(a) >= 2 : count(a) > 0 && count(b) > 0));
-    };
-    const wrong = h => h.on.find(id => ['part', 'full'].includes(kind(id)) && !fits(h, id));
-    const swap = h => {
-      const bad = wrong(h);
-      if (bad) return { why: `retire ${names.item(bad)} (${misfit(data, h.profile, bad)})`, ready: null };
-      // Une recette que le composant seul porté complète par fusion avec un composant du sac n'a pas besoin de place.
-      const fusable = x => {
-        const ab = h.lone ? book.parts.get(x) ?? [] : [];
-        return ab.includes(h.lone) && count(ab[0] === h.lone ? ab[1] : ab[0]) > 0;
-      };
-      const blocked = h.lone && !kept(h);
-      const ready = x => !h.on.includes(x) && !fusable(x) && inBag(x) && (h.slots === 0 || count(x) === 0);
-      const f = (h.slots === 0 || blocked) && h.ideal.find(ready);
-      const out = f && (blocked ? h.lone : h.on.find(x => ['part', 'full'].includes(kind(x)) && !h.ideal.includes(x)));
-      return out ? { why: `retire ${names.item(out)} ; ${names.item(f)} prêt au sac`, ready: f } : null;
-    };
-    const wanted = [...targetBases(target), ...future.map(x => x.base)];
-    const strays = game.units.filter(u => u.items?.length && boardCell(u.cell) !== null && !wanted.includes(baseLine(u.line)));
-    const targets = [...hs.filter(wrong), ...hs.filter(h => !wrong(h))];
-    for (const { i } of game.bag.map((id, j) => ({ id, i: j })).filter(x => x.id === 'magnet')) {
-      // Calculé à chaque Aimant : l'objet réservé par le précédent n'est plus au sac.
-      const s = targets.map(h => ({ h, ...swap(h) })).find(x => x.why);
-      if (!s) {
-        const u = strays.shift();
-        if (u) marks[i] = mark('do', `Retire de ${names.line(u.line)}`, `Aimant sur ${names.line(u.line)}`, 'hors des compos : récupère ses objets');
-        continue;
-      }
-      targets.splice(targets.indexOf(s.h), 1);
-      marks[i] = mark('do', `Retire de ${s.h.who}`, `Aimant sur ${s.h.who}`, s.why);
-      Object.assign(s.h, { slots: 0, lone: null, emptied: true });
-      // L'objet prêt attend l'Aimant au sac : le complet s'il y est, sinon ses deux composants.
-      if (!s.ready) continue;
-      const keep = id => {
-        const j = pending(kind(id)).find(x => x.id === id).i;
-        marks[j] = mark('opt', 'Garde', `Garde ${names.item(id)}`, `pour ${s.h.who}, après l’Aimant`);
-        reserved.add(j);
-        s.h.held.push(id);
-      };
-      if (count(s.ready) > 0) keep(s.ready);
-      else book.parts.get(s.ready).forEach(keep);
-    }
+    if (!target) return { marks: game.bag.map(() => null), holders: [], reserved: new Set() };
+    const s = itemState(data, game, holders, book, future, names);
+    magnetMarks(s, target);
     // Objets complets : au Pokémon qui le classe le plus haut dans ses objets idéaux.
-    for (const { id, i } of pending('full')) {
-      const h = hs.filter(x => x.slots > 0 && ideal(x, id)).sort((a, b) => a.ideal.indexOf(id) - b.ideal.indexOf(id))[0];
-      if (h) full(i, h, id, BEST);
+    for (const { id, i } of pendingIn(s, 'full')) {
+      const h = s.hs.filter(x => x.slots > 0 && idealTo(x, id)).sort((a, b) => a.ideal.indexOf(id) - b.ideal.indexOf(id))[0];
+      if (!h) continue;
+      putMark(s, i, h, `${names.item(id)} → ${h.who}`, s.best);
+      h.slots -= 1;
+      h.on.push(id);
     }
     // Jusqu'à ce qu'un tour ne pose plus rien : une fusion libère le composant seul d'un Pokémon qu'un composant vu plus tôt
     // dans le sac attendait.
     let left;
     do {
-      left = pending('part').length;
-      for (const { id, i } of pending('part')) if (marks[i] === null) placePart(id, i);
-    } while (pending('part').length < left);
-    // Ce qui empêche un Pokémon qui attend un objet de le recevoir. Avec des places libres et sans composant seul, il ne reste
-    // que le composant dont la stat ne le sert pas (idlePart) : il se pose avec l'autre composant de la recette.
-    const obstacle = (h, id) => {
-      if (h.emptied) return 'après l’Aimant';
-      if (h.slots === 0) return 'sans place libre';
-      if (h.lone) return kept(h) ? `une fois ${names.item(h.lone)} fusionné` : `bloqué par ${names.item(h.lone)} seul`;
-      const f = recipesWith(h, id)[0];
-      return `avec ${names.item(otherPart(book, f, id))} : ${names.item(f)}`;
-    };
-    for (const { id, i } of [...pending('full'), ...pending('part')]) {
-      // Le motif cite d'abord le Pokémon qui peut encore le recevoir, avec l'autre composant de la recette.
-      const all = takers(id);
-      const stuck = all.find(h => h.slots > 0 && !h.lone) ?? all[0];
-      const later = future.find(x => x.ideal.includes(id));
-      const worn = hs.find(h => h.ideal.includes(id) && h.on.includes(id));
-      let why = 'aucun Pokémon de la compo possédé';
-      if (stuck) why = `pour ${stuck.who}, ${obstacle(stuck, id)}`;
-      else if (later) why = `pour ${later.who}, à venir`;
-      else if (worn) why = `déjà sur ${worn.who}`;
-      else if (hs.length) why = 'hors des meilleurs objets de la compo';
-      marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, why);
-    }
-    return { marks, holders: hs, reserved };
+      left = pendingIn(s, 'part').length;
+      for (const { id, i } of pendingIn(s, 'part')) if (s.marks[i] === null) placePart(s, id, i);
+    } while (pendingIn(s, 'part').length < left);
+    keepMarks(s);
+    return { marks: s.marks, holders: s.hs, reserved: s.reserved };
   }
 
   // Objets visés par Pokémon de la compo : ses objets idéaux, 3 au plus. Lu sur l'état
@@ -1292,7 +1373,7 @@ const KT = (() => {
   // les conseils de ce passage, gardé pour lui après l'Aimant, ou réunissable avec ses composants seuls et le sac libre (ni posé
   // ni réservé), partagé dans l'ordre des porteurs.
   function aimsOf(data, game, items, book) {
-    const pool = game.bag.filter((id, i) => items.marks[i]?.level !== 'do' && !items.reserved.has(i));
+    const pool = freeBag(game.bag, items.marks, items.reserved);
     const take = (list, id) => {
       const k = list.indexOf(id);
       if (k >= 0) list.splice(k, 1);
@@ -1300,7 +1381,7 @@ const KT = (() => {
     };
     return items.holders.map(h => {
       const on = h.unit.items ?? [];
-      const own = [...h.held, ...h.on.filter(id => data.items[id]?.k === 'part')];
+      const own = [...h.held, ...h.on.filter(id => itemKind(data, id) === 'part')];
       const aims = h.ideal.map(id => {
         if (on.includes(id)) return { id, state: 'worn', missing: [] };
         if (h.on.includes(id) || take(own, id) || take(pool, id)) return { id, state: 'ready', missing: [] };
@@ -1399,10 +1480,14 @@ const KT = (() => {
 
   // La sauvegarde indexe le plateau sur 8 rangées × 7 : les 4 rangées ennemies (cases 0-27), puis les tiennes de l'avant au fond
   // (28-55). La cellule KT1 (0-27, rangée × 7 + colonne, rangée 0 = avant, doc de l'API) est donc la case de la sauvegarde − 28.
-  const ENEMY_CELLS = 28;
+  const COLS = 7;
+  const ENEMY_CELLS = 4 * COLS;
+  // Colonnes de l'avant, depuis le centre.
+  const CENTER_OUT = [3, 2, 4, 1, 5, 0, 6];
   const boardCell = cell => (Number.isInteger(cell) && cell >= ENEMY_CELLS && cell < 2 * ENEMY_CELLS ? cell - ENEMY_CELLS : null);
-  const rowOf = cell => Math.floor(cell / 7);
-  const colOf = cell => cell % 7;
+  const rowOf = cell => Math.floor(cell / COLS);
+  const colOf = cell => cell % COLS;
+  const cellAt = (row, col) => row * COLS + col;
 
   // Zones du porteur à distance : ses colonnes préférées sur sa rangée, et ordre de remplissage des rangées derrière l'avant (une
   // colonne sur deux d'abord, pour espacer les unités face aux attaques de zone).
@@ -1414,9 +1499,11 @@ const KT = (() => {
 
   const TABS = [['tour', 'Tour'], ['compo', 'Compo'], ['boss', 'Boss'], ['rules', 'Règles']];
   const capital = s => s[0].toUpperCase() + s.slice(1);
-  // Options du menu ⚙ : clé de l'objet ui, valeurs [valeur, libellé] dans l'ordre affiché, valeur par défaut.
+  // Options du menu ⚙, dans l'ordre affiché : clé de l'objet ui, valeurs [valeur, libellé], valeur par défaut. checks : cases à
+  // cocher, ui[key] associe chaque valeur à un booléen (pastilles : un niveau de conseil, précédé de son symbole).
   const OPTIONS = [
     { key: 'theme', label: 'Thème', values: [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']], def: 'auto' },
+    { key: 'pins', label: 'Pastilles sur le jeu', type: 'checks', values: [['do', 'Faire'], ['opt', 'Si l’or'], ['no', 'Éviter']], def: { do: true, opt: true, no: true } },
     { key: 'width', label: 'Largeur', values: [['compact', 'Compacte'], ['wide', 'Large']], def: 'compact' },
     { key: 'text', label: 'Texte', values: [['small', 'Petit'], ['normal', 'Normal'], ['large', 'Grand']], def: 'normal' },
     { key: 'alpha', label: 'Fond', values: [['100', 'Opaque'], ['90', '90 %'], ['85', '85 %']], def: '90' },
@@ -1425,9 +1512,11 @@ const KT = (() => {
   // Valeurs inconnues du stockage (modifié à la main, version antérieure) ramenées aux valeurs par défaut : une zone de porteur
   // inconnue ferait échouer la formation à chaque lecture de la sauvegarde.
   function checkUi(ui) {
-    for (const o of OPTIONS) if (!o.values.some(([v]) => v === ui[o.key])) ui[o.key] = o.def;
+    for (const o of OPTIONS) {
+      if (o.type === 'checks') ui[o.key] = Object.fromEntries(Object.entries(o.def).map(([v, d]) => [v, typeof ui[o.key]?.[v] === 'boolean' ? ui[o.key][v] : d]));
+      else if (!o.values.some(([v]) => v === ui[o.key])) ui[o.key] = o.def;
+    }
     if (!TABS.some(([t]) => t === ui.tab)) ui.tab = 'tour';
-    ui.pins = { do: true, opt: true, no: true, ...ui.pins };
   }
 
   // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). La rangée d'un Pokémon est sa
@@ -1454,8 +1543,8 @@ const KT = (() => {
     const zone = CARRY_ZONES[side];
     const rows = [0, 1, 2, 3];
     const zones = u => {
-      const cols = u.row === 0 ? [3, 2, 4, 1, 5, 0, 6] : zone.order;
-      const cells = [...rows.slice(u.row), ...rows.slice(0, u.row).reverse()].map(r => cols.map(c => r * 7 + c));
+      const cols = u.row === 0 ? CENTER_OUT : zone.order;
+      const cells = [...rows.slice(u.row), ...rows.slice(0, u.row).reverse()].map(r => cols.map(c => cellAt(r, c)));
       return u.role === 'carry' && u.row > 0 ? [cells[0].filter(c => zone.cols.includes(colOf(c))), ...cells] : cells;
     };
     const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
@@ -1536,15 +1625,7 @@ const KT = (() => {
     const same = previous?.run === run ? previous : null;
     const target = stats && data ? targetComp(stats, data, game, same?.key ?? null) : null;
     const next = target ? nextComp(stats, data, game, target, same?.next ?? null) : null;
-    const rerollWith = left => rerollMark(game, target, data, eco, names, left);
-    let xp;
-    const shop = shopMarks(game, target, next, data, eco, names, left => {
-      xp = xpMark(game, eco, left, false);
-      return xp.cost;
-    }, left => rerollWith(left)?.level === 'do');
-    const reroll = rerollWith(shop.left);
-    // L'or que ni un achat ni une actualisation n'engage va au niveau suivant.
-    if (xp.mark?.level !== 'do' && reroll?.level !== 'do') xp = xpMark(game, eco, shop.left, true);
+    const spent = spend(game, target, next, data, eco, names);
     const choice = offerChoiceMarks(data, game, eco, names);
     const profiles = target ? lineProfiles(stats, data) : null;
     const holders = target ? holdersOf(stats, data, game, target, profiles) : [];
@@ -1554,10 +1635,10 @@ const KT = (() => {
     const units = target ? formation(target, game, data, holders, side) : [];
     return {
       game, eco, target, next, names, run,
-      shop: shop.marks,
-      reroll,
-      xp: xp.mark,
-      bench: sellMarks(game, target, next, names, shop.short),
+      shop: spent.shop,
+      reroll: spent.reroll,
+      xp: spent.xp,
+      bench: sellMarks(game, target, next, names, spent.short),
       bag: items.marks,
       reward: offerMarks(book, game, items.holders, future, names),
       aims: target ? aimsOf(data, game, items, book) : [],
@@ -1726,10 +1807,12 @@ const CSS = `
 .kt-gold .spend { font-size: var(--kt-fs-l); font-weight: 700; color: var(--kt-accent-text); }
 .kt-gold .m { font-size: var(--kt-fs-s); color: var(--kt-muted); margin-left: auto; white-space: nowrap; }
 .kt-warn { display: flex; gap: var(--kt-s2); align-items: center; font-size: var(--kt-fs-s); padding: var(--kt-s15) var(--kt-s2); border-radius: var(--kt-r-ctl); background: var(--kt-raised); }
-.kt-boss { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 var(--kt-s2); padding: var(--kt-s2) var(--kt-s3); border-radius: var(--kt-r-card); background: var(--kt-raised); }
+/* Carte avec taux : texte à gauche, taux sur deux rangées à droite (prochain boss, trios). */
+.kt-card-rate { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 var(--kt-s2); padding: var(--kt-s2); border-radius: var(--kt-r-card); background: var(--kt-raised); }
+.kt-card-rate .kt-rate { grid-row: 1 / span 2; grid-column: 2; }
+.kt-boss { padding: var(--kt-s2) var(--kt-s3); }
 .kt-boss .n { font-weight: 700; font-size: var(--kt-fs-l); }
 .kt-boss .w { font-size: var(--kt-fs-s); color: var(--kt-muted); }
-.kt-boss .kt-rate { grid-row: 1 / span 2; grid-column: 2; }
 .kt-rate { display: inline-flex; gap: var(--kt-s1); align-items: center; padding: var(--kt-s0) var(--kt-s2); border-radius: 999px; font-size: var(--kt-fs-s); font-weight: 700; white-space: nowrap; }
 .kt-rate.good { background: var(--kt-good-bg); color: var(--kt-good-fg); }
 .kt-rate.bad { background: var(--kt-bad-bg); color: var(--kt-bad-fg); }
@@ -1787,11 +1870,9 @@ const CSS = `
 .kt-big b { display: block; font-size: var(--kt-fs-l); }
 .kt-big span { font-size: var(--kt-fs-xs); color: var(--kt-muted); }
 .kt-cores { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--kt-s1); }
-.kt-cores li { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 var(--kt-s2); padding: var(--kt-s2); border-radius: var(--kt-r-card); background: var(--kt-raised); }
 .kt-cores .names { font-size: var(--kt-fs-m); font-weight: 600; }
 .kt-cores .n { font-size: var(--kt-fs-xs); color: var(--kt-muted); }
 .kt-cores .mine { color: var(--kt-accent-text); font-weight: 600; }
-.kt-cores .kt-rate { grid-row: 1 / span 2; grid-column: 2; }
 
 /* Règles */
 .kt-rules { margin: 0; padding-left: var(--kt-s4); display: grid; gap: var(--kt-s15); font-size: var(--kt-fs-m); }
@@ -1870,7 +1951,6 @@ const COMPACT_BELOW = 64;
 // Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
 const TIP_HALF = 120;
 
-const PIN_NAME = { do: 'Faire', opt: 'Si l’or', no: 'Éviter' };
 const ICON = {
   gear: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg>',
   up: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg>',
@@ -1961,22 +2041,30 @@ ${aimsHtml(a, ui)}
 <p class="kt-hint">Porteur à distance : rangée de sa portée, ${KT.CARRY_ZONES[ui.side].name} (options ⚙).</p>`;
 }
 
-function bossTabHtml(state) {
+// Prochain boss du mode de la partie : stats null avant leur chargement, stop null sans boss à venir.
+function nextBossOf(state) {
   const stats = modeStats(state);
+  return { stats, stop: stats && KT.nextBossStop(stats.stops, state.floor, state.mode) };
+}
+
+// Taux coloré au taux moins la pénalité de difficulté, comme le seuil de « tout jouer ».
+function rateHtml(win, mode, label = '') {
+  const l = KT.rateLevel(win - mode.penalty);
+  return `<span class="kt-rate ${l.cls}">${l.sym} ${KT.pct(win)}${label}</span>`;
+}
+
+function bossTabHtml(state) {
+  const { stats, stop } = nextBossOf(state);
   if (!stats) return '<p class="kt-msg">Statistiques indisponibles.</p>';
-  const stop = KT.nextBossStop(stats.stops, state.floor, state.mode);
   // L'en-tête dit déjà qu'aucun boss n'est connu après cet étage.
   if (!stop) return '<p class="kt-msg">Pas de trio à afficher.</p>';
   const names = KT.namer(state.lang);
   const mine = state.advice?.target?.key;
   const cores = KT.topCores(stats.cores, stop.stop);
-  // Couleur au taux moins la pénalité de difficulté, comme le seuil de « tout jouer ».
-  const level = win => KT.rateLevel(win - state.mode.penalty);
   const coresHtml = cores.length
     ? `<ol class="kt-cores">${cores.map(c => {
-      const l = level(c.win);
       const own = KT.coreKey(c.core) === mine ? ' · <span class="mine">ta compo cible</span>' : '';
-      return `<li><span class="names">${esc(c.core.map(names.line).join(' · '))}</span><span class="kt-rate ${l.cls}">${l.sym} ${KT.pct(c.win)}</span><span class="n">${c.n} combats${own}</span></li>`;
+      return `<li class="kt-card-rate"><span class="names">${esc(c.core.map(names.line).join(' · '))}</span>${rateHtml(c.win, state.mode)}<span class="n">${c.n} combats${own}</span></li>`;
     }).join('')}</ol>`
     : '<p class="kt-msg">Aucun trio n’a encore 20 combats sur ce boss.</p>';
   // Manche à plusieurs variantes (champion à choisir, tirage) : leurs taux, puis les chiffres de la plus jouée.
@@ -2022,13 +2110,11 @@ function headHtml(state) {
     else if (e.nextWall) wall = `${mode.label} ${e.nextWall.floor} (${esc(KT.fightName(e.nextWall))}, ${KT.pct(e.nextWall.fightWin)}) : tout jouer.`;
     if (wall) parts.push(`<p class="kt-warn"><span class="kt-sym kp-no" aria-hidden="true">▼</span>${wall}</p>`);
   }
-  if (mode.id !== KT.TOWER.id) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);
-  const stats = modeStats(state);
-  const stop = stats && KT.nextBossStop(stats.stops, state.floor, mode);
+  if (mode.hasLeague) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);
+  const { stats, stop } = nextBossOf(state);
   if (stop) {
     const dist = stop.floor - state.floor;
-    const lvl = KT.rateLevel(stop.fightWin - mode.penalty);
-    parts.push(`<div class="kt-boss"><span class="n">${esc(KT.fightName(stop))}</span><span class="kt-rate ${lvl.cls}">${lvl.sym} ${KT.pct(stop.fightWin)}<span class="kt-sr"> de victoires</span></span>
+    parts.push(`<div class="kt-boss kt-card-rate"><span class="n">${esc(KT.fightName(stop))}</span>${rateHtml(stop.fightWin, mode, '<span class="kt-sr"> de victoires</span>')}
 <span class="w">${mode.unit} ${stop.floor} · ${dist ? `dans ${dist}` : 'en cours'}</span></div>`);
   } else if (stats) {
     parts.push(noBossHtml(mode, KT.lastBossFloor(stats.stops, mode)));
@@ -2051,6 +2137,27 @@ function tabsHtml(state, ui) {
 const TAB_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End']);
 const TAB_HTML = { tour: tourHtml, compo: compoHtml, boss: bossTabHtml, rules: rulesHtml };
 
+// Onglet visé par une touche sur la liste d'onglets (motif ARIA tablist : flèches, Début, Fin) ; undefined pour une autre touche.
+function tabForKey(key, current) {
+  const i = KT.TABS.findIndex(([t]) => t === current);
+  const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: KT.TABS.length - 1 }[key];
+  return to === undefined ? undefined : KT.TABS[(to + KT.TABS.length) % KT.TABS.length][0];
+}
+
+// Touche gardée par le panneau, non transmise au jeu. on : 'input' (champ), 'tab' (onglet) ou null. Dans un champ, toutes sauf
+// Alt+K, qui replie le panneau ; sur un onglet, ses seules touches (Échap qui ferme une bulle et les raccourcis du jeu remontent).
+const keptByPanel = (on, e) => (on === 'input' ? !(e.altKey && e.code === 'KeyK') : on === 'tab' && TAB_KEYS.has(e.key));
+
+// Sections repliables → clé de ui qui garde leur état entre deux rendus et deux sessions.
+const FOLDS = { 'kt-avoid': 'avoid', 'kt-aims': 'aims' };
+const foldKey = classList => FOLDS[Object.keys(FOLDS).find(c => classList?.contains(c))];
+
+// Option changée dans le menu : case à cocher d'une option checks, sinon bouton radio.
+function setOption(ui, { name, value, checked }) {
+  if (KT.OPTIONS.find(o => o.key === name)?.type === 'checks') ui[name][value] = checked;
+  else ui[name] = value;
+}
+
 function panelHtml(state, ui) {
   if (!state.stats && !state.error) return '<div class="kt-panel"><p class="kt-msg" role="status">Chargement des statistiques…</p></div>';
   if (state.unsupported) return `<div class="kt-panel">${UNSUPPORTED}</div>`;
@@ -2070,9 +2177,9 @@ function summaryHtml(state) {
 function optionsHtml(ui) {
   const seg = o => `<fieldset><legend>${o.label}</legend><div class="kt-seg">${o.values.map(([v, name]) =>
     `<label><input type="radio" name="${o.key}" value="${v}"${ui[o.key] === v ? ' checked' : ''}><span>${name}</span></label>`).join('')}</div></fieldset>`;
-  const pins = `<fieldset><legend>Pastilles sur le jeu</legend><div class="kt-checks">${Object.keys(SYM).map(l =>
-    `<label><input type="checkbox" name="pins" value="${l}"${ui.pins[l] ? ' checked' : ''}><span>${SYM[l]} ${PIN_NAME[l]}</span></label>`).join('')}</div></fieldset>`;
-  return `<h2>Options</h2>${seg(KT.OPTIONS[0])}${pins}${KT.OPTIONS.slice(1).map(seg).join('')}
+  const checks = o => `<fieldset><legend>${o.label}</legend><div class="kt-checks">${o.values.map(([v, name]) =>
+    `<label><input type="checkbox" name="${o.key}" value="${v}"${ui[o.key][v] ? ' checked' : ''}><span>${SYM[v]} ${name}</span></label>`).join('')}</div></fieldset>`;
+  return `<h2>Options</h2>${KT.OPTIONS.map(o => (o.type === 'checks' ? checks(o) : seg(o))).join('')}
 <p class="kt-hint">Alt+K replie le panneau ; double-clic sur la barre pour le remettre en haut à droite.</p>`;
 }
 
@@ -2302,33 +2409,45 @@ async function loadSources(state) {
   state.stale = stale.length ? Math.min(...stale) : null;
 }
 
+// Gabarit du panneau et calque des pastilles. Au montage, les parties sont vides et render les remplit ; les pages d'aperçu le
+// remplissent elles-mêmes et le rendent sans script. look : attributs data-* lus par les jetons CSS (applyLook) ; opts : HTML
+// du menu ouvert, null s'il est fermé ; floor : étage ou combat affiché, null sans partie.
+function shellHtml({ look = {}, label = 'Étage', floor = null, src = '', sum = '', alert = '', opts = null, body = '', status = '', foot = '', collapsed = false } = {}) {
+  const data = Object.entries(look).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('');
+  const panel = ['kt', collapsed && 'is-collapsed', opts !== null && 'is-menu'].filter(Boolean).join(' ');
+  return `<style>${CSS}</style>
+<div class="kt-root"${data}>
+<div class="${panel}" role="complementary" aria-label="Aide Kanto Tactics">
+  <div class="kt-bar">
+    <span class="kt-lbl">${esc(label)}</span>
+    <span class="kt-stepper"><button data-act="dec" aria-label="${esc(label)} précédent">−</button><input class="kt-floor${floor ? '' : ' is-empty'}" inputmode="numeric" aria-label="${esc(label)} courant" placeholder="?"${floor ? ` value="${floor}"` : ''}><button data-act="inc" aria-label="${esc(label)} suivant">+</button></span>
+    <span class="kt-src">${esc(src)}</span>
+    <span class="kt-sum">${sum}</span>
+    <span class="kt-sp"></span>
+    <button class="kt-ibtn" data-act="menu" aria-label="Options" aria-expanded="${opts !== null}" aria-controls="kt-opts">${ICON.gear}</button>
+    <button class="kt-ibtn" data-act="toggle" data-collapsed="${collapsed}" aria-label="${collapsed ? 'Déplier le panneau' : 'Replier le panneau'}" aria-expanded="${!collapsed}">${collapsed ? ICON.down : ICON.up}</button>
+  </div>
+  <div class="kt-alert" role="alert">${alert}</div>
+  <form class="kt-opts" id="kt-opts" aria-label="Options"${opts === null ? ' hidden' : ''}>${opts ?? ''}</form>
+  <div class="kt-body">${body}</div>
+  <p class="kt-status" role="status">${status}</p>
+  <div class="kt-foot"${foot ? '' : ' hidden'}>${foot}</div>
+</div>
+<div class="kp-layer"></div>
+</div>`;
+}
+
+// Réglages du panneau hors options du menu (checkUi les complète) : position, replié, sections ouvertes, compo choisie.
+const UI_DEFAULTS = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null };
+
 function mount() {
-  const ui = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
+  const ui = { ...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
   KT.checkUi(ui);
   const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: undefined, save: null, saveKey: undefined, mode: KT.TOWER_MODE, unsupported: false, stats: null, campBroken: false, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
-  root.innerHTML = `<style>${CSS}</style>
-<div class="kt-root">
-<div class="kt" role="complementary" aria-label="Aide Kanto Tactics">
-  <div class="kt-bar">
-    <span class="kt-lbl">Étage</span>
-    <span class="kt-stepper"><button data-act="dec" aria-label="Étage précédent">−</button><input class="kt-floor" inputmode="numeric" aria-label="Étage courant" placeholder="?"><button data-act="inc" aria-label="Étage suivant">+</button></span>
-    <span class="kt-src"></span>
-    <span class="kt-sum"></span>
-    <span class="kt-sp"></span>
-    <button class="kt-ibtn" data-act="menu" aria-label="Options" aria-expanded="false" aria-controls="kt-opts">${ICON.gear}</button>
-    <button class="kt-ibtn" data-act="toggle"></button>
-  </div>
-  <div class="kt-alert" role="alert"></div>
-  <form class="kt-opts" id="kt-opts" aria-label="Options" hidden></form>
-  <div class="kt-body"></div>
-  <p class="kt-status" role="status"></p>
-  <div class="kt-foot"></div>
-</div>
-<div class="kp-layer"></div>
-</div>`;
+  root.innerHTML = shellHtml();
   document.body.append(host);
   const look = root.querySelector('.kt-root');
   const panel = root.querySelector('.kt');
@@ -2548,18 +2667,15 @@ function mount() {
   // Onglets au clavier (motif ARIA tablist) : flèches, Début et Fin.
   panel.addEventListener('keydown', e => {
     if (!e.target.matches('[role="tab"]')) return;
-    const i = KT.TABS.findIndex(([t]) => t === ui.tab);
-    const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: KT.TABS.length - 1 }[e.key];
-    if (to === undefined) return;
+    const tab = tabForKey(e.key, ui.tab);
+    if (tab === undefined) return;
     e.preventDefault();
-    const tab = KT.TABS[(to + KT.TABS.length) % KT.TABS.length][0];
     showTab(tab);
     root.getElementById(`kt-tab-${tab}`).focus();
   });
   opts.addEventListener('change', e => {
-    const { name, value, checked } = e.target;
-    if (name === 'pins') ui.pins[value] = checked;
-    else ui[name] = value;
+    const { name } = e.target;
+    setOption(ui, e.target);
     saveUi();
     applyLook();
     if (name === 'side') compute();
@@ -2570,15 +2686,14 @@ function mount() {
   // les chiffres tapés et les flèches des onglets et des options. Alt+K passe, pour replier le panneau depuis un champ.
   for (const type of ['keydown', 'keyup', 'keypress']) {
     panel.addEventListener(type, e => {
-      // Sur un onglet, seules ses touches restent au panneau ; les autres (Échap qui ferme une bulle, raccourcis du jeu) remontent.
-      const kept = e.target.matches('input') ? !(e.altKey && e.code === 'KeyK') : e.target.matches('[role="tab"]') && TAB_KEYS.has(e.key);
-      if (kept) e.stopPropagation();
+      let on = null;
+      if (e.target.matches('input')) on = 'input';
+      else if (e.target.matches('[role="tab"]')) on = 'tab';
+      if (keptByPanel(on, e)) e.stopPropagation();
     });
   }
-  // Sections repliables : état gardé entre deux rendus et deux sessions.
-  const FOLDS = { 'kt-avoid': 'avoid', 'kt-aims': 'aims' };
   root.addEventListener('toggle', e => {
-    const key = FOLDS[Object.keys(FOLDS).find(c => e.target.classList?.contains(c))];
+    const key = foldKey(e.target.classList);
     if (!key || ui[key] === e.target.open) return;
     ui[key] = e.target.open;
     saveUi();
@@ -2650,6 +2765,10 @@ function mount() {
   });
 }
 
-// Les tests reçoivent aussi le pilote du Planificateur, joué sur un faux DOM.
-if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, PlannerError };
-else mount();
+// Les tests et l'aperçu reçoivent aussi le pilote du Planificateur (joué sur un faux DOM), le rendu et les événements du panneau.
+if (typeof module !== 'undefined') {
+  module.exports = {
+    ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, optionsHtml, summaryHtml, footHtml, shellHtml,
+    PlannerError, tabForKey, keptByPanel, foldKey, setOption, UI_DEFAULTS, onSaveFloor, modeStats,
+  };
+} else mount();

@@ -97,7 +97,8 @@ barre le remet en haut à droite.
     sont donnés en paire, avec l'ordre de pose quand il compte. Un composant dont la stat d'attaque ne sert pas le Pokémon ne
     se pose pas seul : il attend au sac l'autre composant de la recette (« Garde Protéine — pour Goupix, avec Calcium : Orbe
     Vie »). Un objet complet idéal de plusieurs Pokémon va à celui qui le
-    classe le plus haut ; un composant, au premier que sa stat sert dans l'ordre porteur, tanks, attaquants. 3 objets au plus.
+    classe le plus haut ; un composant, au premier que sa stat sert dans l'ordre porteur, tanks, attaquants (par étoiles, shiny, puis force de la
+    lignée sur les combats de la compo cible). 3 objets au plus.
     Un objet idéal qu'un Pokémon de la compo ne peut pas recevoir attend au sac pour lui, avant toute lignée à venir, avec la
     raison : plus de place, après l'Aimant, composant seul à fusionner d'abord, bloqué par un composant seul hors de ses
     recettes, ou à poser avec l'autre composant. Le reste
@@ -198,9 +199,23 @@ Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pok
 ## Développement
 
 ```sh
-node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur, campagne
-node scripts/preview.mjs   # pages d'aperçu par état dans build/, puis la commande de rendu imprimée
+node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur, campagne, événements du panneau
+node scripts/preview.mjs   # deux pages par état dans build/, puis les commandes de rendu des pages panneau
 ```
+
+`build/panel-<état>.html` montre le panneau seul, statique (environ 30 Ko) : `render-html.sh` (skill `ui-design`, lancé hors du
+sandbox) la rend telle quelle. `build/preview-<état>.html` monte le vrai script sur un décor du jeu, pastilles comprises ; elle
+pèse plus de 160 Ko, au-delà de ce qu'accepte une URL `data:`. Elle s'ouvre servie en local :
+`python3 -m http.server 8765 --bind 127.0.0.1 --directory build`, puis `http://127.0.0.1:8765/preview-<état>.html` dans Chrome.
+
+Les règles v41 absentes de l'API (`LINES_V41`, `ADVENTURES`, barèmes) se relèvent dans le code du jeu, en lecture statique :
+`curl -sL https://einoow.com/playables/kanto-tactics/index.html` donne les modules `assets/*.js` (noms hachés, changés à chaque
+version) ; les modules chargés à la demande se trouvent en suivant les `"./x.js"` des modules déjà téléchargés. Lignées et
+capacités : `roster-*.js` ; règles de la Tour et lignées ajoutées : `route-*.js`, où la définition propre d'une lignée (`_s`)
+l'emporte sur sa ligne de base (`role: o.role ?? e.role, range: o.range ?? e.range`). Manches de campagne : `route-*.js`, tables
+`ul` (Kanto, Cap sur Cramois'Île, « Je te choisis ! ») ; un arrêt de `campana.json` vaut `manche + 1:` suivi de la fin du nom
+espagnol de la manche, après le dernier « · ». Safari, Lavanville et Team Rocket chargent leurs manches par un module chiffré
+(`start-*.js`). Ne pas exécuter les modules téléchargés.
 
 Maquette validée du panneau : `docs/design/mockups/2026-11-09-refonte.html` (onglets, options, verre clair et sombre) ; captures
 `docs/design/captures/refonte-*.webp`.
