@@ -173,13 +173,13 @@ Changer un préréglage recalcule tout de suite les conseils et les règles d'or
 
 Le panneau note le résultat de chaque combat joué avec lui et apprend de l'écart entre tes victoires et les taux publics.
 
-- **Journal** : à chaque combat fini, une ligne dans le navigateur (`localStorage`, clé `kt-overlay:journal`) : la partie, le
-  mode et la difficulté, l'étage ou le combat, le taux attendu (taux public, moins 10 ou 20 points en Vétéran et en Légende), le
+- **Journal** : à chaque combat fini, une ligne dans le navigateur (`localStorage`, clé `kt-overlay:journal`) : la partie, la
+  Tour ou l'aventure et sa difficulté, l'étage ou le combat, le taux attendu (taux public, moins 10 ou 20 points en Vétéran et en Légende), le
   résultat, et si le trio de la compo cible était posé à la dernière lecture avant le combat. Le résultat se lit dans la
   sauvegarde du jeu, relue toutes les 2 s : la série de victoires (`streak`) change à chaque combat, et la partie avance d'une
-  manche ou compte un essai de plus. Le journal garde les 300 derniers combats de chaque mode et difficulté, pour suivre ton
+  manche ou compte un essai de plus. Le journal garde les 300 derniers combats de la Tour et de chaque aventure à chaque difficulté, pour suivre ton
   niveau et les rééquilibrages du jeu ; rien ne quitte le navigateur.
-- **Bilan** (onglet Règles) : pour le mode et la difficulté en cours, tes victoires, les victoires attendues (somme des taux) et la
+- **Bilan** (onglet Règles) : pour la Tour, ou pour l'aventure et la difficulté en cours, tes victoires, les victoires attendues (somme des taux) et la
   marge à 95 % sur cette somme, puis les mêmes chiffres avec et sans le trio de la compo cible posé. Ces deux lignes décrivent,
   sans départager : on s'écarte du conseil surtout quand la partie va déjà mal.
 - **Écart appris** : la moyenne de (résultat − taux attendu), rétrécie par 50 combats fictifs sans écart et bornée à 20 points.
@@ -187,7 +187,7 @@ Le panneau note le résultat de chaque combat joué avec lui et apprend de l'éc
   Avec 30 victoires pour 50 attendues sur 100 combats, les taux comptent 13 points de moins : tout jouer sous 58 % au lieu de
   45 %, ce que l'en-tête rappelle (« Tour · tout jouer sous 58 % »). Les taux affichés restent les taux publics. Il n'y a pas de
   seuil en deçà duquel l'écart serait ignoré : il ferait sauter les conseils d'une dizaine de points sur un seul combat. Un
-  combat de plus déplace l'écart de 2 points au plus, et la chance seule en laisse environ 3 après 100 combats, 2 après 300.
+  combat de plus déplace l'écart de 2 points au plus, et la chance seule en laisse environ 3 après 100 combats, 2,5 après 300.
 - **Ce que le panneau n'apprend pas** : les préréglages de stratégie, le choix du trio et les objets restent fixés par les
   statistiques publiques. À quelques parties par semaine, les résultats d'un joueur ne départagent pas ces choix avant le
   rééquilibrage suivant du jeu.
