@@ -1060,11 +1060,11 @@ test('ancrage : conseillé si la compo vise une forme ancrée non encore choisie
 
 test('formation : code KT1 trié par cellule, Pokémon bien placé gardé, porteur côté choisi', () => {
   // S57 : Minidraco (case 29 → cellule 1, mêlée au premier rang) garde sa case ; Goupix (31 → 3, portée 3 au premier rang) part
-  // en 3ᵉ rangée, Magmar (portée 3) deux colonnes plus loin ; Rattata (tank, au banc) prend le centre de l'avant, puis Ptéra,
-  // Caninos et Abo (mêlée) les cases libres depuis le centre.
+  // en 3ᵉ rangée, Magmar (portée 3) deux colonnes plus loin ; Rattata (tank, au banc) prend le centre de l'avant, puis Caninos,
+  // puis les assassins Ptéra et Abo les cases libres depuis le centre.
   assert.equal(advise(S57).code,
-    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;dratini:2:1:choice-band.focus-sash.scope-lens;aerodactyl:1:2;'
-    + 'rattata:1:3:eviolite.rocky-helmet.leftovers;growlithe:1:4:scope-lens.choice-band.focus-sash;ekans:1:5;'
+    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;dratini:2:1:choice-band.focus-sash.scope-lens;growlithe:1:2:scope-lens.choice-band.focus-sash;'
+    + 'rattata:1:3:eviolite.rocky-helmet.leftovers;aerodactyl:1:4;ekans:1:5;'
     + 'vulpix:2:14:choice-specs.quick-claw.twisted-spoon;magmar:1:16');
   assert.match(advise(S57, { side: 'right' }).code, /magmar:1:18;vulpix:2:20:choice-specs.quick-claw.twisted-spoon$/);
 });
@@ -1093,20 +1093,21 @@ const moves = (save, extra) => advise(save, extra).moves.map(m => `${m.title} �
 
 test('déplacements : d’abord libérer la case, puis poser depuis le banc', () => {
   // S57 : Goupix (portée 3) quitte la case avant-colonne 4 pour Rattata (tank) ; Caninos (mêlée) est posé à côté.
-  assert.deepEqual(moves(S57), ['Déplace Goupix — avant, colonne 4 → 3ᵉ rangée, colonne 1', 'Pose Rattata — avant, colonne 4', 'Pose Caninos — avant, colonne 5']);
+  assert.deepEqual(moves(S57), ['Déplace Goupix — avant, colonne 4 → 3ᵉ rangée, colonne 1', 'Pose Caninos — avant, colonne 3', 'Pose Rattata — avant, colonne 4']);
   assert.ok(advise(S57).moves.every(m => m.level === 'do' && m.label === ''));
   // Déjà bien placé partout : aucun déplacement.
   assert.deepEqual(moves({ ...S57, level: 2, board: { 29: 'a', 31: 'b' }, bench: BENCH(['c', 'd', 'e']) }), []);
 });
 
 test('déplacements : remplacer l’occupant hors formation, ranger au banc faute de place, copie en double comptée', () => {
-  // Niveau 3 (Minidraco, Caninos, Ptéra) : Rattata, hors formation, occupe la case de Caninos.
+  // Niveau 3 (Minidraco, Caninos, Ptéra) : Goupix, hors formation, occupe la case de Caninos (centre de l'avant, avant
+  // l'assassin Ptéra).
   assert.deepEqual(moves({ ...S57, level: 3, board: { 29: 'a', 31: 'd', 30: 'e' }, bench: BENCH(['b', 'c']) }),
-    ['Pose Caninos — avant, colonne 3, à la place de Rattata']);
+    ['Pose Caninos — avant, colonne 4, à la place de Goupix']);
   // Niveau 4, 3 posés : la 1ʳᵉ pose prend la place libre, la 2ᵉ fait ranger Rattata.
   const f = { id: 'f', line: 'ekans', star: 1 };
-  assert.deepEqual(moves({ ...S57, level: 4, units: { ...S57.units, f }, board: { 29: 'a', 31: 'e', 32: 'f' }, bench: BENCH(['b', 'c', 'd']) }),
-    ['Pose Caninos — avant, colonne 3', 'Pose Goupix — 3ᵉ rangée, colonne 1 ; range Rattata au banc']);
+  assert.deepEqual(moves({ ...S57, level: 4, units: { ...S57.units, f }, board: { 29: 'a', 30: 'e', 32: 'f' }, bench: BENCH(['b', 'c', 'd']) }),
+    ['Pose Caninos — avant, colonne 4', 'Pose Goupix — 3ᵉ rangée, colonne 1 ; range Rattata au banc']);
   // Caninos ★★ au banc, Caninos ★ posé : la copie posée n'est pas dans la formation, elle libère la place.
   const twins = { ...S57, level: 2, units: { ...S57.units, c: { id: 'c', line: 'growlithe', star: 2 } }, board: { 29: 'a', 30: 'b' }, bench: BENCH(['c', 'd', 'e']) };
   assert.deepEqual(moves(twins), ['Pose Caninos — avant, colonne 4 ; range Caninos au banc']);
@@ -1121,12 +1122,12 @@ test('déplacements rejoués comme le jeu : échange, occupant déplacé, Pokém
   assert.deepEqual(swap.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Nosferapti — fond, colonne 1 → avant, colonne 4 (échange avec Abra)']);
   // Goupix va sur la case de Rattata (42 → 3ᵉ rangée, colonne 1), qui passe sur l'ancienne case de Goupix : Caninos y est posé à
   // la place de Rattata.
-  assert.deepEqual(moves({ ...S57, level: 4, board: { 29: 'a', 30: 'd', 42: 'e' }, bench: BENCH(['b', 'c']) }),
-    ['Déplace Goupix — avant, colonne 3 → 3ᵉ rangée, colonne 1', 'Pose Caninos — avant, colonne 3, à la place de Rattata']);
+  assert.deepEqual(moves({ ...S57, level: 4, board: { 29: 'a', 31: 'd', 42: 'e' }, bench: BENCH(['b', 'c']) }),
+    ['Déplace Goupix — avant, colonne 4 → 3ᵉ rangée, colonne 1', 'Pose Caninos — avant, colonne 4, à la place de Rattata']);
   // Plateau plein : Goupix prend la case de Rattata ; Caninos fait ranger Abo, pas un Pokémon dont la case sert à une pose.
   const units = { ...S57.units, f: { id: 'f', line: 'ekans', star: 1 }, h: { id: 'h', line: 'pidgey', star: 1 } };
-  assert.deepEqual(moves({ ...S57, level: 4, units, board: { 29: 'a', 42: 'e', 31: 'f', 50: 'h' }, bench: BENCH(['b', 'c', 'd']) }),
-    ['Pose Goupix — 3ᵉ rangée, colonne 1, à la place de Rattata', 'Pose Caninos — avant, colonne 3 ; range Abo au banc']);
+  assert.deepEqual(moves({ ...S57, level: 4, units, board: { 29: 'a', 42: 'e', 30: 'f', 50: 'h' }, bench: BENCH(['b', 'c', 'd']) }),
+    ['Pose Goupix — 3ᵉ rangée, colonne 1, à la place de Rattata', 'Pose Caninos — avant, colonne 4 ; range Abo au banc']);
 });
 
 const sortedCells = code => Object.values(cellsOf(code)).sort((a, b) => a - b);
@@ -1194,6 +1195,38 @@ test('formation : porteur de portée 3 en 3ᵉ rangée, dans sa zone', () => {
   assert.deepEqual(said(carry3({}, 'right')), ['Pose Goupix — 3ᵉ rangée, colonne 7']);
   assert.deepEqual(said(carry3({ 44: 'vulpix' }, 'left')), []);
   assert.deepEqual(said(carry3({ 44: 'vulpix' }, 'right')), ['Déplace Goupix — 3ᵉ rangée, colonne 3 → 3ᵉ rangée, colonne 7']);
+});
+
+test('formation : cases collées sur le plateau en hexagones, rangées impaires décalées vers la droite', () => {
+  // Avant (rangée paire), colonne 4 : en 2ᵉ rangée, colonnes 3 et 4. 2ᵉ rangée (impaire), colonne 4 : à l'avant et en 3ᵉ
+  // rangée, colonnes 4 et 5.
+  assert.deepEqual([9, 10, 2, 4, 8, 11, 17].map(c => KT.touching(3, c)), [true, true, true, true, false, false, false]);
+  assert.deepEqual([3, 4, 2, 17, 18, 16].map(c => KT.touching(10, c)), [true, true, false, true, true, false]);
+});
+
+test('formation : Mew collé à l’allié de plus grande valeur, dont Métronome copie la capacité', () => {
+  // Minidraco ★★ (coût 4 × 3) à l'avant, colonne 4 : Mew (portée 2) en 2ᵉ rangée, sur une case collée.
+  const mew = trioAdvice(['mew', 'dratini', 'abra'], { mew: 1, dratini: 2, abra: 2 });
+  assert.deepEqual(cellsOf(mew.code), { dratini: 3, mew: 9, abra: 21 });
+  assert.ok(said(mew).includes('Pose Mew — 2ᵉ rangée, colonne 3, collé à Minidraco dont il copie la capacité'));
+  // Déjà sur une case collée à Minidraco : il la garde.
+  const kept = trioAdvice(['mew', 'dratini', 'abra'], { mew: 1, dratini: 2, abra: 2 }, { board: { 31: 'dratini', 38: 'mew' } });
+  assert.equal(cellsOf(kept.code).mew, 10);
+  assert.deepEqual(said(kept), ['Pose Abra — fond, colonne 1']);
+  // Téléport d'Abra ★★★ ne se copie pas : Mew va à côté de Pikachu, au fond, en 3ᵉ rangée faute de case collée sur la sienne.
+  const cells = cellsOf(trioAdvice(['mew', 'abra', 'pikachu'], { mew: 1, abra: 3, pikachu: 1 }).code);
+  assert.deepEqual(cells, { mew: 16, abra: 21, pikachu: 23 });
+  assert.ok(KT.touching(cells.mew, cells.pikachu) && !KT.touching(cells.mew, cells.abra));
+});
+
+test('formation : Ramoloss au centre de l’avant, assassins et Grolem ★★★ sur les bords', () => {
+  // Mur Lumière protège les alliés collés à Ramoloss : il passe avant Machoc et Rattata, tanks comme lui.
+  assert.equal(cellsOf(trioAdvice(['machop', 'slowpoke', 'rattata'], { machop: 1, slowpoke: 1, rattata: 1 }).code).slowpoke, 3);
+  // Séisme blesse les alliés collés, à ★★★ seulement : Racaillou ★★ garde le centre, ★★★ passe au bord.
+  const quake = star => cellsOf(trioAdvice(['geodude', 'machop', 'rattata'], { geodude: star, machop: 1, rattata: 1 }).code).geodude;
+  assert.deepEqual([quake(2), quake(3)], [3, 4]);
+  // Nosferapti et Insécateur quittent leur case au début du combat : Machoc garde le centre.
+  assert.deepEqual(cellsOf(trioAdvice(['zubat', 'machop', 'scyther'], { zubat: 1, machop: 1, scyther: 1 }).code), { zubat: 2, machop: 3, scyther: 4 });
 });
 
 // Unités de S57 remplacées ou ajoutées ; shiny : +10 % (makeUnit du jeu), transmis par la fusion.

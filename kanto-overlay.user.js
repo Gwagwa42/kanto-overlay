@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour et campagne
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.6.0
+// @version      2.7.0
 // @description  Tour de combat et campagne (aventures, trois difficultés) de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -1507,6 +1507,25 @@ const KT = (() => {
   const rowOf = cell => Math.floor(cell / COLS);
   const colOf = cell => cell % COLS;
   const cellAt = (row, col) => row * COLS + col;
+  // Plateau en hexagones, rangées impaires décalées vers la droite (route-*.js) ; la rangée 0 de la cellule KT1 est la 5ᵉ du
+  // plateau, de même parité. Deux cases sont collées à une distance de 1.
+  const cube = cell => {
+    const r = rowOf(cell);
+    const x = colOf(cell) - (r - (r & 1)) / 2;
+    return [x, r, -x - r];
+  };
+  const touching = (a, b) => Math.max(...cube(a).map((v, i) => Math.abs(v - cube(b)[i]))) === 1;
+
+  // Capacités qui dépendent des voisins, relevées dans le code du jeu (roster-*.js, route-*.js). Mew (Métronome, move.kind de
+  // data.json) copie la capacité de l'allié collé de plus grande valeur, coût × 3^(étoile − 1), à l'étoile de Mew, sauf ces genres
+  // de capacités ; à égalité, celui de plus petite case. Ramoloss (Mur Lumière) protège aussi chaque allié collé : il prend le
+  // centre de l'avant. Le Séisme de Grolem (Racaillou ★★★) inflige 25 % de ses dégâts aux alliés collés, et les assassins quittent
+  // leur case dès le début du combat (bond, tunnel, vol, ruée) : ils prennent les colonnes du bord, après les autres.
+  const UNCOPIED = new Set(['metronome', 'transform', 'splash', 'teleport', 'rest']);
+  const ALLY_SHIELD = new Set(['slowpoke']);
+  const ALLY_QUAKE = { geodude: 3 };
+  const OPENERS = new Set(['aerodactyl', 'diglett', 'doduo', 'ekans', 'pidgey', 'scyther', 'zubat']);
+  const moveKind = (data, base, star) => lineInfo(data, base)?.stars?.[star - 1]?.move?.kind;
 
   // Zones du porteur à distance : ses colonnes préférées sur sa rangée, et ordre de remplissage des rangées derrière l'avant (une
   // colonne sur deux d'abord, pour espacer les unités face aux attaques de zone).
@@ -1543,11 +1562,13 @@ const KT = (() => {
   // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). La rangée d'un Pokémon est sa
   // portée, 1 à l'avant, 4 et plus au fond : les deux camps se touchent sur un plateau en hexagones, il atteint de là la première
   // rangée ennemie. Un tank possédé (le rôle vient de holdersOf) reste à l'avant quelle que soit sa portée. Colonnes : depuis le
-  // centre à l'avant ; derrière, dans l'ordre de la zone choisie (coin gauche, centre ou coin droit), le porteur d'abord dans les
-  // colonnes de cette zone, en évitant la colonne d'une autre unité à distance, quelle que soit sa rangée (sur deux rangées
-  // voisines, deux cases de la même colonne se touchent). Déjà sur une case de sa première liste, un Pokémon la garde ; rangée
-  // pleine, il passe derrière, puis devant. unit : l'unité possédée (porteur de holdersOf), from : sa cellule, 'bench', ou null
-  // s'il n'est pas possédé.
+  // centre à l'avant, Ramoloss d'abord, puis les tanks, les autres, les assassins et Grolem ★★★ ; derrière, dans l'ordre de la
+  // zone choisie (coin gauche, centre ou coin droit), le porteur d'abord dans les colonnes de cette zone, en évitant la colonne
+  // d'une autre unité à distance, quelle que soit sa rangée (sur deux rangées voisines, deux cases de la même colonne se
+  // touchent). Déjà sur une case de sa première liste, un Pokémon la garde ; rangée pleine, il passe derrière, puis devant. Mew
+  // prend une case collée à l'allié qu'il copiera (copies : sa lignée), sur sa rangée si elle le permet ; sans allié connu des
+  // données ni case libre collée, il se place comme les autres. unit : l'unité possédée (porteur de holdersOf), from : sa
+  // cellule, 'bench', ou null s'il n'est pas possédé.
   function formation(target, game, data, holders, side) {
     const stars = id => bestStar(game, baseLine(id));
     const kept = new Set([...[...target.core].sort((a, b) => stars(b) - stars(a)), ...target.fillers].slice(0, game.level));
@@ -1568,19 +1589,42 @@ const KT = (() => {
       const cells = [...rows.slice(u.row), ...rows.slice(0, u.row).reverse()].map(r => cols.map(c => cellAt(r, c)));
       return u.role === 'carry' && u.row > 0 ? [cells[0].filter(c => zone.cols.includes(colOf(c))), ...cells] : cells;
     };
-    const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
+    // Mew se place en dernier, collé à l'allié qu'il copiera : sa case dépend de celle de cet allié.
+    const mimic = units.find(u => moveKind(data, u.base, u.star) === 'metronome');
+    const stay = new Set(units.filter(u => u !== mimic && zones(u)[0].includes(u.from)));
     const taken = new Set([...stay].map(u => u.from));
     const rangedCols = new Set([...stay].filter(u => u.row > 0).map(u => colOf(u.from)));
+    const frontRank = u => {
+      if (ALLY_SHIELD.has(u.base)) return 0;
+      if (u.star >= ALLY_QUAKE[u.base]) return 4;
+      if (OPENERS.has(u.base)) return 3;
+      return u.role === 'tank' ? 1 : 2;
+    };
     const first = role => (a, b) => Number(b.role === role) - Number(a.role === role);
-    const order = [...units.filter(u => u.row === 0).sort(first('tank')), ...units.filter(u => u.row > 0).sort(first('carry'))];
+    const others = units.filter(u => u !== mimic);
+    const order = [...others.filter(u => u.row === 0).sort((a, b) => frontRank(a) - frontRank(b)), ...others.filter(u => u.row > 0).sort(first('carry'))];
+    const put = (u, cell) => {
+      u.cell = cell;
+      taken.add(cell);
+      if (u.row > 0) rangedCols.add(colOf(cell));
+    };
+    const place = u => {
+      const free = zones(u).map(cells => cells.filter(c => !taken.has(c))).find(cells => cells.length);
+      put(u, (u.row > 0 ? free.find(c => !rangedCols.has(colOf(c))) : undefined) ?? free[0]);
+    };
     for (const u of order) {
-      if (stay.has(u)) u.cell = u.from;
-      else {
-        const free = zones(u).map(cells => cells.filter(c => !taken.has(c))).find(cells => cells.length);
-        u.cell = (u.row > 0 ? free.find(c => !rangedCols.has(colOf(c))) : undefined) ?? free[0];
-      }
-      taken.add(u.cell);
-      if (u.row > 0) rangedCols.add(colOf(u.cell));
+      if (stay.has(u)) put(u, u.from);
+      else place(u);
+    }
+    if (mimic) {
+      const value = u => lineInfo(data, u.base).c * 3 ** (u.star - 1);
+      const model = others.filter(u => lineInfo(data, u.base) && !UNCOPIED.has(moveKind(data, u.base, mimic.star)))
+        .sort((a, b) => value(b) - value(a) || a.cell - b.cell)[0];
+      const near = model ? zones(mimic).flat().filter(c => !taken.has(c) && touching(c, model.cell)) : [];
+      if (near.length) {
+        put(mimic, near.includes(mimic.from) ? mimic.from : near[0]);
+        mimic.copies = model.base;
+      } else place(mimic);
     }
     // Doc de l'API : unités triées par cellule.
     return units.sort((a, b) => a.cell - b.cell);
@@ -1599,6 +1643,7 @@ const KT = (() => {
     const at = new Map(onBoard.map(u => [boardCell(u.cell), u]));
     const cellOf = unit => [...at].find(([, v]) => v === unit)?.[0];
     const mine = new Set(units.map(f => f.unit).filter(Boolean));
+    const copying = u => (u.copies ? `, collé à ${names.line(u.copies)} dont il copie la capacité` : '');
     const marks = [];
     const pending = () => units.filter(f => typeof f.from === 'number' && cellOf(f.unit) !== f.cell);
     for (let left = pending(); left.length; left = pending()) {
@@ -1606,7 +1651,7 @@ const KT = (() => {
       const from = cellOf(u.unit);
       const other = at.get(u.cell);
       const swap = other && mine.has(other) ? ` (échange avec ${names.line(other.line)})` : '';
-      marks.push(mark('do', '', `Déplace ${names.line(u.base)}`, `${spot(from)} → ${spot(u.cell)}${swap}`));
+      marks.push(mark('do', '', `Déplace ${names.line(u.base)}`, `${spot(from)} → ${spot(u.cell)}${swap}${copying(u)}`));
       at.set(u.cell, u.unit);
       if (other) at.set(from, other);
       else at.delete(from);
@@ -1626,7 +1671,7 @@ const KT = (() => {
         at.delete(cell);
       }
       at.set(u.cell, u.unit);
-      marks.push(mark('do', '', `Pose ${names.line(u.base)}`, `${spot(u.cell)}${why}`));
+      marks.push(mark('do', '', `Pose ${names.line(u.base)}`, `${spot(u.cell)}${copying(u)}${why}`));
     }
     return marks;
   }
@@ -1746,7 +1791,7 @@ const KT = (() => {
     SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, STRATEGY_DEFAULTS, latestSave, shownMode, pollState,
     parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss,
     baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
-    boardCell, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
+    boardCell, touching, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
   };
 })();
 
