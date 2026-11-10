@@ -1012,8 +1012,6 @@ test('formation : dans la limite du niveau, cœur possédé d’abord', () => {
   assert.deepEqual(units.sort(), ['dratini', 'growlithe']);
 });
 
-// Cellule de chaque lignée d'un code KT1.
-
 test('formation : une seule unité par cellule, niveaux 3 à 10, pour chaque zone du porteur', () => {
   for (const side of ['left', 'center', 'right']) {
     for (let level = 3; level <= 10; level++) {

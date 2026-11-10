@@ -87,7 +87,6 @@ const KT = (() => {
   // Campagne Kanto (choix de jeu) : 2 XP gratuites par combat, niveau 9 au plus ; un niveau au moins égal à la taille de
   // l'équipe du champion : Pierre 2, Ondine 3, Major Bob 4, 4ᵉ badge 5, 5ᵉ 6, 6ᵉ 8, Conseil 4 et Mewtwo 9 (route-*.js).
   const CAMPAIGN_LEVEL_GOALS = [[4, 4], [8, 5], [12, 6], [16, 7], [24, 8], [30, 9]];
-  const CAMPAIGN_FREE_XP = 2;
   // Un étage rejoué se joue à fond à partir de celui-ci : une défaite y coûte 12 PV et plus, et la suivante supprime les intérêts.
   const RETRY_ALL_IN_FROM = 50;
   // Puissance d'une unité selon son coût et son étoile (estimation des robots du jeu, engine-*.js) ; un point de traitGain
@@ -271,16 +270,17 @@ const KT = (() => {
   // hud : barre de progression du mode affiché, qui montre les pastilles ; xm : mode du code KT1 (teamCode-*.js : pvp, tower, adv).
   const TOWER = {
     id: 'tower', stats: 'torre', name: 'Tour', where: 'en Tour', label: 'Étage', unit: 'étage', units: 'étages', the: 'l’étage', at: 'à l’étage', here: 'à cet étage', xm: 'tower', hud: '.topbar .rtrack.tw',
-    interest: BASE_INTEREST, freeXp: 1, levelGoals: LEVEL_GOALS, levelCap: floor => (floor >= LEVEL_10_FROM ? 10 : 9),
+    interest: BASE_INTEREST, levelGoals: LEVEL_GOALS, levelCap: floor => (floor >= LEVEL_10_FROM ? 10 : 9),
     retryFrom: RETRY_ALL_IN_FROM, shinyKeepTo: SHINY_KEEP_TO, floorOf: round => Math.max(1, Math.floor(round) - ROUND_BASE + 1),
-    // Morceaux des règles d'or propres au mode (goldRules) ; leagues : la difficulté durcit le seuil de « tout jouer ».
-    fortuneNote: ` (+${FORTUNE_INTEREST} avec la voie Fortune complète)`, xpNote: '', retryNote: `sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}`, leagues: false,
+    // Morceaux des règles d'or propres au mode (goldRules) ; hasLeague : le mode a des difficultés, qui durcissent le seuil de
+    // « tout jouer ».
+    fortuneNote: ` (+${FORTUNE_INTEREST} avec la voie Fortune complète)`, xpNote: '', retryNote: `sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}`, hasLeague: false,
   };
   const CAMPAIGN = {
     id: 'campaign', stats: 'camp', name: 'Campagne', where: 'en campagne', label: 'Combat', unit: 'combat', units: 'combats', the: 'le combat', at: 'au combat', here: 'à ce combat', xm: 'adv',
-    hud: '.topbar .rtrack:not(.tw):not(.pt-track)', interest: 4, freeXp: CAMPAIGN_FREE_XP, levelGoals: CAMPAIGN_LEVEL_GOALS, levelCap: () => 9,
+    hud: '.topbar .rtrack:not(.tw):not(.pt-track)', interest: 4, levelGoals: CAMPAIGN_LEVEL_GOALS, levelCap: () => 9,
     retryFrom: 1, shinyKeepTo: Infinity, floorOf: round => Math.max(1, Math.floor(round) + 1),
-    fortuneNote: '', xpNote: ` La campagne donne ${CAMPAIGN_FREE_XP} XP par combat.`, retryNote: 'sur un combat rejoué', leagues: true,
+    fortuneNote: '', xpNote: ' La campagne donne 2 XP par combat.', retryNote: 'sur un combat rejoué', hasLeague: true,
   };
 
   // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null) et difficulté. Sans league (sauvegarde
@@ -389,7 +389,7 @@ const KT = (() => {
       `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus ${mode.where} → garder ${10 * mode.interest} pièces${mode.fortuneNote}.`,
       `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation pour les copies trouvables, puis XP.${mode.xpNote}`,
       'Actualisation à 2 pièces : ne pas en enchaîner pour un shiny.',
-      `Tout jouer sur un combat sous ${hard} % de victoires${mode.leagues ? ` (${league})` : ''}, sous ${LOW_HP} PV, ou ${mode.retryNote}.`,
+      `Tout jouer sur un combat sous ${hard} % de victoires${mode.hasLeague ? ` (${league})` : ''}, sous ${LOW_HP} PV, ou ${mode.retryNote}.`,
     ];
   }
 
@@ -807,7 +807,7 @@ const KT = (() => {
       inTarget: wanted.includes(base) || upgrades.includes(base), inCore: core.includes(base), inNext: later.includes(base), shiny: game.shopShiny[i],
       // Lignée de la compo pas encore possédée : elle remplit une place libre du plateau.
       fills: wanted.includes(base) && bestStar(game, base) === 0, upgrade: upgrades.includes(base),
-    });
+    }).map(c => c && { ...c, stronger: c.upgrade ? `plus fort que ${target.replaced.map(names.line).join(', ')}` : '' });
   }
 
   // ★ du trio, des 3ᵉ copies et des shinies, de gauche à droite ; ne s'arrêtent pas au palier. Un ★ que l'or ne couvre pas
@@ -852,7 +852,6 @@ const KT = (() => {
   // ◆ de la compo cible (compléments, cartes plus fortes, 3ᵉ copies hors compo) qui gardent le palier ; en tout jouer, qui
   // tiennent dans l'or restant.
   function targetOptMarks(cards, marks, left, eco, target, names) {
-    const stronger = `plus fort que ${target.replaced.map(names.line).join(', ')}`;
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
       const fits = c.cost !== undefined && (eco.allIn ? c.cost <= left : left - c.cost >= eco.floor);
@@ -860,7 +859,7 @@ const KT = (() => {
       left -= c.cost;
       let why = 'renforce le plateau de la compo';
       if (c.triple) why = '3ᵉ copie hors compo';
-      else if (c.upgrade) why = stronger;
+      else if (c.upgrade) why = c.stronger;
       marks[i] = mark('opt', 'Si l’or', eco.allIn ? `${c.name} si l’or suffit` : `${c.name} si l’or reste ≥ ${eco.floor}`, why);
     });
     return left;
@@ -869,7 +868,6 @@ const KT = (() => {
   // ◆ de la compo suivante (hors tout jouer, après l'actualisation conseillée, qui coûte reroll), puis ✕ pour le reste, avec
   // le motif de l'or : l'XP réservée (xpCost) quand la carte tenait sans elle, sinon le palier.
   function restMarks(cards, marks, left, game, eco, target, next, names, xpCost, reroll) {
-    const stronger = `plus fort que ${target.replaced.map(names.line).join(', ')}`;
     const hold = cost => {
       if (eco.allIn) return 'il manque de l’or';
       const beforeXp = cost !== undefined && left + xpCost - cost >= eco.floor && left - cost < eco.floor;
@@ -891,7 +889,7 @@ const KT = (() => {
         marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, why);
         return;
       }
-      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `${c.upgrade ? stronger : 'complément de la compo'} ; ${hold(c.cost)}` : 'hors compo cible');
+      marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `${c.upgrade ? c.stronger : 'complément de la compo'} ; ${hold(c.cost)}` : 'hors compo cible');
     });
     return left;
   }
@@ -1512,7 +1510,7 @@ const KT = (() => {
   // inconnue ferait échouer la formation à chaque lecture de la sauvegarde.
   function checkUi(ui) {
     for (const o of OPTIONS) {
-      if (o.type === 'checks') ui[o.key] = { ...o.def, ...ui[o.key] };
+      if (o.type === 'checks') ui[o.key] = Object.fromEntries(Object.entries(o.def).map(([v, d]) => [v, typeof ui[o.key]?.[v] === 'boolean' ? ui[o.key][v] : d]));
       else if (!o.values.some(([v]) => v === ui[o.key])) ui[o.key] = o.def;
     }
     if (!TABS.some(([t]) => t === ui.tab)) ui.tab = 'tour';
@@ -2109,7 +2107,7 @@ function headHtml(state) {
     else if (e.nextWall) wall = `${mode.label} ${e.nextWall.floor} (${esc(KT.fightName(e.nextWall))}, ${KT.pct(e.nextWall.fightWin)}) : tout jouer.`;
     if (wall) parts.push(`<p class="kt-warn"><span class="kt-sym kp-no" aria-hidden="true">▼</span>${wall}</p>`);
   }
-  if (mode.leagues) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);
+  if (mode.hasLeague) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);
   const { stats, stop } = nextBossOf(state);
   if (stop) {
     const dist = stop.floor - state.floor;
@@ -2436,8 +2434,11 @@ function shellHtml({ look = {}, label = 'Étage', floor = null, src = '', sum = 
 </div>`;
 }
 
+// Réglages du panneau hors options du menu (checkUi les complète) : position, replié, sections ouvertes, compo choisie.
+const UI_DEFAULTS = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null };
+
 function mount() {
-  const ui = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
+  const ui = { ...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
   KT.checkUi(ui);
   const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: undefined, save: null, saveKey: undefined, mode: KT.TOWER_MODE, unsupported: false, stats: null, campBroken: false, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
 
@@ -2765,6 +2766,6 @@ function mount() {
 if (typeof module !== 'undefined') {
   module.exports = {
     ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, optionsHtml, summaryHtml, footHtml, shellHtml,
-    PlannerError, tabForKey, keptByPanel, foldKey, setOption,
+    PlannerError, tabForKey, keptByPanel, foldKey, setOption, UI_DEFAULTS, onSaveFloor, modeStats,
   };
 } else mount();

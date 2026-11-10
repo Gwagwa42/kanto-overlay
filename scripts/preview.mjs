@@ -130,7 +130,7 @@ const STYLE = `body{margin:0;min-height:100vh;background:#2b3a2a;color:#eef1ff;f
 const FAILED = { error: ['stats', 'data', 'lang'], partial: ['data'] };
 const FILES = { stats: 'campana.json', data: 'data.json', lang: 'lang.json' };
 function panelPage(name, s) {
-  const ui = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, ...s.ui };
+  const ui = { ...KT.UI_DEFAULTS, ...s.ui };
   KT.checkUi(ui);
   const raw = s.save ? JSON.stringify(s.save) : null;
   const found = raw && KT.latestSave({ length: 1, key: () => s.key ?? 'kanto-tactics-save-tower', getItem: () => raw });
@@ -142,8 +142,9 @@ function panelPage(name, s) {
     campBroken: false, data: loaded('data') ? data : null, lang: loaded('lang') ? lang : null, failed, stale: null, uncached: false,
     error: failed.length ? failed.map(k => `${FILES[k]} : HTTP 429`).join(' ; ') : null, copied: null,
   };
-  const stats = state.stats?.[state.mode.stats] ?? null;
-  state.advice = state.save && state.floor === KT.floorFromSave(raw, state.mode) && (state.stats || state.error)
+  const stats = KT.modeStats(state);
+  // Même condition que compute dans mount.
+  state.advice = KT.onSaveFloor(state) && (state.stats || state.error)
     ? KT.advise({ stats, data: state.data, lang: state.lang, save: state.save, previous: null, side: ui.side, mode: state.mode })
     : null;
   // Plan collé dans le Planificateur : le statut du panneau synchronisé.

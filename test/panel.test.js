@@ -43,4 +43,8 @@ test('menu d’options : bouton radio, case de pastille, rendu dans l’ordre de
   const old = { pins: { opt: false } };
   KT.checkUi(old);
   assert.deepEqual(old.pins, { do: true, opt: false, no: true });
+  // Valeur non booléenne ou niveau inconnu (stockage modifié à la main) : ramenés aux défauts.
+  const odd = { pins: { do: 'false', x: 1 } };
+  KT.checkUi(odd);
+  assert.deepEqual(odd.pins, { do: true, opt: true, no: true });
 });
