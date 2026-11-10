@@ -408,10 +408,26 @@ test('or en trop : XP quand rien n’est à chercher, puis ★★★ du trio au 
   assert.equal(why(ten.reroll), 'do Actualise : cherche Miaouss de Giovanni (coût 5 : 20 %), Smogo de Koga (coût 5 : 20 %), Scarabrute du Samouraï (coût 5 : 20 %) au niveau 10');
 });
 
+test('niveau maximal : pas de ★★★ cherchée pour une lignée du trio qu’elle ne renforce pas (au moins 400 combats par étoile)', () => {
+  const giovanni = (n, three) => ({ torre: { ...torre, stars: [...torre.stars.filter(s => s.line !== 'giovanni'),
+    { line: 'giovanni', star: 2, n, d: 1 }, { line: 'giovanni', star: 3, n, d: three }] }, ...LATE_TRIO });
+  const others = 'Smogo de Koga (coût 5 : 20 %), Scarabrute du Samouraï (coût 5 : 20 %) au niveau 10';
+  const ten = advise(late(10), giovanni(500, 1));
+  assert.deepEqual(ten.target.flat, ['giovanni']);
+  assert.equal(why(ten.reroll), `do Actualise : cherche ${others}`);
+  // Moins de 400 combats à une étoile, ou un gain : la ★★★ se cherche.
+  assert.equal(why(advise(late(10), giovanni(300, 0)).reroll), `do Actualise : cherche Miaouss de Giovanni (coût 5 : 20 %), ${others}`);
+  assert.deepEqual(advise(late(10), giovanni(500, 2)).target.flat, []);
+  // Deux copies ★★ : la 3ᵉ donne la ★★★ sans actualisation dédiée, elle reste cherchée.
+  const pair = late(10, { units: { ...late(10).units, g2: { id: 'g2', line: 'giovanni', star: 2 } }, bench: ['g2', ...Array(8).fill(null)] });
+  assert.equal(why(advise(pair, giovanni(500, 1)).reroll), `do Actualise : cherche Miaouss de Giovanni (coût 5 : 20 %), ${others}`);
+});
+
 test('actualiser : lignée introuvable à ce niveau → XP ; fusion à une copie cherchée', () => {
-  // Étage 5, sans niveau visé. Trio Onix + Kabuto + Rhinocorne à trouver, niveau 3 : les coûts 3 et 4 ne sortent pas.
+  // Étage 5, sans niveau visé. Trio Onix + Kabuto + Rhinocorne à trouver, niveau 3 : les coûts 3 et 4 ne sortent pas. Sans
+  // statistiques d'étoile, la ★★★ du trio se cherche au niveau maximal.
   const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
-  const t = { ...torre, stops, cores: [{ stop: '10:brock', core: ['onix', 'kabuto', 'rhyhorn'], n: 50, win: 90, lo: 80 }] };
+  const t = { ...torre, stops, stars: [], cores: [{ stop: '10:brock', core: ['onix', 'kabuto', 'rhyhorn'], n: 50, win: 90, lo: 80 }] };
   const empty = { ...save, round: 1004, level: 3, xp: 0, gold: 40, units: {}, board: {}, bench: [], shop: [], attempts: 0 };
   const lost = advise(empty, { torre: t });
   assert.equal(why(lost.reroll), 'no Garde l’or : Onix (coût 3 : 0 %) au niveau 3 : à chercher au niveau 6');

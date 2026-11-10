@@ -380,6 +380,13 @@ const KT = (() => {
     const s = lineStats(torre, id);
     return s ? Math.round((s.d * s.n) / (s.n + LINE_PRIOR) / D_PER_COST) : 0;
   };
+  // ★★★ sans gain mesuré sur ★★ pour cette forme exacte (identifiant du trio) : écart ≤ 0, au moins LINE_PRIOR combats à
+  // chaque étoile. Sans ces données, la ★★★ se cherche.
+  function flatThirdStar(torre, id) {
+    const at = star => torre.stars.find(s => s.line === id && s.star === star && s.n >= LINE_PRIOR);
+    const [two, three] = [at(2), at(3)];
+    return Boolean(two && three) && three.d <= two.d;
+  }
 
   // Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
   function coreScore(core, stops, coresByStop, game, data) {
@@ -454,7 +461,7 @@ const KT = (() => {
   // carte de boutique vaut une ★), au coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et
   // types apportés à la compo ; l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte
   // sur ces combats. upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ;
-  // replaced : ces compléments.
+  // replaced : ces compléments ; flat : lignées du trio dont la ★★★ ne rapporte rien (flatThirdStar).
   function targetComp(torre, data, game, previousKey) {
     const stops = nextStops(torre.stops, game.floor, HORIZON);
     const coresByStop = coresAt(torre, stops);
@@ -489,7 +496,8 @@ const KT = (() => {
     const upgrades = mixed.filter(b => cards.includes(b) && !fillers.includes(b));
     // Autant de compléments possédés que de cartes, les moins bien notés.
     const replaced = upgrades.length ? fillers.filter(b => owned(b) && !mixed.includes(b)).slice(-upgrades.length) : [];
-    return { ...best, fillers, upgrades: upgrades.slice(0, replaced.length), replaced };
+    const flat = best.core.filter(id => flatThirdStar(torre, id)).map(baseLine);
+    return { ...best, fillers, upgrades: upgrades.slice(0, replaced.length), replaced, flat };
   }
 
   // Trio des 9 combats suivants (10 à 18), à préparer avec le surplus ; null s'il est déjà la compo cible.
@@ -606,13 +614,14 @@ const KT = (() => {
     return { marks, left, short };
   }
 
-  // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal), et toute lignée qui a
-  // 2 copies ★ (la 3ᵉ donne la ★★) ou 2 copies ★★ (la 3ᵉ ★★ donne la ★★★).
+  // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal, sauf ★★★ sans gain mesuré,
+  // target.flat), et toute lignée qui a 2 copies ★ (la 3ᵉ donne la ★★) ou 2 copies ★★ (la 3ᵉ ★★ donne la ★★★).
   function seekLines(game, target) {
     const core = target.core.map(baseLine);
-    const coreStar = game.level >= maxLevel(game.floor) ? 3 : 2;
+    const top = game.level >= maxLevel(game.floor);
+    const coreStar = base => (top && !target.flat.includes(base) ? 3 : 2);
     return targetBases(target).filter(base => bestStar(game, base) < 3
-      && ((core.includes(base) && bestStar(game, base) < coreStar) || ones(game, base) === 2 || copies(game, base, 2) === 2));
+      && ((core.includes(base) && bestStar(game, base) < coreStar(base)) || ones(game, base) === 2 || copies(game, base, 2) === 2));
   }
 
   // left : or restant après les achats conseillés. Hors tout jouer, le niveau visé passe avant l'actualisation, et seules
