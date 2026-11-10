@@ -1263,12 +1263,13 @@ test('parade aux assassins adverses : la parade prime sur la case gardée et sur
   // L'appât ne touche pas le porteur : l'assassin arrivé sur lui ne se retourne pas vers son voisin.
   const cells = cellsOf(dive.code);
   assert.equal(KT.touching(cells.abra, cells.onix), false);
-  // Porteur de portée 3 en colonne 4 : Abo peut entrer des deux côtés, l'appât tient la colonne 4 même s'il le touche.
+  // Porteur de portée 3 en colonne 4 : Abo peut entrer des deux côtés, l'appât tient la colonne 4 même s'il le touche. Onix
+  // parti au fond, Ronflex prend le centre de l'avant.
   const mid = trioAdvice(['vulpix', 'onix', 'snorlax'], { vulpix: 2, onix: 1, snorlax: 1 }, { side: 'center', dive: true });
-  assert.deepEqual(cellsOf(mid.code), { snorlax: 2, vulpix: 17, onix: 24 });
-  // Coin droit : le porteur avance dans sa zone (colonne 7), l'appât reste dans sa moitié.
+  assert.deepEqual(cellsOf(mid.code), { snorlax: 3, vulpix: 17, onix: 24 });
+  // Coin droit : le porteur avance dans sa zone (colonne 7), l'appât reste dans sa moitié ; Ronflex prend le centre.
   const right = trioAdvice(['abra', 'onix', 'snorlax'], owned, { side: 'right', dive: true });
-  assert.deepEqual(cellsOf(right.code), { snorlax: 2, abra: 20, onix: 24 });
+  assert.deepEqual(cellsOf(right.code), { snorlax: 3, abra: 20, onix: 24 });
 });
 
 test('parade aux assassins adverses : un Pokémon déjà plus au fond sert d’appât, sans déplacement de plus', () => {
@@ -1312,6 +1313,29 @@ test('parade aux assassins adverses : sans porteur à distance ou sans appât, f
   const none = [['abra', 'onix', 'zubat'], { abra: 2, onix: 1, zubat: 1 }];
   assert.equal(trioAdvice(...none, { dive: true }).code, trioAdvice(...none).code);
   assert.equal(trioAdvice(...none, { dive: true }).guard, null);
+});
+
+test('parade aux assassins adverses : l’assassin débordé derrière l’avant y revient quand l’appât libère sa case', () => {
+  // Niveau 9, huit Pokémon de mêlée pour les 7 cases de l'avant : Nosferapti, posé en dernier, déborde en 2ᵉ rangée.
+  const owned = { abra: 2, onix: 1, snorlax: 1, rattata: 1, machop: 1, growlithe: 1, dratini: 1, ponyta: 1, zubat: 1 };
+  const plain = trioAdvice(['abra', 'onix', 'snorlax'], owned, { level: 9 });
+  assert.equal(rowOfLine(plain.code, 'zubat'), 1);
+  // Machoc part au fond : Nosferapti reprend une case du bord de l'avant.
+  const dive = trioAdvice(['abra', 'onix', 'snorlax'], owned, { level: 9, dive: true });
+  assert.deepEqual(dive.guard, { bait: 'machop', carry: 'abra' });
+  assert.deepEqual([cellsOf(dive.code).zubat, cellsOf(dive.code).machop], [6, 24]);
+});
+
+test('parade aux assassins adverses : Mew, posé après, ni appât ni couvert', () => {
+  // Abra porteur, Onix appât au fond : Mew copie Ronflex, resté à l'avant, plutôt qu'Onix parti.
+  const team = { mew: 1, abra: 2, onix: 1, snorlax: 1 };
+  const dive = trioAdvice(['mew', 'abra', 'onix'], team, { level: 4, dive: true });
+  assert.deepEqual(dive.guard, { bait: 'onix', carry: 'abra' });
+  assert.match(said(dive).find(m => m.startsWith('Pose Mew')), /collé à Ronflex/);
+  assert.ok(rowOfLine(dive.code, 'abra') < diveTarget(dive.code));
+  // Mew ★★ porteur, en 2ᵉ rangée : Abra (portée 4) reste le Pokémon du fond, pas de parade.
+  const carried = trioAdvice(['mew', 'abra', 'onix'], { ...team, mew: 2, abra: 1 }, { level: 4, dive: true });
+  assert.deepEqual([carried.guard, rowOfLine(carried.code, 'mew')], [null, 1]);
 });
 
 test('parade aux assassins adverses : le porteur n’est jamais au fond, niveaux 3 à 7, pour chaque zone', () => {
