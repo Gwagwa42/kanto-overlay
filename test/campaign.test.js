@@ -66,6 +66,9 @@ test('vraie sauvegarde Kanto (Légende, combat 5) : lue, économie, compo et cod
   assert.deepEqual([a.target.core, a.target.fillers], [['bulbasaur', 'nidoran', 'oddish'], ['ponyta']]);
   assert.match(a.code, /^KT1;r41;xm=adv;xn=Plan%20kanto-overlay;nidoran:1:2;bulbasaur:2:3:/);
   assert.deepEqual(a.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Mystherbe — 3ᵉ rangée, colonne 4 → 3ᵉ rangée, colonne 1']);
+  // Ponyta a deux copies ★ : noté ★★ (coût 2 : 2,57), il n'est pas remplacé par Aspicot (coût 1, seuil Poison franchi : 1,5).
+  assert.deepEqual([a.target.upgrades, a.target.replaced], [[], []]);
+  assert.deepEqual([a.shop[4].title, a.shop[4].why], ['Ignore Aspicot', 'hors compo cible']);
 });
 
 test('combat de campagne = manche + 1 ; statistiques de campagne acceptées', () => {
@@ -165,7 +168,8 @@ test('shiny : pas de « Vends » en campagne (38 combats, sous le seuil de la To
 test('aventure sans statistiques (Safari) : compo sans trio, tes meilleures unités', () => {
   const a = advise(CAMP, 'safari');
   assert.deepEqual([a.target.key, a.target.core, a.next], [null, [], null]);
-  assert.deepEqual(a.target.fillers, ['dratini', 'vulpix', 'growlithe', 'rattata', 'magmar', 'aerodactyl']);
+  // Les deux Caninos ★ (coût 4) valent une ★★ : devant Goupix ★★ (coût 2).
+  assert.deepEqual(a.target.fillers, ['dratini', 'growlithe', 'vulpix', 'rattata', 'magmar', 'aerodactyl']);
   assert.match(a.code, /xm=adv/);
   // Sans unité ni boutique : pas de compo.
   assert.equal(advise({ ...CAMP, units: {}, board: {}, bench: [], shop: [] }, 'safari').target, null);

@@ -347,11 +347,12 @@ test('compléments : l’écart de victoire rétréci (400 combats fictifs) déc
   assert.deepEqual(comp([stat('caterpie', -20, 4000), stat('caterpie-a1', 30, 40), weak], own(['c', 'caterpie-a1', 1], ['v', 'venonat', 1])), [['venonat'], []]);
   assert.deepEqual(comp([stat('caterpie', 6, 4000), weak], own(['c', 'caterpie-a1', 1], ['v', 'venonat', 1])), [['caterpie'], []]);
   // Deux copies de même étoile, ancrée et non : la note lit la forme de la copie que la formation pose (la shiny, sinon la
-  // forme non ancrée par l'identifiant), quel que soit l'ordre des copies sur le plateau.
-  const both = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1], ['v', 'venonat', 1]];
+  // forme non ancrée par l'identifiant), quel que soit l'ordre des copies sur le plateau. Les deux copies valent une ★★ : face
+  // à Mimitoss ★★ faible (coût 1 : 1,9), Chenipan posé faible (0,65 × 1,9) perd, Chenipan ancré fort (1,35 × 1,9) gagne.
+  const both = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1], ['v', 'venonat', 2]];
   assert.deepEqual(comp(anchored, own(...both)), [['venonat'], []]);
   assert.deepEqual(comp(anchored, own(...[...both].reverse())), [['venonat'], []]);
-  const shinyAnchored = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1, true], ['v', 'venonat', 1]];
+  const shinyAnchored = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1, true], ['v', 'venonat', 2]];
   assert.deepEqual(comp(anchored, own(...shinyAnchored)), [['caterpie'], []]);
   assert.deepEqual(comp(anchored, own(...[...shinyAnchored].reverse())), [['caterpie'], []]);
   // Une carte de boutique est notée sur sa lignée de base : Chenipan fort est conseillé à la place de Mimitoss possédé.
@@ -653,8 +654,9 @@ test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamai
   assert.deepEqual([...c.shop.slice(0, 3).map(brief), brief(c.reroll)], ['opt Si l’or', 'no Ignore', 'opt Si l’or', 'do Actualise']);
   assert.equal(c.shop[1].why, 'compo des étages 19–27 ; l’or va d’abord à l’actualisation pour la compo cible');
   assert.equal(at(60, { hp: 30 }).shop[0].why, 'tout jouer : l’or va à la compo cible');
-  // 3ᵉ copie d'une lignée de la compo suivante : même motif, même règle d'or.
-  const third = { units: { ...base.units, x: { id: 'x', line: 'caterpie', star: 1 }, y: { id: 'y', line: 'caterpie', star: 1 } }, bench: ['e', 'x', 'y'] };
+  // 3ᵉ copie d'une lignée de la compo suivante : même motif, même règle d'or. Abo ★★ reste le complément, devant les deux
+  // Chenipan qui valent une ★★ de coût 1.
+  const third = { units: { e: { id: 'e', line: 'ekans', star: 2 }, x: { id: 'x', line: 'caterpie', star: 1 }, y: { id: 'y', line: 'caterpie', star: 1 } }, bench: ['e', 'x', 'y'] };
   assert.equal(at(60, third).shop[0].why, 'prépare la compo des étages 19–27');
   assert.equal(brief(at(60, { ...third, hp: 30 }).shop[0]), 'no Ignore');
   // Sous le niveau visé (étage 10, niveau 5 visé), l'XP passe avant : Chenipan attend.

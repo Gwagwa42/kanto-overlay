@@ -875,8 +875,9 @@ const KT = (() => {
   }
 
   // Compléments du trio core jusqu'au niveau (fillers) : les lignées possédées les mieux notées ; la boutique ne complète que
-  // les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une carte de boutique vaut une ★),
-  // au coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et types apportés à la compo ;
+  // les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une carte de boutique vaut une ★ ;
+  // deux copies de la meilleure étoile, que la 3ᵉ fusionnera et que l'actualisation cherche, valent l'étoile suivante), au
+  // coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et types apportés à la compo ;
   // l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte sur ces combats (strength).
   // upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ; replaced : ces compléments.
   function fillersOf(stats, data, game, core, strength) {
@@ -887,10 +888,14 @@ const KT = (() => {
     // Forme de la copie posée (fieldOrder, comme holdersOf) : la note décrit l'unité que la formation place.
     const form = b => unitsOf(game, b).sort(fieldOrder)[0]?.line ?? b;
     const shift = new Map([...mine, ...cards].map(b => [b, costShift(stats, form(b))]));
+    const star = b => {
+      const best = Math.max(1, bestStar(game, b));
+      return best < 3 && copies(game, b, best) === 2 ? best + 1 : best;
+    };
     // Meilleures lignées de chaque liste, une liste après l'autre, jusqu'au niveau.
     const fill = pools => {
       const chosen = [...core];
-      const score = b => unitPower(lineInfo(data, b).c + shift.get(b), Math.max(1, bestStar(game, b))) + TRAIT_WEIGHT * traitGain(data, chosen, b);
+      const score = b => unitPower(lineInfo(data, b).c + shift.get(b), star(b)) + TRAIT_WEIGHT * traitGain(data, chosen, b);
       for (const pool of pools) {
         while (chosen.length < game.level) {
           const next = pool
