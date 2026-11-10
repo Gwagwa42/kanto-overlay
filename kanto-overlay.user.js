@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour et campagne
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.8.0
+// @version      2.9.0
 // @description  Tour de combat et campagne (aventures, trois difficultés) de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -1711,9 +1711,10 @@ const KT = (() => {
   // zone, en évitant la colonne d'une autre unité à distance, quelle que soit sa rangée (sur deux rangées voisines, deux cases de
   // la même colonne se touchent). Déjà sur une case de sa première liste, un Pokémon la garde ; rangée pleine, il passe
   // derrière, puis devant. Mew prend une case collée à l'allié qu'il copiera (copies : sa lignée), sur sa rangée, sinon derrière,
-  // sinon devant ; sans allié à copier ni case libre collée, il se place comme les autres. unit :
-  // l'unité possédée (porteur de holdersOf), from : sa cellule, 'bench', ou null s'il n'est pas possédé.
-  function formation(target, game, data, holders, side) {
+  // sinon devant ; sans allié à copier ni case libre collée, il se place comme les autres. dive : parade aux assassins
+  // adverses (guard), qui prime sur la zone du porteur. unit : l'unité possédée (porteur de holdersOf), from : sa cellule,
+  // 'bench', ou null s'il n'est pas possédé ; bait, guarded : l'appât et le porteur qu'il couvre.
+  function formation(target, game, data, holders, side, dive = false) {
     const stars = id => bestStar(game, baseLine(id));
     const kept = new Set([...[...target.core].sort((a, b) => stars(b) - stars(a)), ...target.fillers].slice(0, game.level));
     const units = [...target.core, ...target.fillers].filter(id => kept.has(id)).map(id => {
@@ -1773,11 +1774,13 @@ const KT = (() => {
       if (stay.has(u)) put(u, u.from);
       else place(u);
     }
+    const value = u => lineInfo(data, u.base).c * 3 ** (u.star - 1);
+    // Avant Mew : sa case dépend de celle de son modèle, que la parade peut déplacer.
+    if (dive) guard(others, taken, zone, value);
     if (mimic) {
       // Modèles par valeur décroissante, capacité connue (les lignées v41 hors de data.json n'en ont pas) et copiable : le
       // premier qui a une case libre collée. Les modèles mieux classés n'en ont aucune : Mew ne les touchera pas.
       const kind = u => moveKind(data, u.base, mimic.star);
-      const value = u => lineInfo(data, u.base).c * 3 ** (u.star - 1);
       const near = model => zones(mimic).map(cells => cells.filter(c => !taken.has(c) && touching(c, model.cell))).find(cells => cells.length);
       const model = others.filter(u => kind(u) && !UNCOPIED.has(kind(u)))
         .sort((a, b) => value(b) - value(a) || a.cell - b.cell).find(near);
@@ -1793,6 +1796,48 @@ const KT = (() => {
     return units.sort((a, b) => a.cell - b.cell);
   }
 
+  // Parade aux assassins adverses, relevée dans le moteur (route-*.js) : Insécateur (leap), Doduo (rush) et Abo (stealth)
+  // visent le Pokémon le plus au fond (backmost : rangée, puis PV restants les plus bas ; Abo, dans la moitié du plateau par
+  // où il entre, la colonne 4 comptant dans les deux) ; Nosferapti (flyover) vise le plus au fond de la colonne la plus proche
+  // de la sienne. Un appât strictement plus au fond que le porteur à distance prend donc l'assaut : au fond, colonne 4
+  // (commune aux deux moitiés, face au Nosferapti d'un adversaire qui n'en a qu'un), si possible sans toucher le porteur,
+  // vers qui l'assassin se retournerait. Le porteur du fond avance d'une rangée, dans sa zone d'abord. Appât : un Pokémon
+  // déjà plus au fond que le porteur, sinon le tank de moindre valeur quand il en reste un devant, sinon l'unité de mêlée de plus
+  // grande valeur quand il en reste une devant, sinon l'unité à distance de plus grande valeur. Ni Ramoloss (son mur couvre
+  // l'avant) ni un assassin (il quitte sa case). Sans porteur à distance ou sans appât, rien ne bouge. units : placées,
+  // sans Mew ; taken : cases prises, tenu à jour ; value : coût × 3^(étoile − 1).
+  function guard(units, taken, zone, value) {
+    const carry = units.find(u => u.role === 'carry' && u.row > 0);
+    if (!carry) return;
+    const move = (u, cell) => {
+      taken.delete(u.cell);
+      taken.add(cell);
+      u.cell = cell;
+    };
+    const free = (row, cols) => cols.map(c => cellAt(row, c)).filter(c => !taken.has(c));
+    const rest = units.filter(u => u !== carry && !OPENERS.has(u.base));
+    const front = rest.filter(u => rowOf(u.cell) === 0 && !ALLY_SHIELD.has(u.base)).sort((x, y) => value(y) - value(x));
+    const tanks = front.filter(u => u.role === 'tank');
+    const holds = units.filter(u => rowOf(u.cell) === 0).length;
+    const ranged = rest.filter(u => rowOf(u.cell) > 0).sort((x, y) => value(y) - value(x));
+    const atBack = rowOf(carry.cell) === 3;
+    const behind = units.filter(u => u !== carry && rowOf(u.cell) > (atBack ? 2 : rowOf(carry.cell)));
+    const bait = behind[0] ?? (tanks.length > 1 ? tanks.at(-1) : null) ?? (holds > 1 ? front.find(u => u.role !== 'tank') : null) ?? ranged[0];
+    if (!bait) return;
+    if (atBack) {
+      const cells = free(2, [...zone.cols, ...zone.order]);
+      if (!cells.length) return;
+      const lone = c => !units.some(u => u !== carry && rowOf(u.cell) > 0 && colOf(u.cell) === colOf(c));
+      move(carry, cells.find(lone) ?? cells[0]);
+    }
+    if (!behind.length) {
+      const cells = free(3, CENTER_OUT);
+      move(bait, cells.find(c => !touching(c, carry.cell)) ?? cells[0]);
+    }
+    bait.bait = true;
+    carry.guarded = true;
+  }
+
   const ROW_NAMES = ['avant', '2ᵉ rangée', '3ᵉ rangée', 'fond'];
   const spot = cell => `${ROW_NAMES[rowOf(cell)]}, colonne ${colOf(cell) + 1}`;
 
@@ -1806,7 +1851,8 @@ const KT = (() => {
     const at = new Map(onBoard.map(u => [boardCell(u.cell), u]));
     const cellOf = unit => [...at].find(([, v]) => v === unit)?.[0];
     const mine = new Set(units.map(f => f.unit).filter(Boolean));
-    const copying = u => (u.copies ? `, collé à ${names.line(u.copies)} dont il copie la capacité` : '');
+    const copying = u => (u.copies ? `, collé à ${names.line(u.copies)} dont il copie la capacité` : '')
+      + (u.bait ? ', appât des assassins adverses' : '') + (u.guarded ? ', moins au fond que l’appât' : '');
     const marks = [];
     const pending = () => units.filter(f => typeof f.from === 'number' && cellOf(f.unit) !== f.cell);
     for (let left = pending(); left.length; left = pending()) {
@@ -1845,7 +1891,8 @@ const KT = (() => {
 
   // stats : le mode de campana.json de la partie (torre ou camp) ; mode : modeContext de la partie. previous : { key, run, next }
   // des derniers trios choisis (compo cible, compo suivante) ; l'inertie ne vaut que dans la même partie (runSeed).
-  function advise({ stats, data, lang, save, previous, side, mode }) {
+  // dive : le joueur a signalé des assassins adverses pour ce combat (formation, guard).
+  function advise({ stats, data, lang, save, previous, side, mode, dive = false }) {
     const names = namer(lang);
     const game = readGame(save, mode);
     const run = save.runSeed ?? null;
@@ -1861,7 +1908,8 @@ const KT = (() => {
     const book = target ? recipeBook(data) : null;
     const future = target ? futureLines(stats, data, target, next, holders, profiles, names) : [];
     const items = itemMarks(data, game, holders, book, target, future, names);
-    const units = target ? formation(target, game, data, holders, side) : [];
+    const units = target ? formation(target, game, data, holders, side, dive) : [];
+    const guarded = units.find(u => u.guarded);
     return {
       game, eco, target, next, names, run,
       shop: spent.shop,
@@ -1875,6 +1923,8 @@ const KT = (() => {
       unknownOffer: choice.unknown,
       anchor: anchorAdvice(target, game, names),
       moves: moveAdvice(units, game, names),
+      // Parade posée : lignées de l'appât et du porteur couvert ; null sans parade (pas demandée, ou impossible).
+      guard: guarded ? { bait: units.find(u => u.bait).base, carry: guarded.base } : null,
       code: target ? kt1Code(units, stats.rules, mode) : null,
     };
   }
@@ -2016,7 +2066,7 @@ const CSS = `
 .kt-ibtn { width: var(--kt-h-ctl); height: var(--kt-h-ctl); display: grid; place-items: center; border: 0; border-radius: var(--kt-r-ctl); background: none; color: var(--kt-muted); cursor: pointer; flex: none; }
 .kt-ibtn:hover, .kt-ibtn[aria-expanded="true"][data-act="menu"] { background: var(--kt-raised-2); color: var(--kt-text); }
 .kt-ibtn svg { width: var(--kt-h-icon); height: var(--kt-h-icon); }
-.kt button:focus-visible, .kt-floor:focus-visible, .kt a:focus-visible, .kt summary:focus-visible, .kt-opts input:focus-visible + span { outline: 2px solid var(--kt-focus); outline-offset: 2px; }
+.kt button:focus-visible, .kt-floor:focus-visible, .kt a:focus-visible, .kt summary:focus-visible, .kt-opts input:focus-visible + span, .kt-dive input:focus-visible + span { outline: 2px solid var(--kt-focus); outline-offset: 2px; }
 .kt-sum { display: none; align-items: center; gap: var(--kt-s2); min-width: 0; font-size: var(--kt-fs-m); }
 .kt-sum b { color: var(--kt-accent-text); }
 .kt-sum .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2115,10 +2165,11 @@ const CSS = `
 .kt-opts legend { padding: 0; margin-bottom: var(--kt-s15); font-size: var(--kt-fs-s); color: var(--kt-muted); }
 .kt-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: var(--kt-s0); padding: var(--kt-s0); border-radius: var(--kt-r-ctl); background: var(--kt-raised); }
 .kt-seg label, .kt-checks label { position: relative; cursor: pointer; }
-.kt-opts input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.kt-opts input, .kt-dive input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
 .kt-seg span { min-height: var(--kt-h-in); display: grid; place-items: center; padding: 0 var(--kt-s1); border-radius: var(--kt-r-in); font-size: var(--kt-fs-s); font-weight: 600; color: var(--kt-muted); text-align: center; }
 .kt-seg input:checked + span { background: var(--kt-raised-2); color: var(--kt-text); box-shadow: inset 0 0 0 1px var(--kt-control); }
 .kt-checks { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--kt-s2); }
+.kt-dive { grid-template-columns: 1fr; }
 .kt-checks span { min-height: var(--kt-h-ctl); display: flex; align-items: center; gap: var(--kt-s15); padding: 0 var(--kt-s2); border-radius: var(--kt-r-ctl); background: var(--kt-raised); font-size: var(--kt-fs-s); color: var(--kt-muted); }
 .kt-checks span::before { content: ""; width: var(--kt-h-icon); height: var(--kt-h-icon); border-radius: var(--kt-s1); border: 1px solid var(--kt-control); flex: none; }
 .kt-checks input:checked + span { color: var(--kt-text); }
@@ -2245,6 +2296,18 @@ function aimsHtml(a, ui) {
   return rows.length ? `<details class="kt-aims"${ui.aims ? ' open' : ''}><summary id="kt-aims-sum">Objets visés</summary><ul>${rows.join('')}</ul></details>` : '';
 }
 
+// Assassins adverses vus sur le plateau : case à cocher par combat, puis la parade posée ou la raison de son absence.
+function diveHtml(state) {
+  const a = state.advice;
+  let note = 'Coche si l’adversaire en aligne : ils plongent sur ton Pokémon le plus au fond.';
+  if (state.dive) {
+    note = a.guard ? `Appât : ${esc(a.names.line(a.guard.bait))} plus au fond que ${esc(a.names.line(a.guard.carry))}. Garde ton porteur hors de la colonne d’un Nosferapti.`
+      : 'Pas de parade : aucun porteur à distance à couvrir, ou aucun Pokémon à envoyer au fond.';
+  }
+  return `<div class="kt-checks kt-dive"><label><input type="checkbox" name="dive" id="kt-dive" aria-describedby="kt-dive-note"${state.dive ? ' checked' : ''}><span>Assassins adverses : Insécateur, Doduo, Abo, Nosferapti</span></label></div>
+<p class="kt-hint" id="kt-dive-note">${note}</p>`;
+}
+
 function compoHtml(state, ui) {
   const a = state.advice;
   if (!a) return noAdviceHtml(state);
@@ -2268,6 +2331,7 @@ function compoHtml(state, ui) {
 ${a.next ? `<p class="kt-label"><span>Ensuite</span><span>${esc(KT.floorRange(a.next.stops, mode))}</span></p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
 ${aimsHtml(a, ui)}
 <button class="kt-copy" id="kt-copy" data-act="copy">Copier la formation</button>
+${diveHtml(state)}
 <p class="kt-hint">Porteur à distance : rangée de sa portée, ${KT.CARRY_ZONES[ui.side].name} (options ⚙).</p>`;
 }
 
@@ -2671,8 +2735,11 @@ function shellHtml({ look = {}, label = 'Étage', floor = null, src = '', sum = 
 </div>`;
 }
 
-// Réglages du panneau hors options du menu (checkUi les complète) : position, replié, sections ouvertes, compo choisie.
-const UI_DEFAULTS = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null };
+// Réglages du panneau hors options du menu (checkUi les complète) : position, replié, sections ouvertes, compo choisie,
+// combat aux assassins adverses.
+// Combat en cours (partie et étage) : les assassins adverses cochés (ui.dive) ne valent que pour lui.
+const fightKey = state => `${state.save?.runSeed ?? ''}:${state.floor}`;
+const UI_DEFAULTS = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, dive: null };
 
 function mount() {
   const ui = { ...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
@@ -2739,11 +2806,13 @@ function mount() {
     });
   };
 
+  const diveOn = () => ui.dive === fightKey(state);
   function compute() {
     const code = state.advice?.code;
     state.advice = state.save && onSaveFloor(state) && (state.stats || state.error)
-      ? KT.advise({ stats: modeStats(state), data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side, mode: state.mode })
+      ? KT.advise({ stats: modeStats(state), data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side, mode: state.mode, dive: diveOn() })
       : null;
+    state.dive = state.advice !== null && diveOn();
     if (state.advice?.code !== code) state.copied = null;
     const a = state.advice;
     const next = a?.next?.key ?? null;
@@ -2933,6 +3002,13 @@ function mount() {
     render();
   });
   opts.addEventListener('submit', e => e.preventDefault());
+  body.addEventListener('change', e => {
+    if (e.target.name !== 'dive') return;
+    ui.dive = e.target.checked ? fightKey(state) : null;
+    saveUi();
+    compute();
+    render();
+  });
   // Le Shadow DOM ne fait que recibler les événements : sans cet arrêt, les écouteurs du jeu en remontée recevraient
   // les chiffres tapés et les flèches des onglets et des options. Alt+K passe, pour replier le panneau depuis un champ.
   for (const type of ['keydown', 'keyup', 'keypress']) {
@@ -3020,6 +3096,6 @@ function mount() {
 if (typeof module !== 'undefined') {
   module.exports = {
     ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, optionsHtml, summaryHtml, footHtml, shellHtml,
-    PlannerError, tabForKey, keptByPanel, foldKey, setOption, UI_DEFAULTS, onSaveFloor, modeStats,
+    PlannerError, tabForKey, keptByPanel, foldKey, setOption, diveHtml, fightKey, UI_DEFAULTS, onSaveFloor, modeStats,
   };
 } else mount();

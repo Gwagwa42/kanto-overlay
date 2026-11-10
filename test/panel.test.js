@@ -30,6 +30,17 @@ test('sections repliables : classe → clé de l’état gardé', () => {
   assert.equal(KT.foldKey(undefined), undefined);
 });
 
+test('assassins adverses : case par combat, parade posée ou raison de son absence', () => {
+  const names = { line: id => ({ geodude: 'Racaillou', abra: 'Abra' }[id]) };
+  const off = KT.diveHtml({ dive: false, advice: { guard: null, names } });
+  assert.match(off, /<input type="checkbox" name="dive" id="kt-dive" aria-describedby="kt-dive-note"><span>Assassins adverses : Insécateur, Doduo, Abo, Nosferapti/);
+  assert.match(off, /Coche si l’adversaire en aligne/);
+  const on = KT.diveHtml({ dive: true, advice: { guard: { bait: 'geodude', carry: 'abra' }, names } });
+  assert.match(on, /name="dive" id="kt-dive" aria-describedby="kt-dive-note" checked>/);
+  assert.match(on, /Appât : Racaillou plus au fond que Abra\./);
+  assert.match(KT.diveHtml({ dive: true, advice: { guard: null, names } }), /Pas de parade/);
+});
+
 test('menu d’options : bouton radio, case de pastille, rendu dans l’ordre de la table', () => {
   const ui = { theme: 'auto', pins: { do: true, opt: true, no: true } };
   KT.checkUi(ui);

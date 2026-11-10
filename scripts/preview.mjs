@@ -45,6 +45,8 @@ const STATES = {
   // suivante y deviennent des cartes plus fortes de la compo cible ; le test « boutique : ◆ pour la compo suivante… » le couvre.
   'compo-suivante': { save: { ...S57, gold: 40, shop: ['chansey', 'lapras', 'magmar', 'rattata', 'ekans'] }, api: 'ok', tip: true, ui: { tab: 'compo' } },
   shiny: { save: SHINY, api: 'ok', ui: { tab: 'compo' } },
+  // Assassins adverses cochés pour l'étage 57 (sauvegarde sans runSeed) ; porteur de mêlée : pas de parade.
+  assassins: { save: S57, api: 'ok', ui: { tab: 'compo', dive: ':57' } },
   // Onglets, menu ⚙ et panneau replié (maquette 2026-11-09-refonte).
   'onglet-boss': { save: S57, api: 'ok', ui: { tab: 'boss' } },
   'onglet-regles': { save: S57, api: 'ok', ui: { tab: 'rules' } },
@@ -148,8 +150,9 @@ function panelPage(name, s) {
   const stats = KT.modeStats(state);
   // Même condition que compute dans mount.
   state.advice = KT.onSaveFloor(state) && (state.stats || state.error)
-    ? KT.advise({ stats, data: state.data, lang: state.lang, save: state.save, previous: null, side: ui.side, mode: state.mode })
+    ? KT.advise({ stats, data: state.data, lang: state.lang, save: state.save, previous: null, side: ui.side, mode: state.mode, dive: ui.dive === KT.fightKey(state) })
     : null;
+  state.dive = state.advice !== null && ui.dive === KT.fightKey(state);
   // Plan collé dans le Planificateur : le statut du panneau synchronisé.
   state.planner = { code: state.advice?.code ?? null, error: null };
   const look = { scheme: ui.theme === 'auto' ? 'dark' : ui.theme, width: ui.width, text: ui.text, alpha: ui.alpha };
