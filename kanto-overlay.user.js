@@ -87,6 +87,7 @@ const KT = (() => {
   // Campagne Kanto (choix de jeu) : 2 XP gratuites par combat, niveau 9 au plus ; un niveau au moins égal à la taille de
   // l'équipe du champion : Pierre 2, Ondine 3, Major Bob 4, 4ᵉ badge 5, 5ᵉ 6, 6ᵉ 8, Conseil 4 et Mewtwo 9 (route-*.js).
   const CAMPAIGN_LEVEL_GOALS = [[4, 4], [8, 5], [12, 6], [16, 7], [24, 8], [30, 9]];
+  const CAMPAIGN_FREE_XP = 2;
   // Un étage rejoué se joue à fond à partir de celui-ci : une défaite y coûte 12 PV et plus, et la suivante supprime les intérêts.
   const RETRY_ALL_IN_FROM = 50;
   // Puissance d'une unité selon son coût et son étoile (estimation des robots du jeu, engine-*.js) ; un point de traitGain
@@ -271,11 +272,14 @@ const KT = (() => {
     id: 'tower', stats: 'torre', name: 'Tour', where: 'en Tour', label: 'Étage', unit: 'étage', units: 'étages', the: 'l’étage', at: 'à l’étage', here: 'à cet étage', xm: 'tower', hud: '.topbar .rtrack.tw',
     interest: BASE_INTEREST, freeXp: 1, levelGoals: LEVEL_GOALS, levelCap: floor => (floor >= LEVEL_10_FROM ? 10 : 9),
     retryFrom: RETRY_ALL_IN_FROM, shinyKeepTo: SHINY_KEEP_TO, floorOf: round => Math.max(1, Math.floor(round) - ROUND_BASE + 1),
+    // Morceaux des règles d'or propres au mode (goldRules) ; leagues : la difficulté durcit le seuil de « tout jouer ».
+    fortuneNote: ` (+${FORTUNE_INTEREST} avec la voie Fortune complète)`, xpNote: '', retryNote: `sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}`, leagues: false,
   };
   const CAMPAIGN = {
     id: 'campaign', stats: 'camp', name: 'Campagne', where: 'en campagne', label: 'Combat', unit: 'combat', units: 'combats', the: 'le combat', at: 'au combat', here: 'à ce combat', xm: 'adv',
-    hud: '.topbar .rtrack:not(.tw):not(.pt-track)', interest: 4, freeXp: 2, levelGoals: CAMPAIGN_LEVEL_GOALS, levelCap: () => 9,
+    hud: '.topbar .rtrack:not(.tw):not(.pt-track)', interest: 4, freeXp: CAMPAIGN_FREE_XP, levelGoals: CAMPAIGN_LEVEL_GOALS, levelCap: () => 9,
     retryFrom: 1, shinyKeepTo: Infinity, floorOf: round => Math.max(1, Math.floor(round) + 1),
+    fortuneNote: '', xpNote: ` La campagne donne ${CAMPAIGN_FREE_XP} XP par combat.`, retryNote: 'sur un combat rejoué', leagues: true,
   };
 
   // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null) et difficulté. Sans league (sauvegarde
@@ -376,16 +380,15 @@ const KT = (() => {
   }
 
   function goldRules(mode) {
-    const tower = mode.id === TOWER.id;
     const goals = mode.levelGoals.map(([from, level]) => `${level} dès ${mode.the} ${Math.max(1, from - mode.league + 1)}`).join(', ');
     const hard = HARD_WIN + mode.penalty;
+    const league = mode.penalty ? `${LEAGUES[mode.league]} : ${HARD_WIN} % plus ${mode.penalty} points, les taux publics mêlant les trois difficultés`
+      : LEAGUES[mode.league];
     return [
-      tower ? 'Intérêts : +1 pièce par tranche de 10, +3 au plus en Tour → garder 30 pièces (+2 avec la voie Fortune complète).'
-        : `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus en campagne → garder ${10 * mode.interest} pièces.`,
-      `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation pour les copies trouvables, puis XP.${tower ? '' : ` La campagne donne ${mode.freeXp} XP par combat.`}`,
+      `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus ${mode.where} → garder ${10 * mode.interest} pièces${mode.fortuneNote}.`,
+      `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation pour les copies trouvables, puis XP.${mode.xpNote}`,
       'Actualisation à 2 pièces : ne pas en enchaîner pour un shiny.',
-      tower ? `Tout jouer sur un combat sous ${hard} % de victoires, sous ${LOW_HP} PV, ou sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}.`
-        : `Tout jouer sur un combat sous ${hard} % de victoires (${mode.penalty ? `${LEAGUES[mode.league]} : ${HARD_WIN} % plus ${mode.penalty} points, les taux publics mêlant les trois difficultés` : LEAGUES[mode.league]}), sous ${LOW_HP} PV, ou sur un combat rejoué.`,
+      `Tout jouer sur un combat sous ${hard} % de victoires${mode.leagues ? ` (${league})` : ''}, sous ${LOW_HP} PV, ou ${mode.retryNote}.`,
     ];
   }
 
@@ -2033,22 +2036,30 @@ ${aimsHtml(a, ui)}
 <p class="kt-hint">Porteur à distance : rangée de sa portée, ${KT.CARRY_ZONES[ui.side].name} (options ⚙).</p>`;
 }
 
-function bossTabHtml(state) {
+// Prochain boss du mode de la partie : stats null avant leur chargement, stop null sans boss à venir.
+function nextBossOf(state) {
   const stats = modeStats(state);
+  return { stats, stop: stats && KT.nextBossStop(stats.stops, state.floor, state.mode) };
+}
+
+// Taux coloré au taux moins la pénalité de difficulté, comme le seuil de « tout jouer ».
+function rateHtml(win, mode, label = '') {
+  const l = KT.rateLevel(win - mode.penalty);
+  return `<span class="kt-rate ${l.cls}">${l.sym} ${KT.pct(win)}${label}</span>`;
+}
+
+function bossTabHtml(state) {
+  const { stats, stop } = nextBossOf(state);
   if (!stats) return '<p class="kt-msg">Statistiques indisponibles.</p>';
-  const stop = KT.nextBossStop(stats.stops, state.floor, state.mode);
   // L'en-tête dit déjà qu'aucun boss n'est connu après cet étage.
   if (!stop) return '<p class="kt-msg">Pas de trio à afficher.</p>';
   const names = KT.namer(state.lang);
   const mine = state.advice?.target?.key;
   const cores = KT.topCores(stats.cores, stop.stop);
-  // Couleur au taux moins la pénalité de difficulté, comme le seuil de « tout jouer ».
-  const level = win => KT.rateLevel(win - state.mode.penalty);
   const coresHtml = cores.length
     ? `<ol class="kt-cores">${cores.map(c => {
-      const l = level(c.win);
       const own = KT.coreKey(c.core) === mine ? ' · <span class="mine">ta compo cible</span>' : '';
-      return `<li><span class="names">${esc(c.core.map(names.line).join(' · '))}</span><span class="kt-rate ${l.cls}">${l.sym} ${KT.pct(c.win)}</span><span class="n">${c.n} combats${own}</span></li>`;
+      return `<li><span class="names">${esc(c.core.map(names.line).join(' · '))}</span>${rateHtml(c.win, state.mode)}<span class="n">${c.n} combats${own}</span></li>`;
     }).join('')}</ol>`
     : '<p class="kt-msg">Aucun trio n’a encore 20 combats sur ce boss.</p>';
   // Manche à plusieurs variantes (champion à choisir, tirage) : leurs taux, puis les chiffres de la plus jouée.
@@ -2094,13 +2105,11 @@ function headHtml(state) {
     else if (e.nextWall) wall = `${mode.label} ${e.nextWall.floor} (${esc(KT.fightName(e.nextWall))}, ${KT.pct(e.nextWall.fightWin)}) : tout jouer.`;
     if (wall) parts.push(`<p class="kt-warn"><span class="kt-sym kp-no" aria-hidden="true">▼</span>${wall}</p>`);
   }
-  if (mode.id !== KT.TOWER.id) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);
-  const stats = modeStats(state);
-  const stop = stats && KT.nextBossStop(stats.stops, state.floor, mode);
+  if (mode.leagues) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);
+  const { stats, stop } = nextBossOf(state);
   if (stop) {
     const dist = stop.floor - state.floor;
-    const lvl = KT.rateLevel(stop.fightWin - mode.penalty);
-    parts.push(`<div class="kt-boss"><span class="n">${esc(KT.fightName(stop))}</span><span class="kt-rate ${lvl.cls}">${lvl.sym} ${KT.pct(stop.fightWin)}<span class="kt-sr"> de victoires</span></span>
+    parts.push(`<div class="kt-boss"><span class="n">${esc(KT.fightName(stop))}</span>${rateHtml(stop.fightWin, mode, '<span class="kt-sr"> de victoires</span>')}
 <span class="w">${mode.unit} ${stop.floor} · ${dist ? `dans ${dist}` : 'en cours'}</span></div>`);
   } else if (stats) {
     parts.push(noBossHtml(mode, KT.lastBossFloor(stats.stops, mode)));
