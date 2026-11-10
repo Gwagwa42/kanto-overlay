@@ -1801,10 +1801,12 @@ const CSS = `
 .kt-gold .spend { font-size: var(--kt-fs-l); font-weight: 700; color: var(--kt-accent-text); }
 .kt-gold .m { font-size: var(--kt-fs-s); color: var(--kt-muted); margin-left: auto; white-space: nowrap; }
 .kt-warn { display: flex; gap: var(--kt-s2); align-items: center; font-size: var(--kt-fs-s); padding: var(--kt-s15) var(--kt-s2); border-radius: var(--kt-r-ctl); background: var(--kt-raised); }
-.kt-boss { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 var(--kt-s2); padding: var(--kt-s2) var(--kt-s3); border-radius: var(--kt-r-card); background: var(--kt-raised); }
+/* Carte avec taux : texte à gauche, taux sur deux rangées à droite (prochain boss, trios). */
+.kt-card-rate { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 var(--kt-s2); padding: var(--kt-s2); border-radius: var(--kt-r-card); background: var(--kt-raised); }
+.kt-card-rate .kt-rate { grid-row: 1 / span 2; grid-column: 2; }
+.kt-boss { padding: var(--kt-s2) var(--kt-s3); }
 .kt-boss .n { font-weight: 700; font-size: var(--kt-fs-l); }
 .kt-boss .w { font-size: var(--kt-fs-s); color: var(--kt-muted); }
-.kt-boss .kt-rate { grid-row: 1 / span 2; grid-column: 2; }
 .kt-rate { display: inline-flex; gap: var(--kt-s1); align-items: center; padding: var(--kt-s0) var(--kt-s2); border-radius: 999px; font-size: var(--kt-fs-s); font-weight: 700; white-space: nowrap; }
 .kt-rate.good { background: var(--kt-good-bg); color: var(--kt-good-fg); }
 .kt-rate.bad { background: var(--kt-bad-bg); color: var(--kt-bad-fg); }
@@ -1862,11 +1864,9 @@ const CSS = `
 .kt-big b { display: block; font-size: var(--kt-fs-l); }
 .kt-big span { font-size: var(--kt-fs-xs); color: var(--kt-muted); }
 .kt-cores { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--kt-s1); }
-.kt-cores li { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 var(--kt-s2); padding: var(--kt-s2); border-radius: var(--kt-r-card); background: var(--kt-raised); }
 .kt-cores .names { font-size: var(--kt-fs-m); font-weight: 600; }
 .kt-cores .n { font-size: var(--kt-fs-xs); color: var(--kt-muted); }
 .kt-cores .mine { color: var(--kt-accent-text); font-weight: 600; }
-.kt-cores .kt-rate { grid-row: 1 / span 2; grid-column: 2; }
 
 /* Règles */
 .kt-rules { margin: 0; padding-left: var(--kt-s4); display: grid; gap: var(--kt-s15); font-size: var(--kt-fs-m); }
@@ -2059,7 +2059,7 @@ function bossTabHtml(state) {
   const coresHtml = cores.length
     ? `<ol class="kt-cores">${cores.map(c => {
       const own = KT.coreKey(c.core) === mine ? ' · <span class="mine">ta compo cible</span>' : '';
-      return `<li><span class="names">${esc(c.core.map(names.line).join(' · '))}</span>${rateHtml(c.win, state.mode)}<span class="n">${c.n} combats${own}</span></li>`;
+      return `<li class="kt-card-rate"><span class="names">${esc(c.core.map(names.line).join(' · '))}</span>${rateHtml(c.win, state.mode)}<span class="n">${c.n} combats${own}</span></li>`;
     }).join('')}</ol>`
     : '<p class="kt-msg">Aucun trio n’a encore 20 combats sur ce boss.</p>';
   // Manche à plusieurs variantes (champion à choisir, tirage) : leurs taux, puis les chiffres de la plus jouée.
@@ -2109,7 +2109,7 @@ function headHtml(state) {
   const { stats, stop } = nextBossOf(state);
   if (stop) {
     const dist = stop.floor - state.floor;
-    parts.push(`<div class="kt-boss"><span class="n">${esc(KT.fightName(stop))}</span>${rateHtml(stop.fightWin, mode, '<span class="kt-sr"> de victoires</span>')}
+    parts.push(`<div class="kt-boss kt-card-rate"><span class="n">${esc(KT.fightName(stop))}</span>${rateHtml(stop.fightWin, mode, '<span class="kt-sr"> de victoires</span>')}
 <span class="w">${mode.unit} ${stop.floor} · ${dist ? `dans ${dist}` : 'en cours'}</span></div>`);
   } else if (stats) {
     parts.push(noBossHtml(mode, KT.lastBossFloor(stats.stops, mode)));
