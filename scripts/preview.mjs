@@ -140,7 +140,7 @@ function panelPage(name, s) {
   const state = {
     ...KT.pollState(start, found, null, ui), lastRaw: raw, stats: loaded('stats') ? { torre: modes.torre, camp: modes.camp } : null,
     campBroken: false, data: loaded('data') ? data : null, lang: loaded('lang') ? lang : null, failed, stale: null, uncached: false,
-    error: failed.length ? failed.map(k => `${FILES[k]} : HTTP 429`).join(' ; ') : null, copied: null,
+    error: failed.length ? failed.map(k => `${FILES[k]} : HTTP 429`).join(' ; ') : null, copied: null, fights: s.fights ?? [],
   };
   const stats = KT.modeStats(state);
   // Même condition que compute dans mount.
