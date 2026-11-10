@@ -1289,14 +1289,16 @@ const KT = (() => {
   const rangeOf = (data, base) => Math.max(1, lineInfo(data, base)?.range ?? 1);
 
   // Porteurs : un Pokémon possédé par lignée de la compo cible (fieldOrder). Rôles lus sur le profil de la lignée : porteur
-  // (attaquant du cœur le mieux classé), tanks (aux PV max d'abord), puis les autres attaquants (★, shiny, puis force sur les combats de la compo cible, lineStrength).
+  // (attaquant du cœur le mieux classé), tanks (aux PV max d'abord), puis les autres attaquants (★, shiny, force sur les combats
+  // de la compo cible, lineStrength, puis coût : sans trio sur ces combats, la force manque, et l'ordre de la compo mêle les types).
   function holdersOf(stats, data, game, target, profiles) {
     const own = targetBases(target)
       .map(b => unitsOf(game, b).sort(fieldOrder)[0])
       .filter(Boolean);
     const profile = u => profiles.get(baseLine(u.line)) ?? null;
     const strength = u => target.strength.get(baseLine(u.line)) ?? 0;
-    const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || strength(b) - strength(a);
+    const cost = u => lineInfo(data, baseLine(u.line))?.c ?? 0;
+    const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || strength(b) - strength(a) || cost(b) - cost(a);
     const hp = u => (lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0) * (u.shiny ? SHINY_HP : 1);
     const tanks = own.filter(u => profile(u)?.tank).sort((a, b) => hp(b) - hp(a));
     const attackers = own.filter(u => !tanks.includes(u)).sort(rank);

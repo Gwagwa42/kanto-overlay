@@ -171,6 +171,14 @@ test('aventure sans statistiques (Safari) : compo sans trio, tes meilleures unit
   assert.equal(advise({ ...CAMP, units: {}, board: {}, bench: [], shop: [] }, 'safari').target, null);
 });
 
+test('aventure sans statistiques (Safari) : porteurs à égalité d’étoiles départagés par le coût, pas par l’ordre de la compo', () => {
+  // Rattata (coût 1, type Normal de Roucool) passe devant Abo (coût 2) dans la compo ; les objets visent Abo d'abord.
+  const units = { p: { id: 'p', line: 'pidgey', star: 2 }, r: { id: 'r', line: 'rattata', star: 1 }, e: { id: 'e', line: 'ekans', star: 1 } };
+  const a = advise({ ...CAMP, level: 3, units, board: { 29: 'p', 30: 'r', 31: 'e' }, bench: [], shop: [], items: [] }, 'safari');
+  assert.deepEqual(a.target.fillers, ['pidgey', 'rattata', 'ekans']);
+  assert.deepEqual(a.aims.map(x => x.unit.line), ['pidgey', 'ekans', 'rattata']);
+});
+
 test('règles et en-tête de campagne : difficulté, seuils, combats', () => {
   const rules = KT.goldRules(mode(CAMP));
   assert.ok(rules.some(r => r.includes('+4 au plus en campagne → garder 40 pièces')));
