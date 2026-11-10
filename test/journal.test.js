@@ -60,14 +60,22 @@ test('ligne de journal : taux attendu, trio posé ou non, rien sans taux public'
   assert.deepEqual([entry.k, entry.f, entry.p], ['kanto:3', 5, Math.round(10 * Math.max(1, here.fightWin - 20)) / 10]);
 });
 
-test('journal : une ligne par combat fini, même tableau sinon, 400 lignes au plus', () => {
+test('combat noté : une ligne par combat fini, rien sans conseil ni combat', () => {
   const state = { save: S10, advice, stats, runsRaw: null };
-  const none = [];
-  assert.equal(KT.learn(none, { ...state, afterRaw: after({ gold: 1 }) }), none);
-  assert.equal(KT.learn(none, { ...state, advice: null, afterRaw: after({ round: 1010, streak: 3 }) }), none);
-  assert.deepEqual(KT.learn(none, { ...state, afterRaw: after({ round: 1010, streak: 3 }) }), [{ r: 7, k: 'tower', f: 10, p: 50, w: 1, c: 1 }]);
-  const full = KT.learn(fights(400, 0), { ...state, afterRaw: after({ round: 1010, streak: 3 }) });
-  assert.deepEqual([full.length, full.at(-1).w], [400, 1]);
+  assert.equal(KT.notedFight({ ...state, afterRaw: after({ gold: 1 }) }), null);
+  assert.equal(KT.notedFight({ ...state, advice: null, afterRaw: after({ round: 1010, streak: 3 }) }), null);
+  assert.deepEqual(KT.notedFight({ ...state, afterRaw: after({ round: 1010, streak: 3 }) }), { r: 7, k: 'tower', f: 10, p: 50, w: 1, c: 1 });
+  // Taux public de moins de 20 combats : pas de ligne.
+  const thin = { ...stats, stops: [{ ...stats.stops[0], n: 19 }] };
+  assert.equal(KT.notedFight({ ...state, stats: thin, afterRaw: after({ round: 1010, streak: 3 }) }), null);
+});
+
+test('journal : 300 combats au plus par mode et difficulté, sans évincer les autres modes', () => {
+  const entry = { r: 7, k: 'tower', f: 10, p: 50, w: 1 };
+  assert.deepEqual(KT.addFight([], entry), [entry]);
+  const camp = fights(5, 5, { k: 'kanto:3' });
+  const full = KT.addFight([...camp, ...fights(300, 0)], entry);
+  assert.deepEqual([full.length, full.filter(f => f.k === 'kanto:3').length, full.filter(f => f.k === 'tower').length, full.at(-1)], [305, 5, 300, entry]);
 });
 
 test('journal relu : illisible ou d’un autre format, repris à vide ou sans la ligne', t => {
@@ -83,17 +91,20 @@ test('journal relu : illisible ou d’un autre format, repris à vide ou sans la
   assert.equal(warn.mock.callCount(), 3);
 });
 
-test('écart appris : nul dans la marge d’erreur, rétréci au-delà, par mode et difficulté', () => {
-  // 100 combats à 50 % : écart type de la somme 5 ; 55 victoires, dans la marge.
-  assert.equal(KT.ownResults(fights(100, 55), T).shift, 0);
-  // 30 victoires : −20 sur 125 combats comptés, soit −16 points.
+test('écart appris : rétréci par 50 combats fictifs, borné à 20 points, par mode et difficulté', () => {
+  // 100 combats à 50 % : écart type de la somme 5 ; 55 victoires, +5 sur 150 combats comptés, soit 3 points.
+  assert.equal(KT.ownResults(fights(100, 55), T).shift, 3);
+  assert.equal(KT.ownResults(fights(100, 50), T).shift, 0);
+  // 30 victoires : −20 sur 150, soit −13 points.
   const low = KT.ownResults(fights(100, 30), T);
-  assert.deepEqual([low.n, low.wins, low.expected, low.spread, low.shift], [100, 30, 50, 5, -16]);
-  assert.equal(KT.ownResults(fights(100, 70), T).shift, 16);
-  // Sous 50 combats, aucun écart : 4 défaites sur 4, ou 40 sur 49.
-  assert.equal(KT.ownResults(fights(4, 0), T).shift, 0);
-  assert.equal(KT.ownResults(fights(49, 9), T).shift, 0);
-  assert.equal(KT.ownResults(fights(50, 10), T).shift, -20);
+  assert.deepEqual([low.n, low.wins, low.expected, low.spread, low.shift], [100, 30, 50, 5, -13]);
+  assert.equal(KT.ownResults(fights(100, 70), T).shift, 13);
+  // Peu de combats : 4 défaites sur 4 pèsent 4 points ; un combat de plus déplace l'écart de 1 point au plus ici.
+  assert.equal(KT.ownResults(fights(4, 0), T).shift, -4);
+  assert.equal(KT.ownResults(fights(5, 0), T).shift, -5);
+  // Borne : 100 défaites donneraient −33.
+  assert.equal(KT.ownResults(fights(100, 0), T).shift, -20);
+  assert.equal(KT.ownResults(fights(100, 100), T).shift, 20);
   assert.equal(KT.ownResults([], T).shift, 0);
   // Les combats d'un autre mode ne comptent pas.
   assert.equal(KT.ownResults(fights(100, 30, { k: 'kanto:1' }), T).n, 0);
@@ -106,30 +117,34 @@ test('écart appris : il déplace le seuil de « tout jouer » et s’ajoute à 
     { key: 'kanto-tactics-save-tower', raw: JSON.stringify(S10), mode: T }, 'tower', KT.STRATEGY_DEFAULTS, journal).mode;
   assert.deepEqual([poll([]).penalty, poll([]).ownPenalty], [0, 0]);
   const weak = poll(fights(100, 30));
-  assert.deepEqual([weak.penalty, weak.ownPenalty], [16, 16]);
-  // Pierre à 50 % : pas un mur au seuil de 45 %, un mur une fois le taux compté 16 points plus bas.
+  assert.deepEqual([weak.penalty, weak.ownPenalty], [13, 13]);
+  // Pierre à 50 % : pas un mur au seuil de 45 %, un mur une fois le taux compté 13 points plus bas.
   assert.equal(adviseOn(S10, { mode: poll([]), stats }).eco.allIn, false);
   assert.equal(adviseOn(S10, { mode: weak, stats }).eco.allIn, true);
-  assert.ok(KT.goldRules(weak).includes('Tout jouer sur un combat sous 61 % de victoires (plus 16 points d’après tes résultats), sous 40 PV, ou sur un étage rejoué à partir de l’étage 50.'));
-  assert.ok(KT.goldRules(poll(fights(100, 70))).some(r => r.includes('sous 29 % de victoires (moins 16 points d’après tes résultats)')));
+  assert.ok(KT.goldRules(weak).includes('Tout jouer sur un combat sous 58 % de victoires (plus 13 points d’après tes résultats), sous 40 PV, ou sur un étage rejoué à partir de l’étage 50.'));
+  assert.ok(KT.goldRules(poll(fights(100, 70))).some(r => r.includes('sous 32 % de victoires (moins 13 points d’après tes résultats)')));
   const camp = KT.withResults(KT.modeContext(KT.CAMPAIGN, kanto, 'kanto'), fights(100, 30, { k: 'kanto:3' }));
-  assert.deepEqual([camp.leaguePenalty, camp.ownPenalty, camp.penalty], [20, 16, 36]);
-  assert.ok(KT.goldRules(camp).some(r => r.includes('(Légende : 45 % plus 20 points, les taux publics mêlant les trois difficultés ; plus 16 points d’après tes résultats)')));
+  assert.deepEqual([camp.leaguePenalty, camp.ownPenalty, camp.penalty], [20, 13, 33]);
+  assert.ok(KT.goldRules(camp).some(r => r.includes('(Légende : 45 % plus 20 points, les taux publics mêlant les trois difficultés ; plus 13 points d’après tes résultats)')));
+  // En-tête : le seuil déplacé est dit en Tour aussi, et seulement quand un écart est compté.
+  const head = mode => KT.headHtml({ advice: null, stats: { torre: stats }, mode, floor: 10 });
+  assert.match(head(weak), /Tour · tout jouer sous 58 %/);
+  assert.doesNotMatch(head(poll([])), /tout jouer sous/);
 });
 
-test('bilan de l’onglet Règles : vide, dans la marge, écart compté, avec et sans le trio', () => {
+test('bilan de l’onglet Règles : vide, sans écart, écart compté, avec et sans le trio', () => {
   assert.match(KT.resultsNote(T, [])[0], /^Aucun combat noté/);
-  assert.deepEqual(KT.resultsNote(T, fights(100, 55)), [
-    '55 victoires pour 50 attendues (± 9,8) sur 100 combats, 1 partie.',
-    'Écart dans la marge d’erreur : les taux publics sont gardés tels quels.',
+  assert.deepEqual(KT.resultsNote(T, fights(100, 50)), [
+    '50 victoires pour 50 attendues (± 9,8) sur 100 combats, 1 partie.',
+    'Aucun écart compté : les taux publics sont gardés tels quels.',
   ]);
   const split = [...fights(60, 20, { c: 1 }), ...fights(40, 10, { c: 0, r: 2 })];
   assert.deepEqual(KT.resultsNote(T, split), [
     '30 victoires pour 50 attendues (± 9,8) sur 100 combats, 2 parties.',
     'Trio de la compo cible posé : 20 victoires pour 30 attendues (± 7,6) sur 60 combats. Sans lui : 10 victoires pour 20 attendues (± 6,2) sur 40 combats.',
-    'Tu gagnes moins que les taux publics : ils comptent 16 points de moins pour toi (seuil de « tout jouer », couleurs, poids des combats).',
+    'Les taux publics comptent 13 points de moins pour toi : seuil de « tout jouer », couleurs, poids des combats.',
   ]);
   const html = KT.panelHtml({ mode: T, floor: 10, fights: fights(1, 1), stats: { torre: stats }, advice: null, failed: [], error: null }, { ...KT.UI_DEFAULTS, tab: 'rules' });
   assert.match(html, /Tes résultats<\/span><span>Tour<\/span>.*1 victoire pour 0,5 attendues \(± 1\) sur 1 combat, 1 partie\./s);
-  assert.match(html, /Les taux publics sont gardés tels quels jusqu’à 50 combats\./);
+  assert.match(html, /Les taux publics comptent 1 point de plus pour toi/);
 });

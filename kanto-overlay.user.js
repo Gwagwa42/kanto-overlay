@@ -396,10 +396,10 @@ const KT = (() => {
   ];
   const leagueLabel = mode => `${mode.adv?.name ?? mode.adventure} · ${LEAGUES[mode.league]}`;
 
-  // En-tête de campagne : aventure, difficulté et seuil de « tout jouer » déplacé par la pénalité du mode (raison dans
-  // l'onglet Règles).
+  // En-tête : aventure et difficulté en campagne, Tour sinon, et seuil de « tout jouer » déplacé par la pénalité du mode
+  // (raison dans l'onglet Règles).
   function leagueNote(mode) {
-    const where = leagueLabel(mode);
+    const where = mode.hasLeague ? leagueLabel(mode) : mode.name;
     return mode.penalty ? `${where} · tout jouer sous ${mode.hardWin + mode.penalty} %` : where;
   }
 
@@ -422,16 +422,20 @@ const KT = (() => {
 
   const isObject = o => o !== null && typeof o === 'object' && !Array.isArray(o);
 
-  // Sauvegarde avec un round numérique (assez pour l'étage), sinon null.
-  function parseRound(raw) {
+  // Valeur JSON du stockage ; null si elle est absente ou illisible.
+  function parseJson(raw) {
     if (raw == null) return null;
-    let save;
     try {
-      save = JSON.parse(raw);
+      return JSON.parse(raw);
     } catch (e) {
       if (e instanceof SyntaxError) return null;
       throw e;
     }
+  }
+
+  // Sauvegarde avec un round numérique (assez pour l'étage), sinon null.
+  function parseRound(raw) {
+    const save = parseJson(raw);
     return isObject(save) && Number.isFinite(save.round) ? save : null;
   }
 
@@ -643,29 +647,23 @@ const KT = (() => {
 
   // Journal des combats joués avec le panneau ouvert : { r: partie (runSeed), k: mode et difficulté (cellOf), f: étage ou
   // combat, p: taux attendu en % (taux public moins la pénalité de difficulté), w: 1 gagné, c: 1 si le trio de la compo
-  // cible était posé à la dernière lecture avant le combat (2 s au plus), absent sans trio }. Les plus anciens sortent au-delà de JOURNAL_MAX : l'écart suit le niveau du joueur
-  // et les rééquilibrages du jeu.
+  // cible était posé à la dernière lecture avant le combat (2 s au plus), absent sans trio }. Par mode et difficulté, les
+  // plus anciens sortent au-delà de JOURNAL_MAX : l'écart suit le niveau du joueur et les rééquilibrages du jeu.
   const JOURNAL_KEY = 'kt-overlay:journal';
-  const JOURNAL_MAX = 400;
+  const JOURNAL_MAX = 300;
   // Parties de Tour finies, écrites par le jeu à la défaite finale (towerRuns-*.js) : seed et étage atteint.
   const TOWER_RUNS_KEY = 'kanto-tactics:tower-runs';
-  // Combats fictifs sans écart ajoutés à ceux du joueur : son écart aux taux publics n'est suivi qu'à mesure des combats.
-  const OWN_PRIOR = 25;
-  // Combats du mode et de la difficulté avant tout écart : en deçà, quatre défaites de suite passeraient pour un écart établi,
-  // et les combats d'une même partie se ressemblent trop pour compter chacun pour un.
-  const OWN_MIN_FIGHTS = 50;
+  // Combats fictifs sans écart ajoutés à ceux du joueur : un combat de plus déplace l'écart de 2 points au plus, et 400
+  // combats joués exactement aux taux publics laissent un écart de 2 points en écart type.
+  const OWN_PRIOR = 50;
+  // Écart compté au plus, en points : le journal ne note pas tous les combats (dernier combat d'une campagne), et un seuil de
+  // « tout jouer » proche de 100 % ferait tout jouer en permanence.
+  const OWN_MAX = 20;
 
-  // Tableau JSON du stockage ; null s'il est absent ou illisible.
-  function parseList(raw) {
-    if (raw == null) return null;
-    try {
-      const list = JSON.parse(raw);
-      return Array.isArray(list) ? list : null;
-    } catch (e) {
-      if (e instanceof SyntaxError) return null;
-      throw e;
-    }
-  }
+  const parseList = raw => {
+    const list = parseJson(raw);
+    return Array.isArray(list) ? list : null;
+  };
 
   // Un journal illisible repart à vide, une ligne d'un autre format est écartée ; les deux sont signalés en console.
   function readJournal(raw) {
@@ -682,8 +680,9 @@ const KT = (() => {
   // streak à chaque combat (un de plus ou 1 après une victoire, un de moins ou −1 après une défaite), avance d'une manche après
   // une victoire ou une défaite permise, et compte un essai de plus sinon : une série qui change sans cela, sauvegarde
   // restaurée par exemple, n'est pas un combat. Pendant le combat et son résultat, le jeu réécrit la série d'avant
-  // (store-*.js) : la défaite finale n'est donc pas vue avant la suppression. Il supprime la sauvegarde à la défaite finale, que seule la Tour
-  // confirme, par sa liste de parties finies. afterRaw : la même sauvegarde relue, runsRaw : TOWER_RUNS_KEY.
+  // (store-*.js) : le dernier combat d'une partie n'est donc pas vu avant que le jeu supprime la sauvegarde. Seule la Tour
+  // confirme alors la défaite finale, par sa liste de parties finies. afterRaw : la même sauvegarde relue, runsRaw :
+  // TOWER_RUNS_KEY.
   function fightWon(before, afterRaw, runsRaw, mode) {
     if (!Number.isFinite(before?.runSeed) || !Number.isFinite(before.streak)) return null;
     const after = parseRound(afterRaw);
@@ -699,32 +698,40 @@ const KT = (() => {
     return ended ? false : null;
   }
 
-  // Ligne de journal du combat que advice conseillait ; null sans taux public pour ce combat.
+  // Ligne de journal du combat que advice conseillait ; null sans taux public d'au moins MIN_FIGHTS combats pour ce combat
+  // (un taux de 100 % sur 14 combats ferait d'une défaite un écart).
   function fightEntry(advice, stats, won) {
     const { game, target } = advice;
-    const here = stats && modeStops(stats.stops, game.mode).find(s => s.floor === game.floor);
-    if (!here) return null;
+    const here = stats ? modeStops(stats.stops, game.mode).filter(s => s.floor === game.floor) : [];
+    if (here.reduce((n, s) => n + s.n, 0) < MIN_FIGHTS) return null;
     const core = target?.core ?? [];
     const placed = new Set(game.units.filter(u => u.cell !== undefined).map(u => baseLine(u.line)));
-    const p = Math.round(10 * Math.min(99, Math.max(1, here.fightWin - game.mode.leaguePenalty))) / 10;
+    const p = Math.round(10 * Math.min(99, Math.max(1, here[0].fightWin - game.mode.leaguePenalty))) / 10;
     return {
       r: advice.run, k: cellOf(game.mode), f: game.floor, p, w: Number(won),
       ...(core.length ? { c: Number(core.every(id => placed.has(baseLine(id)))) } : {}),
     };
   }
 
-  // Journal après une relecture de la sauvegarde : le même tableau sans combat fini, sinon avec sa ligne. save et advice :
-  // ceux d'avant la relecture.
-  function learn(fights, { save, advice, stats, afterRaw, runsRaw }) {
-    if (!advice) return fights;
+  // Ligne du combat fini depuis la dernière lecture de la sauvegarde, ou null. save et advice : ceux d'avant la relecture.
+  function notedFight({ save, advice, stats, afterRaw, runsRaw }) {
+    if (!advice) return null;
     const won = fightWon(save, afterRaw, runsRaw, advice.game.mode);
-    const entry = won === null ? null : fightEntry(advice, stats, won);
-    return entry ? [...fights, entry].slice(-JOURNAL_MAX) : fights;
+    return won === null ? null : fightEntry(advice, stats, won);
   }
 
-  // Bilan des combats du mode et de la difficulté : victoires, victoires attendues (somme des taux), marge à 95 % sur cette
-  // somme, et shift, l'écart moyen en points rétréci par OWN_PRIOR combats sans écart. shift vaut 0 sous OWN_MIN_FIGHTS combats
-  // et tant que l'écart ne dépasse pas deux erreurs types : en deçà, il se confond avec la chance. followed, other : avec ou sans le trio posé.
+  // Journal avec cette ligne, sans le plus ancien combat de son mode et de sa difficulté au-delà de JOURNAL_MAX : les combats
+  // d'un mode n'évincent pas ceux d'un autre.
+  function addFight(fights, entry) {
+    const same = fights.filter(f => f.k === entry.k);
+    const kept = same.length < JOURNAL_MAX ? fights : fights.filter(f => f !== same[0]);
+    return [...kept, entry];
+  }
+
+  // Bilan des combats du mode et de la difficulté : victoires, victoires attendues (somme des taux), écart type de cette
+  // somme, et shift, l'écart moyen en points (résultat moins taux attendu), rétréci par OWN_PRIOR combats sans écart et borné
+  // à OWN_MAX. Sans seuil : un écart compté à partir d'un seuil sauterait de 0 à 10 points sur un seul combat. followed,
+  // other : avec ou sans le trio posé.
   function ownResults(fights, mode) {
     const mine = fights.filter(f => f.k === cellOf(mode));
     const tally = list => ({
@@ -732,10 +739,9 @@ const KT = (() => {
       spread: Math.sqrt(list.reduce((s, f) => s + f.p * (100 - f.p) / 1e4, 0)),
     });
     const all = tally(mine);
-    const gap = (all.wins - all.expected) / (all.n + OWN_PRIOR);
-    const credible = all.n >= OWN_MIN_FIGHTS && Math.abs(gap) >= 2 * all.spread / (all.n + OWN_PRIOR);
+    const gap = Math.round(100 * (all.wins - all.expected) / (all.n + OWN_PRIOR));
     return {
-      ...all, runs: new Set(mine.map(f => f.r)).size, shift: credible ? Math.round(100 * gap) : 0,
+      ...all, runs: new Set(mine.map(f => f.r)).size, shift: Math.max(-OWN_MAX, Math.min(OWN_MAX, gap)),
       followed: tally(mine.filter(f => f.c === 1)), other: tally(mine.filter(f => f.c === 0)),
     };
   }
@@ -743,8 +749,9 @@ const KT = (() => {
   // Mode dont la pénalité suit les résultats du joueur : ses taux comptent shift points de plus ou de moins que les taux
   // publics, pour le seuil de « tout jouer », la couleur des taux et le poids des combats dans la compo cible.
   function withResults(mode, fights) {
-    const ownPenalty = 0 - ownResults(fights, mode).shift;
-    return { ...mode, ownPenalty, penalty: mode.leaguePenalty + ownPenalty };
+    const { shift } = ownResults(fights, mode);
+    // 0 - shift : un écart nul donne 0 et non −0, que les comparaisons strictes distinguent.
+    return { ...mode, ownPenalty: 0 - shift, penalty: mode.leaguePenalty - shift };
   }
 
   const decimal = x => x.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
@@ -756,10 +763,9 @@ const KT = (() => {
     const line = t => `${t.wins} ${t.wins > 1 ? 'victoires' : 'victoire'} pour ${decimal(t.expected)} attendues (± ${decimal(1.96 * t.spread)}) sur ${t.n} ${t.n > 1 ? 'combats' : 'combat'}`;
     const notes = [`${line(r)}, ${r.runs} ${r.runs > 1 ? 'parties' : 'partie'}.`];
     if (r.followed.n && r.other.n) notes.push(`Trio de la compo cible posé : ${line(r.followed)}. Sans lui : ${line(r.other)}.`);
-    if (r.n < OWN_MIN_FIGHTS) notes.push(`Les taux publics sont gardés tels quels jusqu’à ${OWN_MIN_FIGHTS} combats.`);
-    else notes.push(r.shift
-      ? `Tu gagnes ${r.shift > 0 ? 'plus' : 'moins'} que les taux publics : ils comptent ${Math.abs(r.shift)} points de ${r.shift > 0 ? 'plus' : 'moins'} pour toi (seuil de « tout jouer », couleurs, poids des combats).`
-      : 'Écart dans la marge d’erreur : les taux publics sont gardés tels quels.');
+    notes.push(r.shift
+      ? `Les taux publics comptent ${Math.abs(r.shift)} ${Math.abs(r.shift) > 1 ? 'points' : 'point'} de ${r.shift > 0 ? 'plus' : 'moins'} pour toi : seuil de « tout jouer », couleurs, poids des combats.`
+      : 'Aucun écart compté : les taux publics sont gardés tels quels.');
     return notes;
   }
 
@@ -1947,7 +1953,7 @@ const KT = (() => {
 
   return {
     SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, leagueLabel, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, STRATEGY_DEFAULTS, latestSave, shownMode, pollState,
-    JOURNAL_KEY, TOWER_RUNS_KEY, readJournal, fightWon, fightEntry, learn, ownResults, withResults, resultsNote,
+    JOURNAL_KEY, TOWER_RUNS_KEY, readJournal, fightWon, fightEntry, notedFight, addFight, ownResults, withResults, resultsNote,
     parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss,
     baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, touching, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
@@ -2338,7 +2344,7 @@ function headHtml(state) {
     else if (e.nextWall) wall = `${mode.label} ${e.nextWall.floor} (${esc(KT.fightName(e.nextWall))}, ${KT.pct(e.nextWall.fightWin)}) : tout jouer.`;
     if (wall) parts.push(`<p class="kt-warn"><span class="kt-sym kp-no" aria-hidden="true">▼</span>${wall}</p>`);
   }
-  if (mode.hasLeague) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);
+  if (mode.hasLeague || mode.ownPenalty) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);
   const { stats, stop } = nextBossOf(state);
   if (stop) {
     const dist = stop.floor - state.floor;
@@ -2840,13 +2846,20 @@ function mount() {
     if (raw === state.lastRaw && now === shown) return;
     shown = now;
     state.lastRaw = raw;
-    const fights = KT.learn(state.fights, {
+    const fight = KT.notedFight({
       save: state.save, advice: state.advice, stats: modeStats(state),
       afterRaw: state.saveKey ? localStorage.getItem(state.saveKey) : null, runsRaw: localStorage.getItem(KT.TOWER_RUNS_KEY),
     });
-    if (fights !== state.fights) {
-      state.fights = fights;
-      localStorage.setItem(KT.JOURNAL_KEY, JSON.stringify(fights));
+    if (fight) {
+      // Journal relu avant l'ajout : un autre onglet du jeu a pu y écrire.
+      state.fights = KT.addFight(KT.readJournal(localStorage.getItem(KT.JOURNAL_KEY)), fight);
+      try {
+        localStorage.setItem(KT.JOURNAL_KEY, JSON.stringify(state.fights));
+      } catch (e) {
+        // Stockage plein ou refusé : le combat compte pour cette session, la lecture de la sauvegarde continue.
+        if (!(e instanceof DOMException)) throw e;
+        console.warn('kanto-overlay : journal des combats non écrit', e.name);
+      }
     }
     Object.assign(state, KT.pollState(state, found, shown, ui, state.fights));
     compute();
