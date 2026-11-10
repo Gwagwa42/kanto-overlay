@@ -23,7 +23,7 @@ cible, compo suivante, objets visés, copie de la formation), **Boss** (taux, pr
 
 Le menu ⚙ règle le thème (auto, clair, sombre), les pastilles affichées par niveau, la largeur (320 ou 380 px), la taille du texte,
 l'opacité du fond (100, 90 ou 85 % : en deçà, le texte secondaire passe sous un contraste de 4,5:1 sur les zones claires du jeu en
-thème sombre, sombres en thème clair) et la zone du porteur dans la formation. Sa partie **Stratégie** règle quatre préréglages
+thème sombre, sombres en thème clair) et la zone du porteur dans la formation. Sa partie Stratégie règle quatre préréglages
 (voir [Stratégie](#stratégie)). Les réglages sont gardés dans le navigateur.
 
 Pages où il s'affiche : les pages d'entrée du jeu, `https://einoow.com/` et `/kanto-tactics`, `/tower`, `/pvp`, `/duo`, `/nuzlocke`
@@ -148,10 +148,10 @@ Changer un préréglage recalcule tout de suite les conseils et les règles d'or
 
 | Réglage | Valeurs | Effet |
 | --- | --- | --- |
-| Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 5, 6 dès 9, 7 dès 15, 8 dès 23, 9 dès 34, 10 dès 49 ; plus tard : 8, 15, 25, 38, 56, 81. Campagne plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38. Le niveau maximal ne change pas (10 dès l'étage 60 en Tour). |
+| Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 5, 6 dès 9, 7 dès 15, 8 dès 23, 9 dès 34, 10 dès 60 ; plus tard : 8, 15, 25, 38, 56, 81. Campagne plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38, sous la taille des équipes des champions (8 au 6ᵉ badge, 9 contre Mewtwo). Le niveau maximal ne change pas : le niveau 10 n'est jamais visé avant l'étage 60 en Tour. |
 | Tout jouer | Prudent, Normal, Audacieux | Combat sous 50, 45 ou 40 % de victoires (plus la pénalité de difficulté en campagne), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
 | Compo cible | Réactive, Normale, Stable | Combats vus d'avance (6, 9 ou 12, la compo suivante sur autant d'après) et gain minimal pour changer de trio (15, 30 ou 45 points). |
-| Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver introuvable à ton niveau (autant). |
+| Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver introuvable à ton niveau (autant). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
 
 ### Campagne
 
