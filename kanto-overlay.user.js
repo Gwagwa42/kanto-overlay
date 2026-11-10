@@ -1806,7 +1806,7 @@ const KT = (() => {
   // de la sienne. Un appât strictement plus au fond que le porteur à distance, dans chaque moitié où se trouve le porteur,
   // prend donc l'assaut : au fond, colonne 4 d'abord puis du côté du porteur, si possible sans le toucher (l'assassin se
   // retournerait vers lui). Le porteur du fond avance d'une rangée, dans sa zone d'abord, hors de la colonne 4 s'il le peut. Appât, parmi les Pokémon possédés :
-  // un Pokémon déjà plus au fond que le porteur, dans la formation ou sur le plateau (du bon côté : il ne bouge pas), sinon le tank de moindre valeur quand il en
+  // un Pokémon déjà plus au fond que le porteur, dans la formation ou sur le plateau (du bon côté, il ne bouge pas ; de l'autre, il y vient), sinon le tank de moindre valeur quand il en
   // reste un devant, sinon l'unité de mêlée de plus grande valeur quand il en reste une devant, sinon l'unité à distance de
   // plus grande valeur. Ni Ramoloss (son mur couvre l'avant) ni un assassin (il quitte sa case). Sans porteur à distance,
   // sans appât ou sans case pour l'un des deux, rien ne bouge. units : placées, sans Mew ; taken : cases prises, tenu à
@@ -1820,11 +1820,11 @@ const KT = (() => {
     let spot = carry.cell;
     if (held(carry, c => rowOf(c) === 1 || rowOf(c) === 2)) spot = carry.from;
     else if (rowOf(spot) === 3) {
-      const cells = free(2, [...zone.order.filter(c => zone.cols.includes(c)), ...zone.order]);
       const lone = c => !units.some(u => u !== carry && rowOf(u.cell) > 0 && colOf(u.cell) === colOf(c));
       const apart = c => !units.some(u => u !== carry && rowOf(u.cell) === 3 && touching(c, u.cell));
       // Hors de la colonne 4 (l'appât, qui devrait s'y tenir, le toucherait) et sans toucher une unité du fond, d'abord.
-      spot = cells.find(c => lone(c) && apart(c) && colOf(c) !== 3) ?? cells.find(c => lone(c) && apart(c)) ?? cells.find(lone) ?? cells[0];
+      const best = cells => cells.find(c => lone(c) && apart(c) && colOf(c) !== 3) ?? cells.find(c => lone(c) && apart(c)) ?? cells.find(lone) ?? cells[0];
+      spot = best(free(2, zone.order.filter(c => zone.cols.includes(c)))) ?? best(free(2, zone.order));
       if (spot === undefined) return;
     }
     const side = Math.sign(colOf(spot) - 3);
@@ -1836,8 +1836,9 @@ const KT = (() => {
     const set = deeper.find(u => covers(u.cell)) ?? kept;
     const front = pool.filter(u => rowOf(u.cell) === 0);
     const tanks = front.filter(u => u.role === 'tank');
-    const holds = owned.filter(u => rowOf(u.cell) === 0).length;
-    const bait = set ?? deeper[0] ?? (tanks.length > 1 ? tanks.at(-1) : null) ?? (holds > 1 ? front.find(u => u.role !== 'tank') : null) ?? pool.find(u => rowOf(u.cell) > 0);
+    const stays = owned.filter(u => rowOf(u.cell) === 0);
+    const holds = stays.length;
+    const bait = set ?? deeper[0] ?? (stays.filter(u => u.role === 'tank').length > 1 ? tanks.at(-1) : null) ?? (holds > 1 ? front.find(u => u.role !== 'tank') : null) ?? pool.find(u => rowOf(u.cell) > 0);
     if (!bait) return;
     let cell = bait === kept ? kept.from : bait.cell;
     if (!set) {

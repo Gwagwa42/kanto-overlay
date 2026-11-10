@@ -1264,6 +1264,9 @@ test('parade aux assassins adverses : sans porteur à distance ou sans appât, f
   // Ramoloss garde le centre de l'avant : l'appât est l'autre unité de mêlée.
   const shield = trioAdvice(['abra', 'slowpoke', 'growlithe'], { abra: 2, slowpoke: 1, growlithe: 1 }, { dive: true });
   assert.deepEqual([cellsOf(shield.code).slowpoke, shield.guard], [3, { bait: 'growlithe', carry: 'abra' }]);
+  // Ramoloss compte parmi les tanks qui restent devant : Onix, seul autre tank, part au fond.
+  const wall = trioAdvice(['abra', 'slowpoke', 'onix'], { abra: 2, slowpoke: 1, onix: 1 }, { dive: true });
+  assert.deepEqual([cellsOf(wall.code).slowpoke, wall.guard], [3, { bait: 'onix', carry: 'abra' }]);
   // Seule unité de mêlée à côté d'un de tes assassins, qui quitte sa case : elle reste devant.
   const lone = [['abra', 'growlithe', 'zubat'], { abra: 2, growlithe: 1, zubat: 1 }];
   assert.equal(trioAdvice(...lone, { dive: true }).guard, null);
