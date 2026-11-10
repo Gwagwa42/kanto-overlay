@@ -1016,12 +1016,14 @@ const KT = (() => {
     return a === id ? b : a;
   };
 
+  const itemKind = (data, id) => data.items[id]?.k;
+
   // Composants qui donnent ses stats à un objet : inherits de l'API, qui diffère parfois de la recette (Casque Brut : PV Plus +
   // Fer, recette PV Plus + Protéine) ; vide pour les objets Choix, dont la recette porte la stat.
   function itemParts(data, id) {
+    if (itemKind(data, id) === 'part') return [id];
+    if (itemKind(data, id) !== 'full') return [];
     const item = data.items[id];
-    if (item?.k === 'part') return [id];
-    if (item?.k !== 'full') return [];
     return item.inherits?.length ? item.inherits.flatMap(x => Array(x.n).fill(x.part)) : item.recipe ?? [];
   }
 
@@ -1062,8 +1064,7 @@ const KT = (() => {
       const count = list => parts.filter(p => list.includes(p)).length;
       sum.n += h.n;
       sum.def += (h.n * count(DEFENSE)) / parts.length;
-      sum.atk += h.n * count(['protein']);
-      sum.spa += h.n * count(['calcium']);
+      for (const [part, stat] of Object.entries(ATTACK)) sum[stat] += h.n * count([part]);
       sums.set(base, sum);
     }
     return new Map([...sums].map(([base, x]) => {
@@ -1107,7 +1108,7 @@ const KT = (() => {
   // écarté : une forme ancrée (-aN) ne compte que pour elle-même ; le repli sur la lignée de base est dans idealItems.
   function topHolders(stats, data, line, profile) {
     return stats.holders
-      .filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full' && suits(data, profile, h.id) && !idleCrit(data, profile, h.id))
+      .filter(h => h.line === line && h.n >= MIN_FIGHTS && itemKind(data, h.id) === 'full' && suits(data, profile, h.id) && !idleCrit(data, profile, h.id))
       .sort((a, b) => b.lo - a.lo).slice(0, MAX_ITEMS);
   }
 
@@ -1157,10 +1158,9 @@ const KT = (() => {
     const marks = game.bag.map(() => null);
     if (!target) return { marks, holders: [], reserved: new Set() };
     const BEST = bestWhy(game.mode);
-    const kind = id => data.items[id]?.k;
     const hs = holders.map(h => {
       const on = [...(h.unit.items ?? [])];
-      const lone = on.find(id => kind(id) === 'part') ?? null;
+      const lone = on.find(id => itemKind(data, id) === 'part') ?? null;
       // loneAt : case du sac du composant seul conseillé dans ce passage ; after : paire à poser avant.
       // held : objets du sac gardés pour lui après l'Aimant ; emptied : vidé par un Aimant de ce passage.
       return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, after: null, held: [], emptied: false };
@@ -1168,12 +1168,12 @@ const KT = (() => {
     // Cases du sac gardées pour un Pokémon précis (après l'Aimant) ou pour une lignée à venir.
     const reserved = new Set();
     // Un composant porté convient s'il entre dans un objet complet qui convient (pour l'Aimant).
-    const fits = (h, id) => (kind(id) === 'part'
+    const fits = (h, id) => (itemKind(data, id) === 'part'
       ? [...book.parts].some(([f, ab]) => ab.includes(id) && suits(data, h.profile, f))
-      : kind(id) === 'full' && suits(data, h.profile, id));
+      : itemKind(data, id) === 'full' && suits(data, h.profile, id));
     const ideal = (h, full) => h.ideal.includes(full) && !h.on.includes(full);
     const fused = (h, id) => book.make.get(`${h.lone}+${id}`);
-    const pending = k => game.bag.map((id, i) => ({ id, i })).filter(x => marks[x.i] === null && kind(x.id) === k);
+    const pending = k => game.bag.map((id, i) => ({ id, i })).filter(x => marks[x.i] === null && itemKind(data, x.id) === k);
     const after = h => (h.after ? ` (après ${h.after})` : '');
     const put = (i, h, title, why) => {
       marks[i] = mark('do', `→ ${h.who}`, title, why);
@@ -1216,7 +1216,7 @@ const KT = (() => {
       for (const h of free.filter(x => !x.after)) {
         for (const f of recipesWith(h, id)) {
           const ab = book.parts.get(f);
-          const j = waiting.find(p => p.i !== i && p.id === (ab[0] === id ? ab[1] : ab[0]))?.i;
+          const j = waiting.find(p => p.i !== i && p.id === otherPart(book, f, id))?.i;
           if (j !== undefined) return { h, f, ab, j };
         }
       }
@@ -1265,24 +1265,21 @@ const KT = (() => {
     // idéales dont les deux composants d'une recette idéale attendent au sac (un objet complet se pose sans fusionner), enfin
     // sur un Pokémon posé hors des deux compos qui porte des objets (au banc, la vente les rend : sellMarks). Il rend tous ses
     // objets au sac : le Pokémon ne reçoit plus rien dans ce passage, les conseils suivent au passage d'après.
-    const count = id => pending(kind(id)).filter(x => x.id === id).length;
+    const count = id => pending(itemKind(data, id)).filter(x => x.id === id).length;
     const inBag = f => {
       const [a, b] = book.parts.get(f) ?? [];
       return count(f) > 0 || (a !== undefined && (a === b ? count(a) >= 2 : count(a) > 0 && count(b) > 0));
     };
-    const wrong = h => h.on.find(id => ['part', 'full'].includes(kind(id)) && !fits(h, id));
+    const wrong = h => h.on.find(id => ['part', 'full'].includes(itemKind(data, id)) && !fits(h, id));
     const swap = h => {
       const bad = wrong(h);
       if (bad) return { why: `retire ${names.item(bad)} (${misfit(data, h.profile, bad)})`, ready: null };
       // Une recette que le composant seul porté complète par fusion avec un composant du sac n'a pas besoin de place.
-      const fusable = x => {
-        const ab = h.lone ? book.parts.get(x) ?? [] : [];
-        return ab.includes(h.lone) && count(ab[0] === h.lone ? ab[1] : ab[0]) > 0;
-      };
+      const fusable = x => h.lone !== null && book.parts.get(x)?.includes(h.lone) && count(otherPart(book, x, h.lone)) > 0;
       const blocked = h.lone && !kept(h);
       const ready = x => !h.on.includes(x) && !fusable(x) && inBag(x) && (h.slots === 0 || count(x) === 0);
       const f = (h.slots === 0 || blocked) && h.ideal.find(ready);
-      const out = f && (blocked ? h.lone : h.on.find(x => ['part', 'full'].includes(kind(x)) && !h.ideal.includes(x)));
+      const out = f && (blocked ? h.lone : h.on.find(x => ['part', 'full'].includes(itemKind(data, x)) && !h.ideal.includes(x)));
       return out ? { why: `retire ${names.item(out)} ; ${names.item(f)} prêt au sac`, ready: f } : null;
     };
     const wanted = [...targetBases(target), ...future.map(x => x.base)];
@@ -1302,7 +1299,7 @@ const KT = (() => {
       // L'objet prêt attend l'Aimant au sac : le complet s'il y est, sinon ses deux composants.
       if (!s.ready) continue;
       const keep = id => {
-        const j = pending(kind(id)).find(x => x.id === id).i;
+        const j = pending(itemKind(data, id)).find(x => x.id === id).i;
         marks[j] = mark('opt', 'Garde', `Garde ${names.item(id)}`, `pour ${s.h.who}, après l’Aimant`);
         reserved.add(j);
         s.h.held.push(id);
@@ -1360,7 +1357,7 @@ const KT = (() => {
     };
     return items.holders.map(h => {
       const on = h.unit.items ?? [];
-      const own = [...h.held, ...h.on.filter(id => data.items[id]?.k === 'part')];
+      const own = [...h.held, ...h.on.filter(id => itemKind(data, id) === 'part')];
       const aims = h.ideal.map(id => {
         if (on.includes(id)) return { id, state: 'worn', missing: [] };
         if (h.on.includes(id) || take(own, id) || take(pool, id)) return { id, state: 'ready', missing: [] };
