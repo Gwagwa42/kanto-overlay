@@ -1497,9 +1497,11 @@ const KT = (() => {
 
   const TABS = [['tour', 'Tour'], ['compo', 'Compo'], ['boss', 'Boss'], ['rules', 'Règles']];
   const capital = s => s[0].toUpperCase() + s.slice(1);
-  // Options du menu ⚙ : clé de l'objet ui, valeurs [valeur, libellé] dans l'ordre affiché, valeur par défaut.
+  // Options du menu ⚙, dans l'ordre affiché : clé de l'objet ui, valeurs [valeur, libellé], valeur par défaut. checks : cases à
+  // cocher, ui[key] associe chaque valeur à un booléen (pastilles : un niveau de conseil, précédé de son symbole).
   const OPTIONS = [
     { key: 'theme', label: 'Thème', values: [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']], def: 'auto' },
+    { key: 'pins', label: 'Pastilles sur le jeu', type: 'checks', values: [['do', 'Faire'], ['opt', 'Si l’or'], ['no', 'Éviter']], def: { do: true, opt: true, no: true } },
     { key: 'width', label: 'Largeur', values: [['compact', 'Compacte'], ['wide', 'Large']], def: 'compact' },
     { key: 'text', label: 'Texte', values: [['small', 'Petit'], ['normal', 'Normal'], ['large', 'Grand']], def: 'normal' },
     { key: 'alpha', label: 'Fond', values: [['100', 'Opaque'], ['90', '90 %'], ['85', '85 %']], def: '90' },
@@ -1508,9 +1510,11 @@ const KT = (() => {
   // Valeurs inconnues du stockage (modifié à la main, version antérieure) ramenées aux valeurs par défaut : une zone de porteur
   // inconnue ferait échouer la formation à chaque lecture de la sauvegarde.
   function checkUi(ui) {
-    for (const o of OPTIONS) if (!o.values.some(([v]) => v === ui[o.key])) ui[o.key] = o.def;
+    for (const o of OPTIONS) {
+      if (o.type === 'checks') ui[o.key] = { ...o.def, ...ui[o.key] };
+      else if (!o.values.some(([v]) => v === ui[o.key])) ui[o.key] = o.def;
+    }
     if (!TABS.some(([t]) => t === ui.tab)) ui.tab = 'tour';
-    ui.pins = { do: true, opt: true, no: true, ...ui.pins };
   }
 
   // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). La rangée d'un Pokémon est sa
@@ -1945,7 +1949,6 @@ const COMPACT_BELOW = 64;
 // Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
 const TIP_HALF = 120;
 
-const PIN_NAME = { do: 'Faire', opt: 'Si l’or', no: 'Éviter' };
 const ICON = {
   gear: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg>',
   up: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg>',
@@ -2132,6 +2135,27 @@ function tabsHtml(state, ui) {
 const TAB_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End']);
 const TAB_HTML = { tour: tourHtml, compo: compoHtml, boss: bossTabHtml, rules: rulesHtml };
 
+// Onglet visé par une touche sur la liste d'onglets (motif ARIA tablist : flèches, Début, Fin) ; undefined pour une autre touche.
+function tabForKey(key, current) {
+  const i = KT.TABS.findIndex(([t]) => t === current);
+  const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: KT.TABS.length - 1 }[key];
+  return to === undefined ? undefined : KT.TABS[(to + KT.TABS.length) % KT.TABS.length][0];
+}
+
+// Touche gardée par le panneau, non transmise au jeu. on : 'input' (champ), 'tab' (onglet) ou null. Dans un champ, toutes sauf
+// Alt+K, qui replie le panneau ; sur un onglet, ses seules touches (Échap qui ferme une bulle et les raccourcis du jeu remontent).
+const keptByPanel = (on, e) => (on === 'input' ? !(e.altKey && e.code === 'KeyK') : on === 'tab' && TAB_KEYS.has(e.key));
+
+// Sections repliables → clé de ui qui garde leur état entre deux rendus et deux sessions.
+const FOLDS = { 'kt-avoid': 'avoid', 'kt-aims': 'aims' };
+const foldKey = classList => FOLDS[Object.keys(FOLDS).find(c => classList?.contains(c))];
+
+// Option changée dans le menu : case à cocher d'une option checks, sinon bouton radio.
+function setOption(ui, { name, value, checked }) {
+  if (KT.OPTIONS.find(o => o.key === name)?.type === 'checks') ui[name][value] = checked;
+  else ui[name] = value;
+}
+
 function panelHtml(state, ui) {
   if (!state.stats && !state.error) return '<div class="kt-panel"><p class="kt-msg" role="status">Chargement des statistiques…</p></div>';
   if (state.unsupported) return `<div class="kt-panel">${UNSUPPORTED}</div>`;
@@ -2151,9 +2175,9 @@ function summaryHtml(state) {
 function optionsHtml(ui) {
   const seg = o => `<fieldset><legend>${o.label}</legend><div class="kt-seg">${o.values.map(([v, name]) =>
     `<label><input type="radio" name="${o.key}" value="${v}"${ui[o.key] === v ? ' checked' : ''}><span>${name}</span></label>`).join('')}</div></fieldset>`;
-  const pins = `<fieldset><legend>Pastilles sur le jeu</legend><div class="kt-checks">${Object.keys(SYM).map(l =>
-    `<label><input type="checkbox" name="pins" value="${l}"${ui.pins[l] ? ' checked' : ''}><span>${SYM[l]} ${PIN_NAME[l]}</span></label>`).join('')}</div></fieldset>`;
-  return `<h2>Options</h2>${seg(KT.OPTIONS[0])}${pins}${KT.OPTIONS.slice(1).map(seg).join('')}
+  const checks = o => `<fieldset><legend>${o.label}</legend><div class="kt-checks">${o.values.map(([v, name]) =>
+    `<label><input type="checkbox" name="${o.key}" value="${v}"${ui[o.key][v] ? ' checked' : ''}><span>${SYM[v]} ${name}</span></label>`).join('')}</div></fieldset>`;
+  return `<h2>Options</h2>${KT.OPTIONS.map(o => (o.type === 'checks' ? checks(o) : seg(o))).join('')}
 <p class="kt-hint">Alt+K replie le panneau ; double-clic sur la barre pour le remettre en haut à droite.</p>`;
 }
 
@@ -2629,18 +2653,15 @@ function mount() {
   // Onglets au clavier (motif ARIA tablist) : flèches, Début et Fin.
   panel.addEventListener('keydown', e => {
     if (!e.target.matches('[role="tab"]')) return;
-    const i = KT.TABS.findIndex(([t]) => t === ui.tab);
-    const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: KT.TABS.length - 1 }[e.key];
-    if (to === undefined) return;
+    const tab = tabForKey(e.key, ui.tab);
+    if (tab === undefined) return;
     e.preventDefault();
-    const tab = KT.TABS[(to + KT.TABS.length) % KT.TABS.length][0];
     showTab(tab);
     root.getElementById(`kt-tab-${tab}`).focus();
   });
   opts.addEventListener('change', e => {
-    const { name, value, checked } = e.target;
-    if (name === 'pins') ui.pins[value] = checked;
-    else ui[name] = value;
+    const { name } = e.target;
+    setOption(ui, e.target);
     saveUi();
     applyLook();
     if (name === 'side') compute();
@@ -2651,15 +2672,14 @@ function mount() {
   // les chiffres tapés et les flèches des onglets et des options. Alt+K passe, pour replier le panneau depuis un champ.
   for (const type of ['keydown', 'keyup', 'keypress']) {
     panel.addEventListener(type, e => {
-      // Sur un onglet, seules ses touches restent au panneau ; les autres (Échap qui ferme une bulle, raccourcis du jeu) remontent.
-      const kept = e.target.matches('input') ? !(e.altKey && e.code === 'KeyK') : e.target.matches('[role="tab"]') && TAB_KEYS.has(e.key);
-      if (kept) e.stopPropagation();
+      let on = null;
+      if (e.target.matches('input')) on = 'input';
+      else if (e.target.matches('[role="tab"]')) on = 'tab';
+      if (keptByPanel(on, e)) e.stopPropagation();
     });
   }
-  // Sections repliables : état gardé entre deux rendus et deux sessions.
-  const FOLDS = { 'kt-avoid': 'avoid', 'kt-aims': 'aims' };
   root.addEventListener('toggle', e => {
-    const key = FOLDS[Object.keys(FOLDS).find(c => e.target.classList?.contains(c))];
+    const key = foldKey(e.target.classList);
     if (!key || ui[key] === e.target.open) return;
     ui[key] = e.target.open;
     saveUi();
@@ -2732,5 +2752,9 @@ function mount() {
 }
 
 // Les tests reçoivent aussi le pilote du Planificateur, joué sur un faux DOM.
-if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, PlannerError };
-else mount();
+if (typeof module !== 'undefined') {
+  module.exports = {
+    ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, optionsHtml, PlannerError,
+    tabForKey, keptByPanel, foldKey, setOption,
+  };
+} else mount();
