@@ -132,16 +132,16 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
       se pose donc sur une case collée au Pokémon de plus grande valeur de la compo, sur sa rangée si elle le permet. Abra
       (Téléport), Métamorph (Morphing) et Magicarpe ★ (Trempette) ne se copient pas.
       Mew choisit sa copie à l'installation du combat, avant que les assassins ne partent.
-    - Ramoloss (Mur Lumière) protège aussi chaque allié collé : il prend le centre de l'avant, même si un autre Pokémon y est
-      déjà.
+    - Ramoloss (Mur Lumière) protège aussi chaque allié collé : une fois possédé, il prend le centre de l'avant, même si un
+      autre Pokémon y est déjà.
     - Les assassins quittent leur case dès le début du combat (Ptéra, Taupiqueur, Doduo, Abo, Roucool, Insécateur,
-      Nosferapti) : à l'avant, ils sont posés après les Pokémon qui restent, depuis les bords du plateau (colonnes 7, 1, 6,
-      2…), et gardent une case des colonnes 1, 2, 6 ou 7.
+      Nosferapti) : à l'avant, ils sont posés après les Pokémon qui restent, depuis les bords du plateau (colonnes 1, 7, 2,
+      6…), et gardent une case des colonnes 1, 2, 6 ou 7.
     - Le Séisme de Grolem (Racaillou ★★★ ; Éboulement, à ★★, ne touche pas les alliés) inflige 25 % de ses dégâts aux alliés
-      collés : il est posé comme les assassins, au bord, où il touche moins d'alliés.
+      collés : il est posé au bord avant les assassins, colonne 1 d'abord (deux cases alliées collées, trois en colonne 7).
     - Les bonus de types ne dépendent pas des cases : seuls les Électrik électrocutent les ennemis collés, ce qui ne change
       rien pour une unité de mêlée, déjà à l'avant.
-  - Un Pokémon déjà sur sa rangée garde sa case ; le porteur à distance, seulement dans les colonnes de sa zone. Les déplacements
+  - Hors des cas ci-dessus, un Pokémon déjà sur sa rangée garde sa case ; le porteur à distance, seulement dans les colonnes de sa zone. Les déplacements
     sont listés dans l'ordre où les faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors
     formation si le plateau est plein.
 - **Planificateur** : quand la formation change, le script ouvre le Planificateur depuis la barre du jeu, supprime l'ancien
