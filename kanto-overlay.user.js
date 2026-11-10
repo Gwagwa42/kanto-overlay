@@ -965,9 +965,14 @@ const KT = (() => {
     }).map(c => c && { ...c, stronger: c.upgrade ? `plus fort que ${target.replaced.map(names.line).join(', ')}` : '' });
   }
 
+  // Les fonctions de marques de la boutique lisent shop = { cards, marks, game, target, next, eco, names } (spend) et
+  // remplissent marks, une case par carte ; left : or restant, qu'elles renvoient diminué de ce qu'elles engagent.
+  const keepFloor = eco => `garde ${eco.floor} pièces pour les intérêts`;
+
   // ★ du trio, des 3ᵉ copies et des shinies, de gauche à droite ; ne s'arrêtent pas au palier. Un ★ que l'or ne couvre pas
   // devient un ◆ « dès que possible » (short).
-  function starMarks(cards, marks, left, game, target, names) {
+  function starMarks(shop, left) {
+    const { cards, marks, game, target, names } = shop;
     const proof = proofText(target?.proof, names);
     let short = false;
     cards.forEach((c, i) => {
@@ -993,7 +998,7 @@ const KT = (() => {
   }
 
   // ★ des places libres, après les ★ ci-dessus : une copie par lignée (spend la saute quand un ★ manque d'or).
-  function freeSlotMarks(cards, marks, left) {
+  function freeSlotMarks({ cards, marks }, left) {
     const filled = new Set();
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined || !c.fills || filled.has(c.base) || c.cost > left) return;
@@ -1006,7 +1011,7 @@ const KT = (() => {
 
   // ◆ de la compo cible (compléments, cartes plus fortes, 3ᵉ copies hors compo) qui gardent le palier ; en tout jouer, qui
   // tiennent dans l'or restant.
-  function targetOptMarks(cards, marks, left, eco) {
+  function targetOptMarks({ cards, marks, eco }, left) {
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
       const fits = c.cost !== undefined && (eco.allIn ? c.cost <= left : left - c.cost >= eco.floor);
@@ -1022,11 +1027,12 @@ const KT = (() => {
 
   // ◆ de la compo suivante (hors tout jouer, après l'actualisation conseillée, qui coûte rerollCost), puis ✕ pour le reste, avec
   // le motif de l'or : l'XP réservée (xpCost) quand la carte tenait sans elle, sinon le palier.
-  function restMarks(cards, marks, left, game, eco, next, names, xpCost, rerollCost) {
+  function restMarks(shop, left, xpCost, rerollCost) {
+    const { cards, marks, game, eco, next, names } = shop;
     const hold = cost => {
       if (eco.allIn) return 'il manque de l’or';
       const beforeXp = cost !== undefined && left + xpCost - cost >= eco.floor && left - cost < eco.floor;
-      return beforeXp ? 'l’or va d’abord à l’XP' : `garde ${eco.floor} pièces pour les intérêts`;
+      return beforeXp ? 'l’or va d’abord à l’XP' : keepFloor(eco);
     };
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
@@ -1051,25 +1057,22 @@ const KT = (() => {
 
   // Dépenses du tour, dans l'ordre où l'or leur va : ★ de la boutique, ★ des places libres, XP réservée (xpMark), ◆ de la
   // compo cible, actualisation (rerollMark), ◆ de la compo suivante. L'or que ni un achat ni une actualisation n'engage va au
-  // niveau suivant. Sans compo cible, seules les 3ᵉ copies sont marquées. short : un ★ a été rétrogradé faute d'or (déclenche
-  // « Vends »).
+  // niveau suivant (spareXp). Sans compo cible, seules les 3ᵉ copies sont marquées. short : un ★ a été rétrogradé faute d'or
+  // (déclenche « Vends »).
   function spend(game, target, next, data, eco, names) {
     const cards = shopCards(game, target, next, data, names);
-    const marks = cards.map(() => undefined);
-    const stars = starMarks(cards, marks, game.gold, game, target, names);
-    let left = stars.short ? stars.left : freeSlotMarks(cards, marks, stars.left);
-    const xp = xpMark(game, eco, left, false);
+    const shop = { cards, marks: cards.map(() => undefined), game, target, next, eco, names };
+    const stars = starMarks(shop, game.gold);
+    let left = stars.short ? stars.left : freeSlotMarks(shop, stars.left);
+    const xp = xpMark(game, eco, left);
     left -= xp.cost;
     let reroll = null;
     if (target) {
-      left = targetOptMarks(cards, marks, left, eco);
+      left = targetOptMarks(shop, left);
       reroll = rerollMark(game, target, data, eco, names, left);
-      left = restMarks(cards, marks, left, game, eco, next, names, xp.cost, reroll?.level === 'do' ? REROLL_COST : 0);
+      left = restMarks(shop, left, xp.cost, reroll?.level === 'do' ? REROLL_COST : 0);
     }
-    const spare = xp.mark?.level !== 'do' && reroll?.level !== 'do';
-    return {
-      shop: marks.map(m => m ?? null), xp: spare ? xpMark(game, eco, left, true).mark : xp.mark, reroll, short: stars.short,
-    };
+    return { shop: shop.marks.map(m => m ?? null), xp: xp.spare ? spareXp(game, eco, left, reroll) : xp.mark, reroll, short: stars.short };
   }
 
   // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal, sauf ★★★ nettement moins
@@ -1107,32 +1110,40 @@ const KT = (() => {
     return mark('do', 'Actualise', 'Actualise', `cherche ${found.map(odds).join(', ')} au niveau ${game.level}`);
   }
 
-  // Renvoie la marque et l'or qu'elle engage. left : or restant après les achats conseillés. spare : aucune actualisation
-  // n'est conseillée, l'or au-dessus du palier va au niveau suivant. Sous le niveau visé, tout le surplus utile à ce niveau
-  // est engagé : les ◆ de la boutique passent après.
-  function xpMark(game, eco, left, spare) {
+  const buyXp = why => mark('do', 'Monte', 'Achète de l’XP', why);
+  const waitXp = why => mark('no', 'Attends', 'N’achète pas d’XP', why);
+  const missingXp = game => XP_TO_NEXT[game.level] - game.xp;
+
+  // Renvoie la marque et l'or qu'elle engage. left : or restant après les achats conseillés. Sous le niveau visé, tout le
+  // surplus utile à ce niveau est engagé : les ◆ de la boutique passent après. Niveau visé atteint et niveau suivant à plus
+  // d'un achat : spare, la décision attend l'actualisation (spareXp), car l'XP passe alors après elle.
+  function xpMark(game, eco, left) {
     if (game.level >= maxLevel(game.floor, game.mode)) return { mark: null, cost: 0 };
-    const missing = XP_TO_NEXT[game.level] - game.xp;
+    const missing = missingXp(game);
     const toLevel = Math.ceil(missing / XP_COST) * XP_COST;
     if (eco.allIn) {
       return left >= toLevel
-        ? { mark: mark('do', 'Monte', 'Achète de l’XP', `tout jouer : niveau ${game.level + 1} pour ${toLevel} pièces`), cost: toLevel }
+        ? { mark: buyXp(`tout jouer : niveau ${game.level + 1} pour ${toLevel} pièces`), cost: toLevel }
         : { mark: null, cost: 0 };
     }
-    const wait = why => ({ mark: mark('no', 'Attends', 'N’achète pas d’XP', why), cost: 0 });
-    if (left - XP_COST < eco.floor) return wait(`garde ${eco.floor} pièces pour les intérêts`);
-    const buy = why => ({ mark: mark('do', 'Monte', 'Achète de l’XP', why), cost: XP_COST });
+    if (left - XP_COST < eco.floor) return { mark: waitXp(keepFloor(eco)), cost: 0 };
     const quick = `niveau ${game.level + 1} pour ${XP_COST} pièces`;
-    const next = `${missing} XP avant le niveau ${game.level + 1}`;
     const goal = levelGoal(game.floor, game.mode);
     if (game.level < goal) {
       const toGoal = XP_TO_NEXT.slice(game.level, goal).reduce((sum, xp) => sum + xp, 0) - game.xp;
       const cost = Math.min(Math.ceil(toGoal / XP_COST), Math.floor((left - eco.floor) / XP_COST)) * XP_COST;
-      return { ...buy(missing <= XP_COST ? quick : `niveau ${goal} visé ${game.mode.here} ; ${next}`), cost };
+      return { mark: buyXp(missing <= XP_COST ? quick : `niveau ${goal} visé ${game.mode.here} ; ${missing} XP avant le niveau ${game.level + 1}`), cost };
     }
-    if (missing <= XP_COST) return buy(quick);
-    if (spare) return buy(`rien à chercher en boutique à ce niveau ; ${next}`);
-    return wait('l’or va d’abord à l’actualisation');
+    if (missing <= XP_COST) return { mark: buyXp(quick), cost: XP_COST };
+    return { mark: null, cost: 0, spare: true };
+  }
+
+  // Suite de xpMark (spare) : l'or que l'actualisation conseillée n'engage pas va au niveau suivant. left : or restant après
+  // tous les achats conseillés.
+  function spareXp(game, eco, left, reroll) {
+    if (reroll?.level === 'do') return waitXp('l’or va d’abord à l’actualisation');
+    if (left - XP_COST < eco.floor) return waitXp(keepFloor(eco));
+    return buyXp(`rien à chercher en boutique à ce niveau ; ${missingXp(game)} XP avant le niveau ${game.level + 1}`);
   }
 
   function sellMarks(game, target, next, names, short) {
