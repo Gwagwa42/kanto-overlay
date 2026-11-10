@@ -2421,7 +2421,7 @@ function mount() {
     render();
   }
 
-  // Partie jouée en dernier : la Tour, Kanto ou une autre aventure ; le Nuzlocke n'a pas de conseils.
+  // Partie du mode à l’écran (la plus récente à l’accueil) : la Tour, Kanto ou une autre aventure ; le Nuzlocke n’a pas de conseils.
   // Sauvegardes déjà lues (latestSave) ; mode à l'écran gardé quand la barre du haut disparaît le temps d'un combat ou d'une
   // modale, sinon le panneau basculerait sur la sauvegarde la plus récente de tous les modes.
   const saves = new Map();
