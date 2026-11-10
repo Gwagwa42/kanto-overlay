@@ -376,6 +376,42 @@ test('compléments : à l’étage 72, les unités fortes possédées passent av
   assert.deepEqual([a.target.upgrades, a.target.replaced], [[], []]);
 });
 
+// Prochain combat à l'étage 10, puis l'étage 11, tous deux à 50 % : le trio Abra + Onix + Nosferapti les gagne ; Rattata
+// figure dans un trio de l'étage 10 (n combats), Magicarpe dans un trio de l'étage 11, chacun à tant de points du combat.
+const nextFight = (rattata, n = 50) => ({
+  ...torre, lines: [],
+  stops: [10, 11].map(f => ({ stop: `${f}:brock`, n: 100, win: 50, lo: 45, first: 50, tries: 2 })),
+  cores: [
+    ...[10, 11].map(f => ({ stop: `${f}:brock`, core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 })),
+    { stop: '10:brock', core: ['abra', 'onix', 'rattata'], n, win: 50 + rattata, lo: 10 },
+    { stop: '11:brock', core: ['abra', 'onix', 'magikarp'], n: 50, win: 80, lo: 10 },
+  ],
+});
+// Niveau 4 : le trio à trouver et une place, pour Rattata ★ ou Magicarpe ★ (coût 1, aucun type du trio), tous deux au banc.
+const PAIR = {
+  ...save, round: 1009, level: 4, xp: 0, board: {}, bench: ['r', 'm'], shop: [], items: [], runSeed: 7,
+  units: { r: { id: 'r', line: 'rattata', star: 1 }, m: { id: 'm', line: 'magikarp', star: 1 } },
+};
+const posed = a => a.moves.map(m => m.title).filter(t => /Rattata|Magicarpe/.test(t));
+
+test('compléments : à puissance égale, la lignée la plus forte sur le prochain combat est posée', () => {
+  // Sur les deux combats, Magicarpe (+15) devance Rattata (+5) ; sur le prochain, Rattata (+10) devance Magicarpe (0).
+  const a = advise(PAIR, { stats: nextFight(10) });
+  assert.deepEqual([a.target.fillers, posed(a)], [['rattata'], ['Pose Rattata']]);
+  // Trio de Rattata sous 20 combats : le prochain combat n'a rien à dire, la fenêtre départage.
+  const few = advise(PAIR, { stats: nextFight(10, 19) });
+  assert.deepEqual([few.target.fillers, posed(few)], [['magikarp'], ['Pose Magicarpe']]);
+});
+
+test('compléments : celui du conseil précédent reste sous 10 points d’écart sur le prochain combat', () => {
+  const previous = { key: 'abra+onix+zubat', run: 7, next: null, fillers: ['magikarp'] };
+  assert.deepEqual(advise(PAIR, { stats: nextFight(5) }).target.fillers, ['rattata']);
+  assert.deepEqual(advise(PAIR, { stats: nextFight(5), previous }).target.fillers, ['magikarp']);
+  assert.deepEqual(advise(PAIR, { stats: nextFight(15), previous }).target.fillers, ['rattata']);
+  // Autre partie : pas d'inertie.
+  assert.deepEqual(advise(PAIR, { stats: nextFight(5), previous: { ...previous, run: 8 } }).target.fillers, ['rattata']);
+});
+
 test('compo cible : un trio monté en ★★ l’emporte sur l’inertie d’un trio non possédé', () => {
   const cores = [
     // Inertie : abra 70 + 30 = 100 ; possession : pidgey 50 + 60 = 110 (80 avec l'ancien bonus de 5).

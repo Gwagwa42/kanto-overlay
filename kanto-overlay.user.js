@@ -108,6 +108,14 @@ const KT = (() => {
   // lignée) pèserait autant que le coût.
   const LINE_PRIOR = 400;
   const SHIFT_GAP = 2.5;
+  // Force d'une lignée sur le prochain combat (lineStrength, en points), bornée à NEXT_FIGHT_CAP et comptée NEXT_FIGHT_WEIGHT
+  // par point dans la note d'un complément : ±0,2 au plus, moins qu'un cran de coût (0,35), si bien qu'elle ne départage que
+  // des puissances voisines. La moitié des lignées d'un combat s'écartent de plus de 5 points (fixture du 10 novembre 2026),
+  // un sur dix de plus de 20. Un complément du conseil précédent garde FILLER_INERTIA : il faut 10 points d'écart sur le
+  // prochain combat pour le remplacer, sinon le plan, les objets visés et le Planificateur changeraient à chaque combat.
+  const NEXT_FIGHT_WEIGHT = 0.01;
+  const NEXT_FIGHT_CAP = 20;
+  const FILLER_INERTIA = 0.1;
   const MAX_ITEMS = 3;
   // Composants défensifs ; Protéine (Attaque), Calcium (Atq. Spé.) et Carbone (vitesse d'attaque) sont offensifs.
   const DEFENSE = ['hp-up', 'iron', 'zinc'];
@@ -877,10 +885,12 @@ const KT = (() => {
   // Compléments du trio core jusqu'au niveau (fillers) : les lignées possédées les mieux notées ; la boutique ne complète que
   // les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une carte de boutique vaut une ★ ;
   // deux copies de la meilleure étoile, que la 3ᵉ fusionnera et que l'actualisation cherche, valent l'étoile suivante), au
-  // coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et types apportés à la compo ;
-  // l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte sur ces combats (strength).
-  // upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ; replaced : ces compléments.
-  function fillersOf(stats, data, game, core, strength) {
+  // coût décalé par costShift de la forme possédée (la lignée de base pour une carte), types apportés à la compo, force sur
+  // le prochain combat (nextFight, NEXT_FIGHT_WEIGHT) et inertie des compléments du conseil précédent (previous,
+  // FILLER_INERTIA) ; les égalités restantes sont départagées par possédée, shiny, puis la plus forte sur ces combats
+  // (strength). upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ; replaced :
+  // ces compléments.
+  function fillersOf(stats, data, game, core, { strength, nextFight, previous }) {
     const known = b => lineInfo(data, b) && !core.includes(b);
     const mine = [...new Set(game.units.map(u => baseLine(u.line)))].filter(known);
     const cards = [...new Set(game.shop.filter(Boolean))].filter(b => known(b) && !mine.includes(b));
@@ -895,7 +905,9 @@ const KT = (() => {
     // Meilleures lignées de chaque liste, une liste après l'autre, jusqu'au niveau.
     const fill = pools => {
       const chosen = [...core];
-      const score = b => unitPower(lineInfo(data, b).c + shift.get(b), star(b)) + TRAIT_WEIGHT * traitGain(data, chosen, b);
+      const score = b => unitPower(lineInfo(data, b).c + shift.get(b), star(b)) + TRAIT_WEIGHT * traitGain(data, chosen, b)
+        + NEXT_FIGHT_WEIGHT * Math.max(-NEXT_FIGHT_CAP, Math.min(NEXT_FIGHT_CAP, nextFight.get(b) ?? 0))
+        + (previous.includes(b) ? FILLER_INERTIA : 0);
       for (const pool of pools) {
         while (chosen.length < game.level) {
           const next = pool
@@ -916,9 +928,10 @@ const KT = (() => {
     return { fillers, upgrades: upgrades.slice(0, replaced.length), replaced };
   }
 
-  // Compo cible : le meilleur trio et ses compléments (fillersOf). flat : lignées du trio dont la ★★★ est nettement moins forte
-  // que la ★★ (flatThirdStar) ; strength : lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
-  function targetComp(stats, data, game, previousKey) {
+  // Compo cible : le meilleur trio et ses compléments (fillersOf). previousKey, previousFillers : trio et compléments du
+  // conseil précédent de la même partie. flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★
+  // (flatThirdStar) ; strength : lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
+  function targetComp(stats, data, game, previousKey, previousFillers = []) {
     const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode);
     const coresByStop = coresAt(stats, stops);
     // En campagne, sans trio noté sur ces combats (aventure sans table d'arrêts, Canela aux manches sans statistiques), la
@@ -927,7 +940,9 @@ const KT = (() => {
       ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
     if (!best) return null;
     const strength = lineStrength(coresByStop, stops);
-    const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), strength);
+    // Sans trio d'au moins MIN_FIGHTS combats sur le prochain combat, la carte est vide : rien ne change.
+    const nextFight = lineStrength(coresByStop, stops.slice(0, 1));
+    const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), { strength, nextFight, previous: previousFillers });
     if (!best.core.length && !fillers.length) return null;
     const flat = best.core.filter(id => flatThirdStar(stats, id)).map(baseLine);
     return { ...best, fillers, upgrades, replaced, flat, strength };
@@ -1924,8 +1939,9 @@ const KT = (() => {
     return ['KT1', `r${rules}`, `xm=${mode.xm}`, `xn=${encodeURIComponent(PLAN_NAME)}`, ...parts].join(';');
   }
 
-  // stats : le mode de campana.json de la partie (torre ou camp) ; mode : modeContext de la partie. previous : { key, run, next }
-  // des derniers trios choisis (compo cible, compo suivante) ; l'inertie ne vaut que dans la même partie (runSeed).
+  // stats : le mode de campana.json de la partie (torre ou camp) ; mode : modeContext de la partie. previous : { key, run, next,
+  // fillers } du dernier conseil (trio et compléments de la compo cible, trio de la compo suivante) ; l'inertie ne vaut que
+  // dans la même partie (runSeed).
   // dive : le joueur a signalé des assassins adverses pour ce combat (formation, guard).
   function advise({ stats, data, lang, save, previous, side, mode, dive = false }) {
     const names = namer(lang);
@@ -1934,7 +1950,7 @@ const KT = (() => {
     const stops = stats ? nextStops(stats.stops, game.floor, 3, mode) : [];
     const eco = economy(game, stops);
     const same = previous?.run === run ? previous : null;
-    const target = stats && data ? targetComp(stats, data, game, same?.key ?? null) : null;
+    const target = stats && data ? targetComp(stats, data, game, same?.key ?? null, same?.fillers ?? []) : null;
     const next = target ? nextComp(stats, data, game, target, same?.next ?? null) : null;
     const spent = spend(game, target, next, data, eco, names);
     const choice = offerChoiceMarks(data, game, eco, names);
@@ -2856,8 +2872,9 @@ function mount() {
     if (state.advice?.code !== code) state.copied = null;
     const a = state.advice;
     const next = a?.next?.key ?? null;
-    if (a?.target && (a.target.key !== ui.target?.key || a.run !== ui.target?.run || next !== ui.target?.next)) {
-      ui.target = { key: a.target.key, run: a.run, next };
+    const fillers = a?.target?.fillers.join('+');
+    if (a?.target && (a.target.key !== ui.target?.key || a.run !== ui.target?.run || next !== ui.target?.next || fillers !== ui.target?.fillers?.join('+'))) {
+      ui.target = { key: a.target.key, run: a.run, next, fillers: a.target.fillers };
       saveUi();
     }
   }
