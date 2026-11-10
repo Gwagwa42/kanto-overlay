@@ -78,13 +78,16 @@ barre le remet en haut à droite.
   - Pose : chaque Pokémon de la compo ne reçoit que ses objets idéaux, les 3 meilleurs couples Pokémon/objet de sa lignée en Tour
     qui conviennent à son profil. L'objet complet, ou un composant de l'une de ces recettes, va tout de suite sur lui. Un
     composant seul donne déjà son effet et fusionne sur le Pokémon avec le suivant ; deux composants du sac pour le même Pokémon
-    sont donnés en paire, avec l'ordre de pose quand il compte. Un objet idéal de plusieurs Pokémon va à celui qui le classe le
-    plus haut. Le reste attend au sac (« Garde Orbe Vie — hors des meilleurs objets de la compo »). 3 objets au plus.
-  - Préparation : un composant qui n'entre dans aucune recette idéale d'un Pokémon possédé reste au sac pour un Pokémon du cœur
-    cible pas encore acheté ou du cœur de la compo suivante (« Garde Fer — Cuiller Tordue pour Lokhlass, à venir »). La
-    récompense d'objet vise ce qui reste à compléter, puis ces recettes à venir.
-  - Retrait : l'Aimant du sac va sur un Pokémon de la compo qui porte un objet contraire à son profil, sinon sur un Pokémon plein
-    dont un objet idéal attend au sac (l'objet, ou ses composants, est alors gardé pour lui), enfin sur un Pokémon posé hors des
+    sont donnés en paire, avec l'ordre de pose quand il compte. Un objet complet idéal de plusieurs Pokémon va à celui qui le
+    classe le plus haut ; un composant, au premier dans l'ordre porteur, tanks, attaquants. 3 objets au plus. Un objet idéal
+    qu'un Pokémon ne peut pas recevoir attend au sac, avec la raison : plus de place, composant seul à fusionner, ou composant
+    seul hors de ses recettes à retirer à l'Aimant. Le reste attend aussi (« Garde Orbe Vie — hors des meilleurs objets de la
+    compo »).
+  - Préparation : un composant qui n'entre dans aucune recette idéale d'un Pokémon possédé reste au sac s'il entre dans celle
+    d'un Pokémon du cœur cible pas encore acheté ou du cœur de la compo suivante, une copie par composant demandé (« Garde Fer
+    — Cuiller Tordue pour Lokhlass, à venir »). La récompense d'objet vise ce qui reste à compléter, puis ces recettes à venir.
+  - Retrait : l'Aimant du sac va sur un Pokémon de la compo qui porte un objet contraire à son profil, sinon sur un Pokémon plein,
+    ou bloqué par un composant seul hors de ses recettes idéales, dont un objet idéal attend au sac (l'objet, ou ses composants, est alors gardé pour lui), enfin sur un Pokémon posé hors des
     deux compos qui porte des objets. Au banc, un tel Pokémon est à vendre : il rend ses objets au sac.
   - « Objets visés », dans l'onglet Compo : pour chaque Pokémon de la compo, ses 3 objets idéaux, portés (✓), prêts au sac (●) ou
     avec les composants qui manquent (○).
