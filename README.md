@@ -77,17 +77,19 @@ barre le remet en haut à droite.
   - Tank : lu sur les objets qu'elle porte dans le mode (Tour ou campagne), quand la moitié au moins de leurs composants sont
     défensifs (PV Plus, Fer, Zinc). Exemples en Tour : Ronflex et Machop.
   - Stats d'attaque : lues dans `data.json`, selon les règles du jeu. L'Attaque porte les attaques de base de tous les Pokémon
-    et les capacités physiques ; l'Atq. Spé. porte les capacités spéciales, les soins et les boucliers. L'Atq. Spé. sert une
-    lignée dont une capacité la suit. L'Attaque sert une lignée dont une capacité la suit, ou dont les attaques de base
-    comptent : son Attaque égale ou dépasse son Atq. Spé. à un stade au moins. Mystherbe, Abra et Goupix sont des lanceurs
-    (capacité spéciale, Attaque plus faible) : seule l'Atq. Spé. les sert. Minidraco et Machop ne sont servis que par
-    l'Attaque ; Carapuce, tireur à capacité spéciale, par les deux.
+    et les capacités physiques ; l'Atq. Spé. porte les capacités spéciales, les soins et les boucliers. La capacité du
+    dernier stade dit laquelle sert la lignée : celle qu'elle suit le plus, les deux à égalité. L'Attaque sert aussi une
+    lignée dont les attaques de base comptent : son Attaque atteint 0,83 fois son Atq. Spé. à un stade au moins. Mystherbe,
+    Abra et Goupix sont des lanceurs (capacité spéciale, Attaque faible) : seule l'Atq. Spé. les sert. Minidraco et Machop ne
+    sont servis que par l'Attaque ; Carapuce, tireur à capacité spéciale, par les deux.
   - Lignée à deux formes (Salamèche, Caninos, Stari, Sulfura… : capacité physique ou spéciale selon la stat que ses objets
     lui donnent le plus) : une seule stat la sert, celle que les joueurs lui donnent le plus dans le mode. Des objets des deux
-    stats la feraient changer de capacité.
+    stats la feraient changer de capacité. Ramoloss, dont la forme suit la Défense ou la Déf. Spé., garde les stats de ses deux
+    capacités.
 - **Objets** : un objet ne va qu'à un Pokémon à qui il convient. S'il donne de l'Attaque ou de l'Atq. Spé., l'une des deux doit
   servir la lignée (Orbe Vie donne les deux, il va à tous). Le critique de Lentilscope ne touche que les attaques de base et
-  les capacités qui le disent : il ne va pas à un lanceur. Au moins la moitié de défensif pour un tank, d'offensif pour un
+  les capacités qui le disent : il n'est pas visé pour un lanceur, mais un Lentilscope déjà porté reste (il donne aussi de
+  l'Atq. Spé. et de la vitesse). Au moins la moitié de défensif pour un tank, d'offensif pour un
   attaquant. Les composants pris en compte sont ceux qui donnent ses stats à l'objet (Casque Brut : PV et Défense).
   - Pose : chaque Pokémon de la compo ne reçoit que ses objets idéaux, les 3 meilleurs couples Pokémon/objet de sa lignée dans le mode
     qui conviennent à son profil. L'objet complet, ou un composant de l'une de ces recettes, va tout de suite sur lui. Un
@@ -95,13 +97,15 @@ barre le remet en haut à droite.
     sont donnés en paire, avec l'ordre de pose quand il compte. Un composant dont la stat d'attaque ne sert pas le Pokémon ne
     se pose pas seul : il attend au sac l'autre composant de la recette (« Garde Protéine — pour Goupix, avec Calcium : Orbe
     Vie »). Un objet complet idéal de plusieurs Pokémon va à celui qui le
-    classe le plus haut ; un composant, au premier dans l'ordre porteur, tanks, attaquants. 3 objets au plus. Un objet idéal
-    qu'un Pokémon de la compo ne peut pas recevoir attend au sac pour lui, avant toute lignée à venir, avec la raison : plus de
-    place, après l'Aimant, composant seul à fusionner d'abord, ou bloqué par un composant seul hors de ses recettes. Le reste
+    classe le plus haut ; un composant, au premier que sa stat sert dans l'ordre porteur, tanks, attaquants. 3 objets au plus.
+    Un objet idéal qu'un Pokémon de la compo ne peut pas recevoir attend au sac pour lui, avant toute lignée à venir, avec la
+    raison : plus de place, après l'Aimant, composant seul à fusionner d'abord, bloqué par un composant seul hors de ses
+    recettes, ou à poser avec l'autre composant. Le reste
     attend aussi (« Garde Orbe Vie — hors des meilleurs objets de la compo »).
   - Préparation : un composant qui n'entre dans aucune recette idéale d'un Pokémon possédé reste au sac s'il entre dans celle
     d'un Pokémon du cœur cible pas encore acheté ou du cœur de la compo suivante, une copie par composant demandé (« Garde Fer
-    — Cuiller Tordue pour Lokhlass, à venir »). La récompense d'objet vise ce qui reste à compléter, puis ces recettes à venir.
+    — Cuiller Tordue pour Lokhlass, à venir »). La récompense d'objet vise ce qui reste à compléter, un composant
+    qui se pose seul avant celui qui attendra l'autre au sac, puis ces recettes à venir.
   - Retrait : l'Aimant du sac va sur un Pokémon de la compo qui porte un objet contraire à son profil, sinon sur un Pokémon plein
     dont un objet idéal attend au sac (l'objet, ou ses composants, est alors gardé pour lui), ou sur un Pokémon bloqué par un
     composant seul hors de ses recettes idéales quand les deux composants d'une recette idéale attendent au sac (un objet
@@ -180,8 +184,8 @@ sur une deuxième défaite au même étage, voies et noms des bénédictions, co
 L'écart de victoire `d` corrige la difficulté du combat, pas le niveau du joueur : une lignée que choisissent surtout les bons
 joueurs paraît plus forte qu'elle n'est, d'où le décalage borné à un cran et les 400 combats fictifs. L'API ne publie
 ni le rôle d'une lignée (mage, tireur, tank…) ni les capacités qui peuvent être critiques. Que ses attaques de base comptent se
-lit donc sur ses stats (Attaque au moins égale à l'Atq. Spé. à un stade), ce qui sépare mages et soutiens des autres rôles du
-jeu en novembre 2026, et le critique n'est compté que pour les attaques de base.
+lit donc sur ses stats : le rapport de l'Attaque à l'Atq. Spé. va de 0,31 à 0,76 pour les mages et les soutiens, de 0,90 à 2,35
+pour les autres rôles (novembre 2026), d'où le seuil de 0,83. Le critique n'est compté que pour les attaques de base.
 La courbe de niveaux visés est un choix de jeu : aucune statistique publique ne donne le niveau des joueurs en Tour. La liste des
 shinies à saisir par tranche d'étages vient d'un guide et n'est pas vérifiée.
 `modes.camp` ne dit ni l'aventure ni la difficulté d'un combat (`difficulty: "todas"`) : deux aventures qui partagent un arrêt
