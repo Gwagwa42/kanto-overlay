@@ -1225,9 +1225,12 @@ test('parade aux assassins adverses : la parade prime sur la case gardée et sur
   // L'appât ne touche pas le porteur : l'assassin arrivé sur lui ne se retourne pas vers son voisin.
   const cells = cellsOf(dive.code);
   assert.equal(KT.touching(cells.abra, cells.onix), false);
-  // Porteur de portée 3 au centre : la colonne 4 du fond le toucherait, l'appât prend la colonne 5.
+  // Porteur de portée 3 en colonne 4 : Abo peut entrer des deux côtés, l'appât tient la colonne 4 même s'il le touche.
   const mid = trioAdvice(['vulpix', 'onix', 'snorlax'], { vulpix: 2, onix: 1, snorlax: 1 }, { side: 'center', dive: true });
-  assert.deepEqual(cellsOf(mid.code), { snorlax: 2, vulpix: 17, onix: 25 });
+  assert.deepEqual(cellsOf(mid.code), { snorlax: 2, vulpix: 17, onix: 24 });
+  // Coin droit : le porteur avance dans sa zone (colonne 7), l'appât reste dans sa moitié.
+  const right = trioAdvice(['abra', 'onix', 'snorlax'], owned, { side: 'right', dive: true });
+  assert.deepEqual(cellsOf(right.code), { snorlax: 2, abra: 20, onix: 24 });
 });
 
 test('parade aux assassins adverses : un Pokémon déjà plus au fond sert d’appât, sans déplacement de plus', () => {
@@ -1237,6 +1240,13 @@ test('parade aux assassins adverses : un Pokémon déjà plus au fond sert d’a
   const dive = trioAdvice(['vulpix', 'pikachu', 'onix'], owned, { dive: true });
   assert.deepEqual(cellsOf(dive.code), cellsOf(plain.code));
   assert.deepEqual(dive.guard, { bait: 'pikachu', carry: 'vulpix' });
+  // Appât déjà au fond mais dans l'autre moitié (Goupix colonne 7, Pikachu colonne 1) : il vient en colonne 4, sinon l'Abo
+  // entré par la droite viserait Goupix.
+  const far = trioAdvice(['vulpix', 'pikachu', 'onix'], owned, { board: { 48: 'vulpix', 49: 'pikachu' }, side: 'right', dive: true });
+  assert.deepEqual(cellsOf(far.code), { onix: 3, vulpix: 20, pikachu: 24 });
+  // Parade déjà posée sur le plateau (Abra en 3ᵉ rangée colonne 3, Racaillou au fond colonne 4) : aucun déplacement.
+  const done = trioAdvice(['abra', 'onix', 'geodude'], { abra: 2, onix: 1, geodude: 1 }, { board: { 44: 'abra', 31: 'onix', 52: 'geodude' }, dive: true });
+  assert.deepEqual([said(done), done.guard], [[], { bait: 'geodude', carry: 'abra' }]);
   // Deux unités au fond : le porteur avance, l'autre reste et prend l'assaut.
   const two = trioAdvice(['abra', 'pikachu', 'onix'], { abra: 2, pikachu: 1, onix: 1 }, { dive: true });
   assert.deepEqual([cellsOf(two.code), two.guard], [{ onix: 3, abra: 14, pikachu: 23 }, { bait: 'pikachu', carry: 'abra' }]);
@@ -1247,6 +1257,16 @@ test('parade aux assassins adverses : sans porteur à distance ou sans appât, f
   const melee = [['dratini', 'onix', 'snorlax'], { dratini: 2, onix: 1, snorlax: 1 }];
   assert.equal(trioAdvice(...melee, { dive: true }).code, trioAdvice(...melee).code);
   assert.equal(trioAdvice(...melee, { dive: true }).guard, null);
+  // Racaillou pas encore acheté : un appât absent du plateau ne couvrirait personne, et Onix reste seul devant.
+  const unowned = [['abra', 'onix', 'geodude'], { abra: 2, onix: 1 }];
+  assert.equal(trioAdvice(...unowned, { dive: true }).code, trioAdvice(...unowned).code);
+  assert.equal(trioAdvice(...unowned, { dive: true }).guard, null);
+  // Ramoloss garde le centre de l'avant : l'appât est l'autre unité de mêlée.
+  const shield = trioAdvice(['abra', 'slowpoke', 'growlithe'], { abra: 2, slowpoke: 1, growlithe: 1 }, { dive: true });
+  assert.deepEqual([cellsOf(shield.code).slowpoke, shield.guard], [3, { bait: 'growlithe', carry: 'abra' }]);
+  // Seule unité de mêlée à côté d'un de tes assassins, qui quitte sa case : elle reste devant.
+  const lone = [['abra', 'growlithe', 'zubat'], { abra: 2, growlithe: 1, zubat: 1 }];
+  assert.equal(trioAdvice(...lone, { dive: true }).guard, null);
   // Onix seul tank, Nosferapti assassin (il quitte sa case) : personne à envoyer au fond.
   const none = [['abra', 'onix', 'zubat'], { abra: 2, onix: 1, zubat: 1 }];
   assert.equal(trioAdvice(...none, { dive: true }).code, trioAdvice(...none).code);

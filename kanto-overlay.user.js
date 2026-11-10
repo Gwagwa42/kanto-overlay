@@ -1776,7 +1776,11 @@ const KT = (() => {
     }
     const value = u => lineInfo(data, u.base).c * 3 ** (u.star - 1);
     // Avant Mew : sa case dépend de celle de son modèle, que la parade peut déplacer.
-    if (dive) guard(others, taken, zone, value);
+    if (dive) {
+      guard(others, taken, zone, value);
+      rangedCols.clear();
+      for (const u of others) if (rowOf(u.cell) > 0) rangedCols.add(colOf(u.cell));
+    }
     if (mimic) {
       // Modèles par valeur décroissante, capacité connue (les lignées v41 hors de data.json n'en ont pas) et copiable : le
       // premier qui a une case libre collée. Les modèles mieux classés n'en ont aucune : Mew ne les touchera pas.
@@ -1799,41 +1803,53 @@ const KT = (() => {
   // Parade aux assassins adverses, relevée dans le moteur (route-*.js) : Insécateur (leap), Doduo (rush) et Abo (stealth)
   // visent le Pokémon le plus au fond (backmost : rangée, puis PV restants les plus bas ; Abo, dans la moitié du plateau par
   // où il entre, la colonne 4 comptant dans les deux) ; Nosferapti (flyover) vise le plus au fond de la colonne la plus proche
-  // de la sienne. Un appât strictement plus au fond que le porteur à distance prend donc l'assaut : au fond, colonne 4
-  // (commune aux deux moitiés, face au Nosferapti d'un adversaire qui n'en a qu'un), si possible sans toucher le porteur,
-  // vers qui l'assassin se retournerait. Le porteur du fond avance d'une rangée, dans sa zone d'abord. Appât : un Pokémon
-  // déjà plus au fond que le porteur, sinon le tank de moindre valeur quand il en reste un devant, sinon l'unité de mêlée de plus
-  // grande valeur quand il en reste une devant, sinon l'unité à distance de plus grande valeur. Ni Ramoloss (son mur couvre
-  // l'avant) ni un assassin (il quitte sa case). Sans porteur à distance ou sans appât, rien ne bouge. units : placées,
-  // sans Mew ; taken : cases prises, tenu à jour ; value : coût × 3^(étoile − 1).
+  // de la sienne. Un appât strictement plus au fond que le porteur à distance, dans chaque moitié où se trouve le porteur,
+  // prend donc l'assaut : au fond, colonne 4 d'abord puis du côté du porteur, si possible sans le toucher (l'assassin se
+  // retournerait vers lui). Le porteur du fond avance d'une rangée, dans sa zone d'abord, hors de la colonne 4 s'il le peut. Appât, parmi les Pokémon possédés :
+  // un Pokémon déjà plus au fond que le porteur, dans la formation ou sur le plateau (du bon côté : il ne bouge pas), sinon le tank de moindre valeur quand il en
+  // reste un devant, sinon l'unité de mêlée de plus grande valeur quand il en reste une devant, sinon l'unité à distance de
+  // plus grande valeur. Ni Ramoloss (son mur couvre l'avant) ni un assassin (il quitte sa case). Sans porteur à distance,
+  // sans appât ou sans case pour l'un des deux, rien ne bouge. units : placées, sans Mew ; taken : cases prises, tenu à
+  // jour ; value : coût × 3^(étoile − 1).
   function guard(units, taken, zone, value) {
     const carry = units.find(u => u.role === 'carry' && u.row > 0);
     if (!carry) return;
-    const move = (u, cell) => {
-      taken.delete(u.cell);
-      taken.add(cell);
-      u.cell = cell;
-    };
-    const free = (row, cols) => cols.map(c => cellAt(row, c)).filter(c => !taken.has(c));
-    const rest = units.filter(u => u !== carry && !OPENERS.has(u.base));
-    const front = rest.filter(u => rowOf(u.cell) === 0 && !ALLY_SHIELD.has(u.base)).sort((x, y) => value(y) - value(x));
-    const tanks = front.filter(u => u.role === 'tank');
-    const holds = units.filter(u => rowOf(u.cell) === 0).length;
-    const ranged = rest.filter(u => rowOf(u.cell) > 0).sort((x, y) => value(y) - value(x));
-    const atBack = rowOf(carry.cell) === 3;
-    const behind = units.filter(u => u !== carry && rowOf(u.cell) > (atBack ? 2 : rowOf(carry.cell)));
-    const bait = behind[0] ?? (tanks.length > 1 ? tanks.at(-1) : null) ?? (holds > 1 ? front.find(u => u.role !== 'tank') : null) ?? ranged[0];
-    if (!bait) return;
-    if (atBack) {
-      const cells = free(2, [...zone.cols, ...zone.order]);
-      if (!cells.length) return;
+    const free = (row, cols) => cols.map(c => cellAt(row, c)).filter(c => !taken.has(c) || c === carry.cell);
+    // Case du plateau qu'un Pokémon garde : la parade déjà posée ne donne aucun déplacement.
+    const held = (u, ok) => typeof u.from === 'number' && (u.from === u.cell || !taken.has(u.from) || u.from === carry.cell) && ok(u.from);
+    let spot = carry.cell;
+    if (held(carry, c => rowOf(c) === 1 || rowOf(c) === 2)) spot = carry.from;
+    else if (rowOf(spot) === 3) {
+      const cells = free(2, [...zone.order.filter(c => zone.cols.includes(c)), ...zone.order]);
       const lone = c => !units.some(u => u !== carry && rowOf(u.cell) > 0 && colOf(u.cell) === colOf(c));
-      move(carry, cells.find(lone) ?? cells[0]);
+      const apart = c => !units.some(u => u !== carry && rowOf(u.cell) === 3 && touching(c, u.cell));
+      // Hors de la colonne 4 (l'appât, qui devrait s'y tenir, le toucherait) et sans toucher une unité du fond, d'abord.
+      spot = cells.find(c => lone(c) && apart(c) && colOf(c) !== 3) ?? cells.find(c => lone(c) && apart(c)) ?? cells.find(lone) ?? cells[0];
+      if (spot === undefined) return;
     }
-    if (!behind.length) {
-      const cells = free(3, CENTER_OUT);
-      move(bait, cells.find(c => !touching(c, carry.cell)) ?? cells[0]);
+    const side = Math.sign(colOf(spot) - 3);
+    const covers = c => colOf(c) === 3 || (side !== 0 && Math.sign(colOf(c) - 3) === side);
+    const owned = units.filter(u => u !== carry && u.from !== null && !OPENERS.has(u.base));
+    const pool = owned.filter(u => !ALLY_SHIELD.has(u.base)).sort((x, y) => value(y) - value(x));
+    const deeper = pool.filter(u => rowOf(u.cell) > rowOf(spot));
+    const kept = pool.find(u => u.cell !== u.from && held(u, c => rowOf(c) > rowOf(spot) && covers(c)));
+    const set = deeper.find(u => covers(u.cell)) ?? kept;
+    const front = pool.filter(u => rowOf(u.cell) === 0);
+    const tanks = front.filter(u => u.role === 'tank');
+    const holds = owned.filter(u => rowOf(u.cell) === 0).length;
+    const bait = set ?? deeper[0] ?? (tanks.length > 1 ? tanks.at(-1) : null) ?? (holds > 1 ? front.find(u => u.role !== 'tank') : null) ?? pool.find(u => rowOf(u.cell) > 0);
+    if (!bait) return;
+    let cell = bait === kept ? kept.from : bait.cell;
+    if (!set) {
+      const cells = free(3, CENTER_OUT).filter(covers);
+      cell = cells.find(c => !touching(c, spot)) ?? cells[0];
+      if (cell === undefined) return;
     }
+    for (const [u, to] of [[carry, spot], [bait, cell]]) {
+      taken.delete(u.cell);
+      u.cell = to;
+    }
+    taken.add(spot).add(cell);
     bait.bait = true;
     carry.guarded = true;
   }
@@ -1851,7 +1867,7 @@ const KT = (() => {
     const at = new Map(onBoard.map(u => [boardCell(u.cell), u]));
     const cellOf = unit => [...at].find(([, v]) => v === unit)?.[0];
     const mine = new Set(units.map(f => f.unit).filter(Boolean));
-    const copying = u => (u.copies ? `, collé à ${names.line(u.copies)} dont il copie la capacité` : '')
+    const note = u => (u.copies ? `, collé à ${names.line(u.copies)} dont il copie la capacité` : '')
       + (u.bait ? ', appât des assassins adverses' : '') + (u.guarded ? ', moins au fond que l’appât' : '');
     const marks = [];
     const pending = () => units.filter(f => typeof f.from === 'number' && cellOf(f.unit) !== f.cell);
@@ -1860,7 +1876,7 @@ const KT = (() => {
       const from = cellOf(u.unit);
       const other = at.get(u.cell);
       const swap = other && mine.has(other) ? ` (échange avec ${names.line(other.line)})` : '';
-      marks.push(mark('do', '', `Déplace ${names.line(u.base)}`, `${spot(from)} → ${spot(u.cell)}${swap}${copying(u)}`));
+      marks.push(mark('do', '', `Déplace ${names.line(u.base)}`, `${spot(from)} → ${spot(u.cell)}${swap}${note(u)}`));
       at.set(u.cell, u.unit);
       if (other) at.set(from, other);
       else at.delete(from);
@@ -1880,7 +1896,7 @@ const KT = (() => {
         at.delete(cell);
       }
       at.set(u.cell, u.unit);
-      marks.push(mark('do', '', `Pose ${names.line(u.base)}`, `${spot(u.cell)}${copying(u)}${why}`));
+      marks.push(mark('do', '', `Pose ${names.line(u.base)}`, `${spot(u.cell)}${note(u)}${why}`));
     }
     return marks;
   }
@@ -1925,6 +1941,7 @@ const KT = (() => {
       moves: moveAdvice(units, game, names),
       // Parade posée : lignées de l'appât et du porteur couvert ; null sans parade (pas demandée, ou impossible).
       guard: guarded ? { bait: units.find(u => u.bait).base, carry: guarded.base } : null,
+      dive,
       code: target ? kt1Code(units, stats.rules, mode) : null,
     };
   }
@@ -2300,11 +2317,11 @@ function aimsHtml(a, ui) {
 function diveHtml(state) {
   const a = state.advice;
   let note = 'Coche si l’adversaire en aligne : ils plongent sur ton Pokémon le plus au fond.';
-  if (state.dive) {
-    note = a.guard ? `Appât : ${esc(a.names.line(a.guard.bait))} plus au fond que ${esc(a.names.line(a.guard.carry))}. Garde ton porteur hors de la colonne d’un Nosferapti.`
-      : 'Pas de parade : aucun porteur à distance à couvrir, ou aucun Pokémon à envoyer au fond.';
+  if (a.dive) {
+    note = a.guard ? `Appât au fond : ${esc(a.names.line(a.guard.bait))}. Porteur couvert : ${esc(a.names.line(a.guard.carry))}. Garde-le hors de la colonne d’un Nosferapti.`
+      : 'Pas de parade : aucun porteur à distance à couvrir, aucun Pokémon à envoyer au fond, ou plus de case libre.';
   }
-  return `<div class="kt-checks kt-dive"><label><input type="checkbox" name="dive" id="kt-dive" aria-describedby="kt-dive-note"${state.dive ? ' checked' : ''}><span>Assassins adverses : Insécateur, Doduo, Abo, Nosferapti</span></label></div>
+  return `<div class="kt-checks kt-dive"><label><input type="checkbox" name="dive" id="kt-dive" aria-describedby="kt-dive-note"${a.dive ? ' checked' : ''}><span>Assassins adverses : Insécateur, Doduo, Abo, Nosferapti</span></label></div>
 <p class="kt-hint" id="kt-dive-note">${note}</p>`;
 }
 
@@ -2330,8 +2347,8 @@ function compoHtml(state, ui) {
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${a.next ? `<p class="kt-label"><span>Ensuite</span><span>${esc(KT.floorRange(a.next.stops, mode))}</span></p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
 ${aimsHtml(a, ui)}
-<button class="kt-copy" id="kt-copy" data-act="copy">Copier la formation</button>
 ${diveHtml(state)}
+<button class="kt-copy" id="kt-copy" data-act="copy">Copier la formation</button>
 <p class="kt-hint">Porteur à distance : rangée de sa portée, ${KT.CARRY_ZONES[ui.side].name} (options ⚙).</p>`;
 }
 
@@ -2737,8 +2754,9 @@ function shellHtml({ look = {}, label = 'Étage', floor = null, src = '', sum = 
 
 // Réglages du panneau hors options du menu (checkUi les complète) : position, replié, sections ouvertes, compo choisie,
 // combat aux assassins adverses.
-// Combat en cours (partie et étage) : les assassins adverses cochés (ui.dive) ne valent que pour lui.
-const fightKey = state => `${state.save?.runSeed ?? ''}:${state.floor}`;
+// Combat en cours (sauvegarde, partie et étage) : les assassins adverses cochés (ui.dive) ne valent que pour lui.
+const fightKey = state => `${state.saveKey}:${state.save?.runSeed ?? ''}:${state.floor}`;
+const diveOn = (ui, state) => ui.dive === fightKey(state);
 const UI_DEFAULTS = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, dive: null };
 
 function mount() {
@@ -2806,13 +2824,16 @@ function mount() {
     });
   };
 
-  const diveOn = () => ui.dive === fightKey(state);
   function compute() {
     const code = state.advice?.code;
     state.advice = state.save && onSaveFloor(state) && (state.stats || state.error)
-      ? KT.advise({ stats: modeStats(state), data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side, mode: state.mode, dive: diveOn() })
+      ? KT.advise({ stats: modeStats(state), data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side, mode: state.mode, dive: diveOn(ui, state) })
       : null;
-    state.dive = state.advice !== null && diveOn();
+    // Case d'un autre combat oubliée : une sauvegarde sans runSeed la retrouverait au même étage d'une autre partie.
+    if (state.advice && ui.dive !== null && !diveOn(ui, state)) {
+      ui.dive = null;
+      saveUi();
+    }
     if (state.advice?.code !== code) state.copied = null;
     const a = state.advice;
     const next = a?.next?.key ?? null;
@@ -3096,6 +3117,6 @@ function mount() {
 if (typeof module !== 'undefined') {
   module.exports = {
     ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, optionsHtml, summaryHtml, footHtml, shellHtml,
-    PlannerError, tabForKey, keptByPanel, foldKey, setOption, diveHtml, fightKey, UI_DEFAULTS, onSaveFloor, modeStats,
+    PlannerError, tabForKey, keptByPanel, foldKey, setOption, diveHtml, fightKey, diveOn, UI_DEFAULTS, onSaveFloor, modeStats,
   };
 } else mount();
