@@ -1404,10 +1404,14 @@ const KT = (() => {
 
   // La sauvegarde indexe le plateau sur 8 rangées × 7 : les 4 rangées ennemies (cases 0-27), puis les tiennes de l'avant au fond
   // (28-55). La cellule KT1 (0-27, rangée × 7 + colonne, rangée 0 = avant, doc de l'API) est donc la case de la sauvegarde − 28.
-  const ENEMY_CELLS = 28;
+  const COLS = 7;
+  const ENEMY_CELLS = 4 * COLS;
+  // Colonnes de l'avant, depuis le centre.
+  const CENTER_OUT = [3, 2, 4, 1, 5, 0, 6];
   const boardCell = cell => (Number.isInteger(cell) && cell >= ENEMY_CELLS && cell < 2 * ENEMY_CELLS ? cell - ENEMY_CELLS : null);
-  const rowOf = cell => Math.floor(cell / 7);
-  const colOf = cell => cell % 7;
+  const rowOf = cell => Math.floor(cell / COLS);
+  const colOf = cell => cell % COLS;
+  const cellAt = (row, col) => row * COLS + col;
 
   // Zones du porteur à distance : ses colonnes préférées sur sa rangée, et ordre de remplissage des rangées derrière l'avant (une
   // colonne sur deux d'abord, pour espacer les unités face aux attaques de zone).
@@ -1459,8 +1463,8 @@ const KT = (() => {
     const zone = CARRY_ZONES[side];
     const rows = [0, 1, 2, 3];
     const zones = u => {
-      const cols = u.row === 0 ? [3, 2, 4, 1, 5, 0, 6] : zone.order;
-      const cells = [...rows.slice(u.row), ...rows.slice(0, u.row).reverse()].map(r => cols.map(c => r * 7 + c));
+      const cols = u.row === 0 ? CENTER_OUT : zone.order;
+      const cells = [...rows.slice(u.row), ...rows.slice(0, u.row).reverse()].map(r => cols.map(c => cellAt(r, c)));
       return u.role === 'carry' && u.row > 0 ? [cells[0].filter(c => zone.cols.includes(colOf(c))), ...cells] : cells;
     };
     const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
