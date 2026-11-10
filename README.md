@@ -127,6 +127,17 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
     quelle que soit sa rangée : sur deux rangées voisines, deux cases de la même colonne se touchent. Posées depuis le banc,
     4 unités à distance ne se touchent pas (3 avec la zone centre) ; au-delà, ou autour d'une unité qui garde sa case, elles
     peuvent se toucher.
+  - Capacités qui dépendent des voisins (code du jeu ; deux cases sont collées quand leurs hexagones se touchent) :
+    - Mew (Métronome) copie la capacité de l'allié collé qui vaut le plus (coût × 3 par étoile au-delà de la première) ; il
+      se pose donc sur une case collée au Pokémon de plus grande valeur de la compo, sur sa rangée si elle le permet. Abra
+      (Téléport), Métamorph (Morphing) et Magicarpe ★ (Trempette) ne se copient pas.
+    - Ramoloss (Mur Lumière) protège aussi chaque allié collé : il prend le centre de l'avant, avant les autres tanks.
+    - Les assassins quittent leur case dès le début du combat (Ptéra, Taupiqueur, Doduo, Abo, Roucool, Insécateur,
+      Nosferapti) : à l'avant, ils prennent les colonnes du bord, après les Pokémon qui restent.
+    - Le Séisme de Grolem (Racaillou ★★★) inflige 25 % de ses dégâts aux alliés collés : il est posé en dernier à l'avant, au
+      bord.
+    - Les bonus de types ne dépendent pas des cases : seuls les Électrik électrocutent les ennemis collés, ce qui ne change
+      rien pour une unité de mêlée, déjà à l'avant.
   - Un Pokémon déjà sur sa rangée garde sa case ; le porteur à distance, seulement dans les colonnes de sa zone. Les déplacements
     sont listés dans l'ordre où les faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors
     formation si le plateau est plein.
