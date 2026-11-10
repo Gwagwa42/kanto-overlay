@@ -747,7 +747,7 @@ const KT = (() => {
   }
 
   // Portée inconnue : mêlée.
-  const isRanged = (data, base) => (lineInfo(data, base)?.range ?? 1) > 1;
+  const rangeOf = (data, base) => lineInfo(data, base)?.range ?? 1;
 
   // Porteurs : un Pokémon possédé par lignée de la compo cible (le plus étoilé, puis celui qui porte le plus d'objets, puis
   // posé). Rôles lus sur le profil de la lignée : porteur (attaquant du cœur le mieux classé), tanks (aux PV max d'abord),
@@ -1075,8 +1075,8 @@ const KT = (() => {
   const rowOf = cell => Math.floor(cell / 7);
   const colOf = cell => cell % 7;
 
-  // Zones du porteur à distance : colonnes préférées au fond, et ordre de remplissage du fond (une colonne sur deux d'abord, pour
-  // espacer les unités à distance face aux attaques de zone).
+  // Zones du porteur à distance : ses colonnes préférées sur sa rangée, et ordre de remplissage des rangées derrière l'avant (une
+  // colonne sur deux d'abord, pour espacer les unités face aux attaques de zone).
   const CARRY_ZONES = {
     left: { name: 'coin gauche', cols: [0, 1, 2], order: [0, 2, 4, 6, 1, 5, 3] },
     center: { name: 'centre', cols: [2, 3, 4], order: [3, 1, 5, 0, 6, 2, 4] },
@@ -1101,40 +1101,46 @@ const KT = (() => {
     ui.pins = { do: true, opt: true, no: true, ...ui.pins };
   }
 
-  // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). Chaque Pokémon a ses cases
-  // par préférence : tank au premier rang puis devant, porteur à distance dans la zone choisie du fond (coin gauche, centre ou
-  // coin droit) puis au fond, mêlée devant (depuis le centre), distance au fond (depuis cette zone). Déjà sur une case de sa
-  // première liste, il la garde ; sinon il prend la première case libre. unit : l'unité possédée (porteur de holdersOf), from :
-  // sa cellule, 'bench', ou null s'il n'est pas possédé.
+  // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). La rangée d'un Pokémon est sa
+  // portée, 1 à l'avant, 4 et plus au fond : les deux camps se touchent sur un plateau en hexagones, il atteint de là la première
+  // rangée ennemie. Un tank reste à l'avant quelle que soit sa portée. Colonnes : depuis le centre à l'avant ; derrière, dans
+  // l'ordre de la zone choisie (coin gauche, centre ou coin droit), le porteur d'abord dans les colonnes de cette zone, en
+  // évitant une colonne déjà prise derrière l'avant (d'une rangée à l'autre, deux cases de la même colonne se touchent). Déjà sur
+  // une case de sa première liste, un Pokémon la garde ; rangée pleine, il passe derrière, puis devant. unit : l'unité possédée
+  // (porteur de holdersOf), from : sa cellule, 'bench', ou null s'il n'est pas possédé.
   function formation(target, game, data, holders, side) {
     const stars = id => bestStar(game, baseLine(id));
     const kept = new Set([...[...target.core].sort((a, b) => stars(b) - stars(a)), ...target.fillers].slice(0, game.level));
     const units = [...target.core, ...target.fillers].filter(id => kept.has(id)).map(id => {
       const base = baseLine(id);
       const h = holders.find(x => baseLine(x.unit.line) === base);
+      const role = h?.role ?? null;
       return {
-        line: id, base, star: Math.max(1, stars(id)), shiny: shinyLine(game, base), items: h ? h.ideal : [], role: h?.role ?? null, ranged: isRanged(data, base),
+        line: id, base, star: Math.max(1, stars(id)), shiny: shinyLine(game, base), items: h ? h.ideal : [], role,
+        row: role === 'tank' ? 0 : Math.min(rangeOf(data, base), 4) - 1,
         unit: h?.unit ?? null, from: h ? boardCell(h.unit.cell) ?? 'bench' : null,
       };
     });
     const zone = CARRY_ZONES[side];
-    const front = [0, 1].flatMap(r => [3, 2, 4, 1, 5, 0, 6].map(c => r * 7 + c));
-    const back = [3, 2].flatMap(r => zone.order.map(c => r * 7 + c));
-    const carryZone = back.filter(c => zone.cols.includes(colOf(c)));
+    const rows = [0, 1, 2, 3];
     const zones = u => {
-      if (u.role === 'tank') return [front.filter(c => rowOf(c) === 0), front];
-      if (u.role === 'carry' && u.ranged) return [carryZone, back];
-      return [u.ranged ? back : front];
+      const cols = u.row === 0 ? [3, 2, 4, 1, 5, 0, 6] : zone.order;
+      const cells = [...rows.slice(u.row), ...rows.slice(0, u.row).reverse()].map(r => cols.map(c => r * 7 + c));
+      return u.role === 'carry' && u.row > 0 ? [cells[0].filter(c => zone.cols.includes(colOf(c))), ...cells] : cells;
     };
     const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
     const taken = new Set([...stay].map(u => u.from));
-    // Tanks d'abord, à distance compris (leur zone est l'avant), puis la mêlée, puis la distance porteur en tête.
-    const tanks = units.filter(u => u.role === 'tank');
-    const others = units.filter(u => u.role !== 'tank');
-    const order = [...tanks, ...others.filter(u => !u.ranged), ...others.filter(u => u.ranged).sort((a, b) => Number(b.role === 'carry') - Number(a.role === 'carry'))];
+    const behindCols = new Set([...stay].filter(u => u.row > 0).map(u => colOf(u.from)));
+    const first = role => (a, b) => Number(b.role === role) - Number(a.role === role);
+    const order = [...units.filter(u => u.row === 0).sort(first('tank')), ...units.filter(u => u.row > 0).sort(first('carry'))];
     for (const u of order) {
-      u.cell = stay.has(u) ? u.from : zones(u).flat().find(c => !taken.has(c));
+      if (stay.has(u)) u.cell = u.from;
+      else {
+        const free = zones(u).map(cells => cells.filter(c => !taken.has(c))).find(cells => cells.length);
+        u.cell = (u.row > 0 ? free.find(c => !behindCols.has(colOf(c))) : undefined) ?? free[0];
+      }
       taken.add(u.cell);
+      if (u.row > 0) behindCols.add(colOf(u.cell));
     }
     // Doc de l'API : unités triées par cellule.
     return units.sort((a, b) => a.cell - b.cell);
@@ -1615,7 +1621,7 @@ function compoHtml(state, ui) {
 ${a.next ? `<p class="kt-label"><span>Ensuite</span><span>${esc(KT.floorRange(a.next.stops))}</span></p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
 ${aimsHtml(a, ui)}
 <button class="kt-copy" id="kt-copy" data-act="copy">Copier la formation</button>
-<p class="kt-hint">Porteur à distance : fond, ${KT.CARRY_ZONES[ui.side].name} (options ⚙).</p>`;
+<p class="kt-hint">Porteur à distance : rangée de sa portée, ${KT.CARRY_ZONES[ui.side].name} (options ⚙).</p>`;
 }
 
 function bossTabHtml(state) {
