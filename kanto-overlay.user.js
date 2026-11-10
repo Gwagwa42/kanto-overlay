@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour et campagne
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.5.0
+// @version      2.5.1
 // @description  Tour de combat et campagne (aventures, trois difficultés) de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -104,6 +104,11 @@ const KT = (() => {
   const MAX_ITEMS = 3;
   // Composants défensifs ; Protéine (Attaque), Calcium (Atq. Spé.) et Carbone (vitesse d'attaque) sont offensifs.
   const DEFENSE = ['hp-up', 'iron', 'zinc'];
+  // Composant d'attaque → stat du profil (attackKit) qu'il augmente.
+  const ATTACK = { protein: 'atk', calcium: 'spa' };
+  // Attaque rapportée à l'Atq. Spé. à partir de laquelle les attaques de base d'une lignée comptent (attackKit) : mages,
+  // soutiens et Voltorbe vont de 0,31 à 0,76, les autres rôles de 0,90 à 2,35 (data.json, novembre 2026).
+  const BASIC_RATIO = 0.83;
   // Part de composants défensifs dans les objets qu'une lignée porte en Tour à partir de laquelle elle est un tank : Ronflex 0,94,
   // Machop 0,56, Caninos 0,48, Minidraco 0,40 (campana.json, novembre 2026).
   const TANK_SHARE = 0.5;
@@ -224,31 +229,34 @@ const KT = (() => {
   };
 
   // Lignées de la Tour v41 absentes de data.json (l'API publique s'arrête aux règles 40), relevées dans le code du jeu
-  // (route-*.js, roster) : utilisées seulement quand data.json ne connaît pas la lignée.
+  // (route-*.js, roster) : utilisées seulement quand data.json ne connaît pas la lignée. hit : stats d'attaque qui la servent
+  // (attackKit). 'atk' : ses attaques de base comptent (tout rôle sauf mage, soutien et spécial) ; aucune de ces lignées n'a
+  // de capacité physique sans cela, d'où basic lu sur 'atk'. 'spa' : une capacité suit l'Atq. Spé. Absent pour Chétiflor et
+  // Mimitoss, à deux formes.
   const LINES_V41 = {
     bellsprout: { c: 2, t: ['grass', 'poison'], s: [69, 70, 71], range: 1 },
-    clefairy: { c: 2, t: ['normal'], s: [35, 36], range: 3 },
-    doduo: { c: 2, t: ['normal', 'flying'], s: [84, 85], range: 1 },
-    drowzee: { c: 3, t: ['psychic'], s: [96, 97], range: 3 },
-    farfetchd: { c: 2, t: ['normal', 'flying'], s: [83], range: 1 },
-    goldeen: { c: 1, t: ['water'], s: [118, 119], range: 1 },
-    grimer: { c: 3, t: ['poison'], s: [88, 89], range: 1 },
-    horsea: { c: 2, t: ['water'], s: [116, 117], range: 3 },
-    kabuto: { c: 4, t: ['rock', 'water'], s: [140, 141], range: 1 },
-    kangaskhan: { c: 4, t: ['normal'], s: [115], range: 1 },
-    koffing: { c: 2, t: ['poison'], s: [109, 110], range: 3 },
-    krabby: { c: 1, t: ['water'], s: [98, 99], range: 1 },
-    lickitung: { c: 3, t: ['normal'], s: [108], range: 1 },
-    mankey: { c: 1, t: ['fighting'], s: [56, 57], range: 1 },
-    meowth: { c: 2, t: ['normal'], s: [52, 53], range: 1 },
-    mrmime: { c: 3, t: ['psychic'], s: [122], range: 3 },
-    nidoranf: { c: 1, t: ['poison', 'ground'], s: [29, 30, 31], range: 1 },
-    omanyte: { c: 4, t: ['rock', 'water'], s: [138, 139], range: 3 },
-    pinsir: { c: 3, t: ['bug'], s: [127], range: 1 },
-    porygon: { c: 3, t: ['normal'], s: [137], range: 3 },
-    spearow: { c: 1, t: ['normal', 'flying'], s: [21, 22], range: 1 },
-    tangela: { c: 3, t: ['grass'], s: [114], range: 1 },
-    tentacool: { c: 3, t: ['water', 'poison'], s: [72, 73], range: 3 },
+    clefairy: { c: 2, t: ['normal'], s: [35, 36], range: 3, hit: ['spa'] },
+    doduo: { c: 2, t: ['normal', 'flying'], s: [84, 85], range: 1, hit: ['atk'] },
+    drowzee: { c: 3, t: ['psychic'], s: [96, 97], range: 3, hit: ['spa'] },
+    farfetchd: { c: 2, t: ['normal', 'flying'], s: [83], range: 1, hit: ['atk'] },
+    goldeen: { c: 1, t: ['water'], s: [118, 119], range: 1, hit: ['atk'] },
+    grimer: { c: 3, t: ['poison'], s: [88, 89], range: 1, hit: ['atk'] },
+    horsea: { c: 2, t: ['water'], s: [116, 117], range: 3, hit: ['atk', 'spa'] },
+    kabuto: { c: 4, t: ['rock', 'water'], s: [140, 141], range: 1, hit: ['atk', 'spa'] },
+    kangaskhan: { c: 4, t: ['normal'], s: [115], range: 1, hit: ['atk'] },
+    koffing: { c: 2, t: ['poison'], s: [109, 110], range: 3, hit: ['atk', 'spa'] },
+    krabby: { c: 1, t: ['water'], s: [98, 99], range: 1, hit: ['atk'] },
+    lickitung: { c: 3, t: ['normal'], s: [108], range: 1, hit: ['atk'] },
+    mankey: { c: 1, t: ['fighting'], s: [56, 57], range: 1, hit: ['atk'] },
+    meowth: { c: 2, t: ['normal'], s: [52, 53], range: 1, hit: ['atk'] },
+    mrmime: { c: 3, t: ['psychic'], s: [122], range: 3, hit: ['spa'] },
+    nidoranf: { c: 1, t: ['poison', 'ground'], s: [29, 30, 31], range: 1, hit: ['atk', 'spa'] },
+    omanyte: { c: 4, t: ['rock', 'water'], s: [138, 139], range: 3, hit: ['atk', 'spa'] },
+    pinsir: { c: 3, t: ['bug'], s: [127], range: 1, hit: ['atk'] },
+    porygon: { c: 3, t: ['normal'], s: [137], range: 3, hit: ['spa'] },
+    spearow: { c: 1, t: ['normal', 'flying'], s: [21, 22], range: 1, hit: ['atk'] },
+    tangela: { c: 3, t: ['grass'], s: [114], range: 1, hit: ['atk', 'spa'] },
+    tentacool: { c: 3, t: ['water', 'poison'], s: [72, 73], range: 3, hit: ['spa'] },
     venonat: { c: 2, t: ['bug', 'poison'], s: [48, 49], range: 3 },
   };
   const lineInfo = (data, base) => data?.lines[base] ?? LINES_V41[base];
@@ -947,6 +955,12 @@ const KT = (() => {
     return { make, parts };
   }
 
+  // Autre composant de la recette d'un objet complet.
+  const otherPart = (book, full, id) => {
+    const [a, b] = book.parts.get(full);
+    return a === id ? b : a;
+  };
+
   // Composants qui donnent ses stats à un objet : inherits de l'API, qui diffère parfois de la recette (Casque Brut : PV Plus +
   // Fer, recette PV Plus + Protéine) ; vide pour les objets Choix, dont la recette porte la stat.
   function itemParts(data, id) {
@@ -956,9 +970,33 @@ const KT = (() => {
     return item.inherits?.length ? item.inherits.flatMap(x => Array(x.n).fill(x.part)) : item.recipe ?? [];
   }
 
-  // Profil de chaque lignée de base, lu sur les objets qu'elle porte dans le mode (pondérés par le nombre de combats) : tank si la
-  // part de composants défensifs atteint TANK_SHARE, spéciale si le Calcium l'emporte sur la Protéine. Les stats de data.json
-  // ne séparent pas tanks et attaquants, et data.json ne connaît pas toutes les lignées des règles 41.
+  // Stats d'attaque qui servent une lignée de base, d'après les règles du jeu (roster-*.js) : l'Attaque porte les attaques de
+  // base de tous et les capacités physiques, l'Atq. Spé. les capacités spéciales, soins et boucliers. L'échelle de la capacité
+  // du dernier stade (scale), celui que la lignée vise, dit laquelle elle suit : la plus forte des deux, les deux à égalité.
+  // basic : ses attaques de base comptent, quand l'Attaque d'un stade au moins atteint BASIC_RATIO fois son Atq. Spé.
+  // (Magicarpe n'y arrive qu'en Léviator) ; l'API ne publie pas le rôle. flex : lignée à deux formes, qui prend la capacité
+  // physique ou spéciale selon la stat que ses objets donnent le plus. Une lignée inconnue de data.json et de LINES_V41, ou
+  // sans échelle au dernier stade, ou sans Attaque ni Atq. Spé. à un stade, est traitée de même, faute de capacité connue.
+  // Deux formes sur d'autres axes (Ramoloss : Défense contre Déf. Spé. ; Nidoqueen : Attaque contre Défense) : les stats des
+  // deux capacités comptent, approximation faute de lire la forme jouée sur les seuls objets d'attaque.
+  function attackKit(data, base) {
+    const info = lineInfo(data, base);
+    if (info?.hit) return { basic: info.hit.includes('atk'), atk: info.hit.includes('atk'), spa: info.hit.includes('spa'), flex: false };
+    const stars = info?.stars ?? [];
+    const last = stars[stars.length - 1];
+    const moves = [last?.move, last?.flex?.phys, last?.flex?.spec].filter(Boolean);
+    const known = moves.length > 0 && moves.every(m => [m.scale?.atk, m.scale?.spa].every(Number.isFinite))
+      && stars.every(s => [s.stats?.atk, s.stats?.spa].every(Number.isFinite));
+    if (!known) return { basic: true, flex: true };
+    const basic = stars.some(s => s.stats.atk >= BASIC_RATIO * s.stats.spa);
+    const leads = (own, other) => moves.some(m => m.scale[own] > 0 && m.scale[own] >= m.scale[other]);
+    return { basic, atk: basic || leads('atk', 'spa'), spa: leads('spa', 'atk'), flex: ['atk', 'spa'].every(x => last.flex?.axes?.includes(x)) };
+  }
+
+  // Profil de chaque lignée de base. tank : lu sur les objets qu'elle porte dans le mode (pondérés par le nombre de combats),
+  // quand la part de composants défensifs atteint TANK_SHARE ; data.json ne sépare pas tanks et attaquants. basic, atk, spa :
+  // attackKit. Une lignée à deux formes n'est servie que par une stat, celle que ces objets portés lui donnent le plus
+  // (Calcium contre Protéine, l'Attaque à égalité) : des objets des deux stats la feraient changer de capacité.
   function lineProfiles(stats, data) {
     const sums = new Map();
     for (const h of stats.holders) {
@@ -973,33 +1011,48 @@ const KT = (() => {
       sum.spa += h.n * count(['calcium']);
       sums.set(base, sum);
     }
-    return new Map([...sums].map(([base, x]) => [base, { tank: x.def / x.n >= TANK_SHARE, special: x.spa > x.atk }]));
+    return new Map([...sums].map(([base, x]) => {
+      const kit = attackKit(data, base);
+      const [atk, spa] = kit.flex ? [x.atk >= x.spa, x.spa > x.atk] : [kit.atk, kit.spa];
+      return [base, { tank: x.def / x.n >= TANK_SHARE, basic: kit.basic, atk, spa }];
+    }));
   }
 
-  // Objet complet qui convient au profil : jamais la stat d'attaque contraire sans la sienne (Orbe Vie, Lentilscope restent
-  // mixtes), au moins la moitié de composants défensifs pour un tank, offensifs pour un attaquant. Sans profil, tout convient.
+  // Composant d'attaque dont la stat ne sert pas la lignée : seul, il ne lui apporte rien, et il ferait changer de capacité
+  // une lignée à deux formes.
+  const idlePart = (profile, id) => profile !== null && ATTACK[id] !== undefined && !profile[ATTACK[id]];
+
+  // Ce qu'un objet complet a de contraire à la lignée, null sinon : aucune des stats d'attaque qu'il donne ne la sert (Orbe
+  // Vie donne les deux, il sert toujours).
+  function wasted(data, profile, id) {
+    const given = itemParts(data, id).filter(p => ATTACK[p]);
+    if (!given.length || !given.every(p => idlePart(profile, p))) return null;
+    return given.includes('protein') ? 'physique sur un spécial' : 'spécial sur un physique';
+  }
+
+  // Objet complet qui convient au profil : rien de contraire (wasted), au moins la moitié de composants défensifs pour un
+  // tank, offensifs pour un attaquant. Sans profil, tout convient.
   function suits(data, profile, id) {
     if (!profile) return true;
     const parts = itemParts(data, id);
-    if (!parts.length) return false;
-    const [own, other] = profile.special ? ['calcium', 'protein'] : ['protein', 'calcium'];
-    if (parts.includes(other) && !parts.includes(own)) return false;
+    if (!parts.length || wasted(data, profile, id)) return false;
     const def = parts.filter(p => DEFENSE.includes(p)).length;
     return profile.tank ? def * 2 >= parts.length : def * 2 <= parts.length;
   }
 
   // Ce qu'un objet porté contraire au profil a de faux, pour le conseil d'Aimant.
-  function misfit(data, profile, id) {
-    const parts = itemParts(data, id);
-    const [own, other] = profile.special ? ['calcium', 'protein'] : ['protein', 'calcium'];
-    if (parts.includes(other) && !parts.includes(own)) return profile.special ? 'physique sur un spécial' : 'spécial sur un physique';
-    return profile.tank ? 'offensif sur un tank' : 'défensif sur un attaquant';
-  }
+  const misfit = (data, profile, id) => wasted(data, profile, id) ?? (profile.tank ? 'offensif sur un tank' : 'défensif sur un attaquant');
 
-  // Meilleurs objets complets portés dans le mode par cette lignée exacte et qui conviennent à son profil : une forme ancrée (-aN)
-  // ne compte que pour elle-même ; le repli sur la lignée de base est dans idealItems.
+  // Critique (Lentilscope) pour un lanceur, dont les attaques de base ne comptent pas : il ne touche une capacité que si elle
+  // le dit, ce que l'API ne publie pas. L'objet n'est pas visé, sans être contraire : il donne aussi de l'Atq. Spé. et de la
+  // vitesse, et porté il n'appelle pas l'Aimant.
+  const idleCrit = (data, profile, id) => profile !== null && !profile.basic && data.items[id].stat === 'crit';
+
+  // Meilleurs objets complets portés dans le mode par cette lignée exacte et qui conviennent à son profil, critique d'un lanceur
+  // écarté : une forme ancrée (-aN) ne compte que pour elle-même ; le repli sur la lignée de base est dans idealItems.
   function topHolders(stats, data, line, profile) {
-    return stats.holders.filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full' && suits(data, profile, h.id))
+    return stats.holders
+      .filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full' && suits(data, profile, h.id) && !idleCrit(data, profile, h.id))
       .sort((a, b) => b.lo - a.lo).slice(0, MAX_ITEMS);
   }
 
@@ -1039,7 +1092,8 @@ const KT = (() => {
 
   // Un Pokémon de la compo ne reçoit que ses objets idéaux (idealItems) : l'objet complet, ou un composant de l'un d'eux, va
   // tout de suite sur lui. Un composant posé seul donne déjà son effet et fusionne avec le prochain composant posé sur ce
-  // Pokémon. Ce qui n'entre dans aucun objet idéal reste au sac. Chaque objet du sac est conseillé une fois ;
+  // Pokémon ; celui dont la stat ne le sert pas (idlePart : Protéine sur un spécial) attend au sac l'autre composant de la
+  // recette. Ce qui n'entre dans aucun objet idéal reste au sac. Chaque objet du sac est conseillé une fois ;
   // l'état de chaque porteur (objets, places, composant seul) suit les conseils, et une seule paire par Pokémon et par passage
   // (l'ordre de pose ne serait plus clair). future : lignées à venir (futureLines), pour qui un composant reste au sac.
   // Renvoie aussi cet état final, pour le choix de la récompense.
@@ -1114,13 +1168,13 @@ const KT = (() => {
     };
     // Composants encore à réunir pour chaque recette idéale des lignées à venir : une copie gardée par composant demandé.
     const needs = future.flatMap(x => x.ideal.map(f => ({ x, f, left: [...(book.parts.get(f) ?? [])] })));
-    // Pokémon de la compo qui attend cet objet, ou un objet idéal dont c'est un composant.
-    const wantedBy = id => hs.find(h => ideal(h, id) || recipesWith(h, id).length);
+    // Pokémon de la compo qui attendent cet objet, ou un objet idéal dont c'est un composant.
+    const takers = id => hs.filter(h => ideal(h, id) || recipesWith(h, id).length);
     // Composant seul porté qui entre dans une recette idéale encore à faire ; sinon il bloque le Pokémon (Aimant).
     const kept = h => recipesWith(h, h.lone).length > 0;
-    // Composant, première règle qui s'applique : complète une recette idéale, paire idéale du sac, entame une recette idéale,
-    // attend un Pokémon de la compo qui ne peut pas le recevoir (motif dans la boucle finale), reste au sac pour la recette
-    // idéale d'une lignée à venir.
+    // Composant, première règle qui s'applique : complète une recette idéale, paire idéale du sac, entame une recette idéale
+    // d'un Pokémon que sa stat sert, attend un Pokémon de la compo qui ne peut pas le recevoir (motif dans la boucle finale),
+    // reste au sac pour la recette idéale d'une lignée à venir.
     const placePart = (id, i) => {
       const done = hs.find(h => h.lone && ideal(h, fused(h, id)));
       if (done) return fuse(i, done, id, `${names.item(fused(done, id))}, ${BEST}`);
@@ -1132,15 +1186,12 @@ const KT = (() => {
         duo.h.on.push(duo.f);
         return;
       }
-      // L'effet du composant seul n'est pas annoncé quand c'est la stat d'attaque contraire (Protéine seule sur un spécial).
-      const contrary = h => h.profile !== null && id === (h.profile.special ? 'protein' : 'calcium');
-      const now = h => (contrary(h) ? '' : `${names.effect(id) ?? 'son effet'} tout de suite ; `);
-      const begun = free.map(h => ({ h, f: recipesWith(h, id)[0] })).find(x => x.f);
+      const begun = free.filter(h => !idlePart(h.profile, id)).map(h => ({ h, f: recipesWith(h, id)[0] })).find(x => x.f);
       if (begun) {
-        const [a, b] = book.parts.get(begun.f);
-        return alone(i, begun.h, id, `${now(begun.h)}plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
+        const other = names.item(otherPart(book, begun.f, id));
+        return alone(i, begun.h, id, `${names.effect(id) ?? 'son effet'} tout de suite ; plus tard avec ${other} : ${names.item(begun.f)}, ${BEST}`);
       }
-      if (wantedBy(id)) return;
+      if (takers(id).length) return;
       const later = needs.find(n => n.left.includes(id));
       if (later) {
         later.left.splice(later.left.indexOf(id), 1);
@@ -1211,19 +1262,23 @@ const KT = (() => {
       left = pending('part').length;
       for (const { id, i } of pending('part')) if (marks[i] === null) placePart(id, i);
     } while (pending('part').length < left);
-    // Ce qui empêche un Pokémon qui attend un objet de le recevoir. Avec des places libres et sans composant seul, la pose
-    // aurait eu lieu au dernier tour.
-    const obstacle = h => {
+    // Ce qui empêche un Pokémon qui attend un objet de le recevoir. Avec des places libres et sans composant seul, il ne reste
+    // que le composant dont la stat ne le sert pas (idlePart) : il se pose avec l'autre composant de la recette.
+    const obstacle = (h, id) => {
       if (h.emptied) return 'après l’Aimant';
       if (h.slots === 0) return 'sans place libre';
-      return kept(h) ? `une fois ${names.item(h.lone)} fusionné` : `bloqué par ${names.item(h.lone)} seul`;
+      if (h.lone) return kept(h) ? `une fois ${names.item(h.lone)} fusionné` : `bloqué par ${names.item(h.lone)} seul`;
+      const f = recipesWith(h, id)[0];
+      return `avec ${names.item(otherPart(book, f, id))} : ${names.item(f)}`;
     };
     for (const { id, i } of [...pending('full'), ...pending('part')]) {
-      const stuck = wantedBy(id);
+      // Le motif cite d'abord le Pokémon qui peut encore le recevoir, avec l'autre composant de la recette.
+      const all = takers(id);
+      const stuck = all.find(h => h.slots > 0 && !h.lone) ?? all[0];
       const later = future.find(x => x.ideal.includes(id));
       const worn = hs.find(h => h.ideal.includes(id) && h.on.includes(id));
       let why = 'aucun Pokémon de la compo possédé';
-      if (stuck) why = `pour ${stuck.who}, ${obstacle(stuck)}`;
+      if (stuck) why = `pour ${stuck.who}, ${obstacle(stuck, id)}`;
       else if (later) why = `pour ${later.who}, à venir`;
       else if (worn) why = `déjà sur ${worn.who}`;
       else if (hs.length) why = 'hors des meilleurs objets de la compo';
@@ -1270,8 +1325,12 @@ const KT = (() => {
       const ab = book.parts.get(f) ?? [];
       if (f === id) return h.slots > 0 && { s: 3, why: `${BEST} pour ${h.who}` };
       if (!ab.includes(id)) return null;
-      if (h.lone === (ab[0] === id ? ab[1] : ab[0])) return { s: 2, why: `complète ${names.item(f)} sur ${h.who}` };
-      return h.slots > 0 && !h.lone && { s: 1, why: `entame ${names.item(f)} pour ${h.who}` };
+      const other = otherPart(book, f, id);
+      if (h.lone === other) return { s: 2, why: `complète ${names.item(f)} sur ${h.who}` };
+      if (h.slots === 0 || h.lone) return null;
+      // Un composant dont la stat ne sert pas le Pokémon attendra l'autre au sac (idlePart) : il passe après celui qui se pose.
+      return idlePart(h.profile, id) ? { s: 0.75, why: `${names.item(f)} pour ${h.who}, avec ${names.item(other)}` }
+        : { s: 1, why: `entame ${names.item(f)} pour ${h.who}` };
     })), ...future.flatMap(x => x.ideal.filter(f => f === id || book.parts.get(f)?.includes(id))
       .map(f => ({ s: 0.5, why: `${names.item(f)} pour ${x.who}, à venir` })))]
       .filter(Boolean).sort((a, b) => b.s - a.s)[0] ?? { s: 0 };
