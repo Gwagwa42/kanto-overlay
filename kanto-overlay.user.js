@@ -290,24 +290,26 @@ const KT = (() => {
     fortuneNote: '', xpNote: ' La campagne donne 2 XP par combat.', retryNote: 'sur un combat rejoué', hasLeague: true,
   };
 
-  // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null) et difficulté. Sans league (sauvegarde
-  // d'avant les difficultés), Normal ; une valeur hors de 1 à 3 est signalée en console et comptée Normal.
+  // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null), difficulté et stratégie normale
+  // (withStrategy). Sans league (sauvegarde d'avant les difficultés), Normal ; une valeur hors de 1 à 3 est signalée en console et comptée Normal.
   function modeContext(rules, save = {}, adventure = null) {
     const known = [1, 2, 3].includes(save.league);
     if (rules === CAMPAIGN && !known && save.league !== undefined) console.warn('kanto-overlay : difficulté inconnue, comptée Normal', save.league);
     const league = rules === CAMPAIGN && known ? save.league : 1;
     return withStrategy({
-      ...rules, adventure, adv: adventure ? ADVENTURES[adventure] ?? null : null, league,
+      ...rules, baseGoals: rules.levelGoals, adventure, adv: adventure ? ADVENTURES[adventure] ?? null : null, league,
       penalty: (league - 1) * LEAGUE_PENALTY, gymOrder: Array.isArray(save.gymOrder) ? save.gymOrder : [],
     }, STRATEGY_DEFAULTS);
   }
 
-  // Mode avec la stratégie choisie (choice : clé de STRATEGY → valeur, l'objet ui) ; les niveaux visés repartent des règles
-  // du mode, pour qu'un nouveau choix remplace le précédent.
+  // Mode avec la stratégie choisie (choice : clé de STRATEGY → valeur connue, l'objet ui passé par checkUi) ; les niveaux visés repartent de ceux des
+  // règles (baseGoals), pour qu'un nouveau choix remplace le précédent. Un niveau n'est pas visé avant l'étage où le jeu
+  // l'autorise : visé plus tôt, le niveau 10 de la Tour bloquerait l'actualisation jusqu'à l'étage 60.
   function withStrategy(mode, choice) {
     const params = Object.assign({}, ...STRATEGY.map(o => o.values.find(([v]) => v === choice[o.key])[2]));
-    const rules = mode.id === TOWER.id ? TOWER : CAMPAIGN;
-    return { ...mode, ...params, levelGoals: rules.levelGoals.map(([from, level]) => [Math.max(1, Math.round(from * params.pace)), level]) };
+    const unlocked = level => (level === 10 ? LEVEL_10_FROM : 1);
+    const levelGoals = mode.baseGoals.map(([from, level]) => [Math.max(unlocked(level), Math.round(from * params.pace)), level]);
+    return { ...mode, ...params, levelGoals };
   }
   const TOWER_MODE = modeContext(TOWER);
 
@@ -353,13 +355,14 @@ const KT = (() => {
   }
 
   // Nouvel état du panneau après une lecture : prev { mode, saveKey, lastAuto, floor, source }, found : latestSave, shown : mode
-  // à l'écran. Sans sauvegarde du mode à l'écran, son mode quand même (libellés, règles), et le Nuzlocke dit non pris en
+  // à l'écran, choice : stratégie choisie (objet ui), appliquée au mode. Sans sauvegarde du mode à l'écran, son mode quand même (libellés, règles), et le Nuzlocke dit non pris en
   // charge. L'étage saisi à la main tient jusqu'à ce que la sauvegarde change d'étage, et tombe avec un changement de partie.
-  function pollState(prev, found, shown) {
+  function pollState(prev, found, shown, choice) {
     let { mode } = prev;
     if (found?.mode) mode = found.mode;
     else if (!found && shown === TOWER.id) mode = TOWER_MODE;
     else if (!found && shown === CAMPAIGN.id && mode.id !== CAMPAIGN.id) mode = modeContext(CAMPAIGN, {}, 'kanto');
+    mode = withStrategy(mode, choice);
     const saveKey = found?.key;
     let { lastAuto, floor, source } = prev;
     if (saveKey !== prev.saveKey) lastAuto = undefined;
@@ -1739,7 +1742,7 @@ const KT = (() => {
   const shortDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
   return {
-    SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, latestSave, shownMode, pollState,
+    SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, STRATEGY_DEFAULTS, latestSave, shownMode, pollState,
     parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss,
     baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
@@ -2197,7 +2200,7 @@ function optionsHtml(ui) {
   const checks = o => `<fieldset><legend>${o.label}</legend><div class="kt-checks">${o.values.map(([v, name]) =>
     `<label><input type="checkbox" name="${o.key}" value="${v}"${ui[o.key][v] ? ' checked' : ''}><span>${SYM[v]} ${name}</span></label>`).join('')}</div></fieldset>`;
   const html = list => list.map(o => (o.type === 'checks' ? checks(o) : seg(o))).join('');
-  return `<h2>Options</h2>${html(KT.OPTIONS.filter(o => !KT.STRATEGY.includes(o)))}<h2>Stratégie</h2>${html(KT.STRATEGY)}
+  return `<h2>Options</h2>${html(KT.OPTIONS.filter(o => !KT.STRATEGY.includes(o)))}<h2>Stratégie</h2>${html(KT.STRATEGY)}<p class="kt-hint">Seuils choisis : onglet Règles.</p>
 <p class="kt-hint">Alt+K replie le panneau ; double-clic sur la barre pour le remettre en haut à droite.</p>`;
 }
 
@@ -2629,8 +2632,7 @@ function mount() {
     if (raw === state.lastRaw && now === shown) return;
     shown = now;
     state.lastRaw = raw;
-    Object.assign(state, KT.pollState(state, found, shown));
-    state.mode = KT.withStrategy(state.mode, ui);
+    Object.assign(state, KT.pollState(state, found, shown, ui));
     compute();
     render();
   }

@@ -210,23 +210,27 @@ test('mode à l’écran : barre du haut, Nuzlocke avant la campagne', () => {
 });
 
 test('lecture de la sauvegarde : mode, Nuzlocke, étage manuel oublié au changement de partie', () => {
+  const poll = (prev, found, shown, choice = KT.STRATEGY_DEFAULTS) => KT.pollState(prev, found, shown, choice);
   const kanto = { key: 'kanto-tactics-save', raw: JSON.stringify(CAMP), mode: mode(CAMP) };
   const start = { mode: KT.TOWER_MODE, saveKey: undefined, lastAuto: undefined, floor: null, source: 'manuel' };
-  const first = KT.pollState(start, kanto, 'campaign');
+  const first = poll(start, kanto, 'campaign');
   assert.deepEqual([first.mode.id, first.floor, first.source, first.unsupported, first.save.round], ['campaign', 15, 'auto', false, 14]);
   // Étage saisi à la main, même partie au même combat : il tient.
   const typed = { ...first, floor: 30, source: 'manuel' };
-  assert.deepEqual([KT.pollState(typed, kanto, 'campaign').floor, KT.pollState(typed, kanto, 'campaign').source], [30, 'manuel']);
+  assert.deepEqual([poll(typed, kanto, 'campaign').floor, poll(typed, kanto, 'campaign').source], [30, 'manuel']);
   // Tour à l'étage 15 : autre partie, l'étage manuel tombe même si le numéro est le même.
   const tower = { key: 'kanto-tactics-save-tower', raw: JSON.stringify({ ...S57, round: 1014 }), mode: KT.TOWER_MODE };
-  const swapped = KT.pollState(typed, tower, 'tower');
+  const swapped = poll(typed, tower, 'tower');
   assert.deepEqual([swapped.mode.id, swapped.floor, swapped.source], ['tower', 15, 'auto']);
   // Mode à l'écran sans sauvegarde : son mode quand même ; Nuzlocke dit non pris en charge.
-  assert.equal(KT.pollState(first, null, 'tower').mode.id, 'tower');
-  assert.deepEqual([KT.pollState(first, null, 'tower').floor, KT.pollState(first, null, 'tower').source], [null, 'manuel']);
-  assert.equal(KT.pollState(swapped, null, 'campaign').mode.adventure, 'kanto');
-  assert.equal(KT.pollState(first, null, 'nuzlocke').unsupported, true);
-  assert.equal(KT.pollState(first, { key: 'kanto-tactics-save-nuzlocke', raw: '{}', mode: null }, 'nuzlocke').unsupported, true);
+  assert.equal(poll(first, null, 'tower').mode.id, 'tower');
+  assert.deepEqual([poll(first, null, 'tower').floor, poll(first, null, 'tower').source], [null, 'manuel']);
+  assert.equal(poll(swapped, null, 'campaign').mode.adventure, 'kanto');
+  // Stratégie choisie appliquée au mode lu, sauvegarde ou non.
+  const bold = { ...KT.STRATEGY_DEFAULTS, allIn: 'bold' };
+  assert.deepEqual([poll(start, kanto, 'campaign', bold).mode.hardWin, poll(first, null, 'tower', bold).mode.hardWin], [40, 40]);
+  assert.equal(poll(first, null, 'nuzlocke').unsupported, true);
+  assert.equal(poll(first, { key: 'kanto-tactics-save-nuzlocke', raw: '{}', mode: null }, 'nuzlocke').unsupported, true);
 });
 
 test('alerte : campagne refusée signalée en campagne seulement, avec les autres effets', () => {

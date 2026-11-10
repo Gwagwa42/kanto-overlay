@@ -166,7 +166,7 @@ test('tout jouer : étage rejoué à partir de l’étage 50', () => {
 });
 
 // Mode de la Tour avec ces préréglages de stratégie, les autres en normal.
-const strategy = choice => KT.withStrategy(T, { pace: 'normal', allIn: 'normal', comp: 'normal', owned: 'normal', ...choice });
+const strategy = (choice, mode = T) => KT.withStrategy(mode, { ...KT.STRATEGY_DEFAULTS, ...choice });
 
 test('stratégie : préréglages normaux = règles par défaut du mode', () => {
   assert.deepEqual(strategy({}), T);
@@ -174,11 +174,12 @@ test('stratégie : préréglages normaux = règles par défaut du mode', () => {
 });
 
 test('stratégie : niveaux visés plus tôt ou plus tard, repartis des règles du mode', () => {
-  const at = (mode, pace) => KT.withStrategy(mode, { pace: 'normal', allIn: 'normal', comp: 'normal', owned: 'normal', pace }).levelGoals.map(([from]) => from);
-  assert.deepEqual(at(T, 'early'), [5, 9, 15, 23, 34, 49]);
+  const at = (mode, pace) => strategy({ pace }, mode).levelGoals.map(([from]) => from);
+  // Niveau 10 : pas avant l'étage 60, où le jeu l'autorise.
+  assert.deepEqual(at(T, 'early'), [5, 9, 15, 23, 34, 60]);
   assert.deepEqual(at(T, 'late'), [8, 15, 25, 38, 56, 81]);
   // Un nouveau choix remplace le précédent au lieu de s'y ajouter.
-  assert.deepEqual(at(strategy({ pace: 'late' }), 'early'), [5, 9, 15, 23, 34, 49]);
+  assert.deepEqual(at(strategy({ pace: 'late' }), 'early'), [5, 9, 15, 23, 34, 60]);
   const camp = KT.modeContext(KT.CAMPAIGN, {}, 'kanto');
   assert.deepEqual(at(camp, 'early'), [3, 6, 9, 12, 18, 23]);
   assert.deepEqual(at(camp, 'late'), [5, 10, 15, 20, 30, 38]);
@@ -187,6 +188,9 @@ test('stratégie : niveaux visés plus tôt ou plus tard, repartis des règles d
   const xp = pace => why(advise({ ...S57, round: 1039, level: 7, xp: 0, gold: 60 }, { mode: strategy({ pace }) }).xp);
   assert.match(xp('normal'), /niveau 8 visé à cet étage/);
   assert.match(xp('early'), /niveau 9 visé à cet étage/);
+  // Étage 50 au niveau 9 (maximal avant l'étage 60) : l'actualisation reste conseillée plus tôt comme en normal.
+  const reroll = pace => brief(advise({ ...S57, round: 1049, level: 9, xp: 0, gold: 60 }, { mode: strategy({ pace }) }).reroll);
+  assert.deepEqual([reroll('normal'), reroll('early')], ['do Actualise', 'do Actualise']);
 });
 
 test('stratégie : tout jouer prudent ou audacieux', () => {
@@ -200,7 +204,7 @@ test('stratégie : tout jouer prudent ou audacieux', () => {
   assert.ok(KT.goldRules(strategy({ allIn: 'careful' })).includes('Tout jouer sur un combat sous 50 % de victoires, sous 50 PV, ou sur un étage rejoué à partir de l’étage 50.'));
   const head = headHtml({ advice: advise({ ...S57, hp: 45 }, { mode: strategy({ allIn: 'careful' }) }), stats: { torre }, mode: strategy({ allIn: 'careful' }), floor: 57 });
   assert.match(head, /Tout jouer : PV sous 50./);
-  const camp = KT.withStrategy(KT.modeContext(KT.CAMPAIGN, { league: 3 }, 'kanto'), { pace: 'normal', allIn: 'normal', comp: 'normal', owned: 'normal', allIn: 'bold' });
+  const camp = strategy({ allIn: 'bold' }, KT.modeContext(KT.CAMPAIGN, { league: 3 }, 'kanto'));
   assert.equal(KT.leagueNote(camp), 'Kanto · Légende · tout jouer sous 60 %');
 });
 
