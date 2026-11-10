@@ -2407,6 +2407,34 @@ async function loadSources(state) {
   state.stale = stale.length ? Math.min(...stale) : null;
 }
 
+// Gabarit du panneau et calque des pastilles. Au montage, les parties sont vides et render les remplit ; les pages d'aperçu le
+// remplissent elles-mêmes et le rendent sans script. look : attributs data-* lus par les jetons CSS (applyLook) ; opts : HTML
+// du menu ouvert, null s'il est fermé ; floor : étage ou combat affiché, null sans partie.
+function shellHtml({ look = {}, label = 'Étage', floor = null, src = '', sum = '', alert = '', opts = null, body = '', status = '', foot = '', collapsed = false } = {}) {
+  const data = Object.entries(look).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('');
+  const panel = ['kt', collapsed && 'is-collapsed', opts !== null && 'is-menu'].filter(Boolean).join(' ');
+  return `<style>${CSS}</style>
+<div class="kt-root"${data}>
+<div class="${panel}" role="complementary" aria-label="Aide Kanto Tactics">
+  <div class="kt-bar">
+    <span class="kt-lbl">${esc(label)}</span>
+    <span class="kt-stepper"><button data-act="dec" aria-label="${esc(label)} précédent">−</button><input class="kt-floor${floor ? '' : ' is-empty'}" inputmode="numeric" aria-label="${esc(label)} courant" placeholder="?"${floor ? ` value="${floor}"` : ''}><button data-act="inc" aria-label="${esc(label)} suivant">+</button></span>
+    <span class="kt-src">${esc(src)}</span>
+    <span class="kt-sum">${sum}</span>
+    <span class="kt-sp"></span>
+    <button class="kt-ibtn" data-act="menu" aria-label="Options" aria-expanded="${opts !== null}" aria-controls="kt-opts">${ICON.gear}</button>
+    <button class="kt-ibtn" data-act="toggle" data-collapsed="${collapsed}" aria-label="${collapsed ? 'Déplier le panneau' : 'Replier le panneau'}" aria-expanded="${!collapsed}">${collapsed ? ICON.down : ICON.up}</button>
+  </div>
+  <div class="kt-alert" role="alert">${alert}</div>
+  <form class="kt-opts" id="kt-opts" aria-label="Options"${opts === null ? ' hidden' : ''}>${opts ?? ''}</form>
+  <div class="kt-body">${body}</div>
+  <p class="kt-status" role="status">${status}</p>
+  <div class="kt-foot"${foot ? '' : ' hidden'}>${foot}</div>
+</div>
+<div class="kp-layer"></div>
+</div>`;
+}
+
 function mount() {
   const ui = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
   KT.checkUi(ui);
@@ -2414,26 +2442,7 @@ function mount() {
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
-  root.innerHTML = `<style>${CSS}</style>
-<div class="kt-root">
-<div class="kt" role="complementary" aria-label="Aide Kanto Tactics">
-  <div class="kt-bar">
-    <span class="kt-lbl">Étage</span>
-    <span class="kt-stepper"><button data-act="dec" aria-label="Étage précédent">−</button><input class="kt-floor" inputmode="numeric" aria-label="Étage courant" placeholder="?"><button data-act="inc" aria-label="Étage suivant">+</button></span>
-    <span class="kt-src"></span>
-    <span class="kt-sum"></span>
-    <span class="kt-sp"></span>
-    <button class="kt-ibtn" data-act="menu" aria-label="Options" aria-expanded="false" aria-controls="kt-opts">${ICON.gear}</button>
-    <button class="kt-ibtn" data-act="toggle"></button>
-  </div>
-  <div class="kt-alert" role="alert"></div>
-  <form class="kt-opts" id="kt-opts" aria-label="Options" hidden></form>
-  <div class="kt-body"></div>
-  <p class="kt-status" role="status"></p>
-  <div class="kt-foot"></div>
-</div>
-<div class="kp-layer"></div>
-</div>`;
+  root.innerHTML = shellHtml();
   document.body.append(host);
   const look = root.querySelector('.kt-root');
   const panel = root.querySelector('.kt');
@@ -2751,10 +2760,10 @@ function mount() {
   });
 }
 
-// Les tests reçoivent aussi le pilote du Planificateur, joué sur un faux DOM.
+// Les tests et l'aperçu reçoivent aussi le pilote du Planificateur (joué sur un faux DOM), le rendu et les événements du panneau.
 if (typeof module !== 'undefined') {
   module.exports = {
-    ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, optionsHtml, PlannerError,
-    tabForKey, keptByPanel, foldKey, setOption,
+    ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, optionsHtml, summaryHtml, footHtml, shellHtml,
+    PlannerError, tabForKey, keptByPanel, foldKey, setOption,
   };
 } else mount();
