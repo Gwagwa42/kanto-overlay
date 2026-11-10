@@ -23,7 +23,8 @@ test('résultat d’un combat : lu sur la série, nul sans combat fini ou sur un
   assert.equal(KT.fightWon({ ...S10, streak: -2 }, after({ round: 1010, streak: 1 }), null, T), true);
   assert.equal(KT.fightWon({ ...S10, streak: -2 }, after({ attempts: 2, streak: -3 }), null, T), false);
   // Défaite permise en campagne : la partie avance quand même.
-  assert.equal(KT.fightWon(S10, after({ round: 1010, attempts: 0, streak: -1 }), null, T), false);
+  const camp = KT.modeContext(KT.CAMPAIGN, kanto, 'kanto');
+  assert.equal(KT.fightWon(kanto, JSON.stringify({ ...kanto, round: kanto.round + 1, streak: -1 }), null, camp), false);
   // Sauvegarde restaurée aux bords de la série (1 → −1 → 1, −1 → 1 → −1) : ni manche ni essai de plus, pas un combat.
   assert.equal(KT.fightWon({ ...S10, round: 1009, attempts: 1, streak: -1 }, after({ round: 1009, attempts: 0, streak: 1 }), null, T), null);
   assert.equal(KT.fightWon({ ...S10, round: 1010, attempts: 0, streak: 1 }, after({ round: 1009, attempts: 0, streak: -1 }), null, T), null);
@@ -74,8 +75,11 @@ test('journal : 300 combats au plus par mode et difficulté, sans évincer les a
   const entry = { r: 7, k: 'tower', f: 10, p: 50, w: 1 };
   assert.deepEqual(KT.addFight([], entry), [entry]);
   const camp = fights(5, 5, { k: 'kanto:3' });
-  const full = KT.addFight([...camp, ...fights(300, 0)], entry);
-  assert.deepEqual([full.length, full.filter(f => f.k === 'kanto:3').length, full.filter(f => f.k === 'tower').length, full.at(-1)], [305, 5, 300, entry]);
+  // 302 combats de Tour numérotés par leur étage (journal d'une autre version) : les 3 plus anciens sortent.
+  const old = fights(302, 0).map((f, i) => ({ ...f, f: i }));
+  const full = KT.addFight([...camp, ...old], entry);
+  const towers = full.filter(f => f.k === 'tower');
+  assert.deepEqual([full.length, full.filter(f => f.k === 'kanto:3').length, towers.length, towers[0].f, full.at(-1)], [305, 5, 300, 3, entry]);
 });
 
 test('journal relu : illisible ou d’un autre format, repris à vide ou sans la ligne', t => {

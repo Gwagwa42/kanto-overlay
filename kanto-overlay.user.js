@@ -645,16 +645,16 @@ const KT = (() => {
     return { gold: game.gold, floor, spend: allIn ? game.gold : Math.max(0, game.gold - floor), allIn, lowHp, retry, nextWall };
   }
 
-  // Journal des combats joués avec le panneau ouvert : { r: partie (runSeed), k: mode et difficulté (cellOf), f: étage ou
+  // Journal des combats joués avec le panneau ouvert : { r: partie (runSeed), k: la Tour, ou l'aventure et sa difficulté (cellOf), f: étage ou
   // combat, p: taux attendu en % (taux public moins la pénalité de difficulté), w: 1 gagné, c: 1 si le trio de la compo
-  // cible était posé à la dernière lecture avant le combat (2 s au plus), absent sans trio }. Par mode et difficulté, les
+  // cible était posé à la dernière lecture avant le combat (2 s au plus), absent sans trio }. Par clé k, les
   // plus anciens sortent au-delà de JOURNAL_MAX : l'écart suit le niveau du joueur et les rééquilibrages du jeu.
   const JOURNAL_KEY = 'kt-overlay:journal';
   const JOURNAL_MAX = 300;
   // Parties de Tour finies, écrites par le jeu à la défaite finale (towerRuns-*.js) : seed et étage atteint.
   const TOWER_RUNS_KEY = 'kanto-tactics:tower-runs';
-  // Combats fictifs sans écart ajoutés à ceux du joueur : un combat de plus déplace l'écart de 2 points au plus, et 400
-  // combats joués exactement aux taux publics laissent un écart de 2 points en écart type.
+  // Combats fictifs sans écart ajoutés à ceux du joueur : un combat de plus déplace l'écart de 2 points au plus, et 300
+  // combats joués exactement aux taux publics laissent un écart de 2,5 points en écart type.
   const OWN_PRIOR = 50;
   // Écart compté au plus, en points : le journal ne note pas tous les combats (dernier combat d'une campagne), et un seuil de
   // « tout jouer » proche de 100 % ferait tout jouer en permanence.
@@ -720,15 +720,14 @@ const KT = (() => {
     return won === null ? null : fightEntry(advice, stats, won);
   }
 
-  // Journal avec cette ligne, sans le plus ancien combat de son mode et de sa difficulté au-delà de JOURNAL_MAX : les combats
-  // d'un mode n'évincent pas ceux d'un autre.
+  // Journal avec cette ligne, sans les plus anciens combats de la même clé (cellOf) au-delà de JOURNAL_MAX : les combats de
+  // la Tour n'évincent pas ceux d'une aventure.
   function addFight(fights, entry) {
-    const same = fights.filter(f => f.k === entry.k);
-    const kept = same.length < JOURNAL_MAX ? fights : fights.filter(f => f !== same[0]);
-    return [...kept, entry];
+    const old = new Set(fights.filter(f => f.k === entry.k).slice(0, 1 - JOURNAL_MAX));
+    return [...fights.filter(f => !old.has(f)), entry];
   }
 
-  // Bilan des combats du mode et de la difficulté : victoires, victoires attendues (somme des taux), écart type de cette
+  // Bilan des combats de la Tour, ou de l'aventure et de sa difficulté : victoires, victoires attendues (somme des taux), écart type de cette
   // somme, et shift, l'écart moyen en points (résultat moins taux attendu), rétréci par OWN_PRIOR combats sans écart et borné
   // à OWN_MAX. Sans seuil : un écart compté à partir d'un seuil sauterait de 0 à 10 points sur un seul combat. followed,
   // other : avec ou sans le trio posé.
@@ -750,7 +749,7 @@ const KT = (() => {
   // publics, pour le seuil de « tout jouer », la couleur des taux et le poids des combats dans la compo cible.
   function withResults(mode, fights) {
     const { shift } = ownResults(fights, mode);
-    // 0 - shift : un écart nul donne 0 et non −0, que les comparaisons strictes distinguent.
+    // 0 - shift : un écart nul donne 0 et non −0, que Object.is et deepStrictEqual distinguent.
     return { ...mode, ownPenalty: 0 - shift, penalty: mode.leaguePenalty - shift };
   }
 
@@ -2856,7 +2855,7 @@ function mount() {
       try {
         localStorage.setItem(KT.JOURNAL_KEY, JSON.stringify(state.fights));
       } catch (e) {
-        // Stockage plein ou refusé : le combat compte pour cette session, la lecture de la sauvegarde continue.
+        // Stockage plein ou refusé : le combat compte jusqu'au suivant, qui relit le journal ; la lecture de la sauvegarde continue.
         if (!(e instanceof DOMException)) throw e;
         console.warn('kanto-overlay : journal des combats non écrit', e.name);
       }
