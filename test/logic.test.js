@@ -363,6 +363,12 @@ test('boutique : ★ 3ᵉ copie, cœur et place libre, ◆ si l’or, ✕ hors c
   assert.equal(shiny.shop[2].title, 'Achète Magmar shiny');
 });
 
+test('boutique : en tout jouer, un ◆ de la compo cible dit l’or qui suffit, pas le palier', () => {
+  const a = advise({ ...S57, hp: 30, gold: 60 });
+  assert.equal(a.eco.allIn, true);
+  assert.equal(a.shop[3].title, 'Rattata si l’or suffit');
+});
+
 test('boutique : ★ seulement si l’or suffit, de gauche à droite ; le reste ne compte pas dans l’or engagé', () => {
   const a = advise({ ...S57, gold: 5 });
   assert.deepEqual(a.shop.slice(0, 2).map(brief), ['do Achète', 'opt Si l’or']);

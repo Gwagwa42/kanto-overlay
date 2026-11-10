@@ -791,76 +791,85 @@ const KT = (() => {
 
   const proofText = (p, names) => (p ? `${p.c.core.map(names.line).join(' · ')} : ${pct(p.c.win)} contre ${bossName(p.st.boss)} ${p.st.floor} (${p.c.n} combats, au moins ${pct(p.c.lo)})` : '');
 
-  // Marques de la boutique et or restant. Priorités : ★ du trio, des 3ᵉ copies et des shinies (de gauche à droite), puis ★ des
-  // places libres, puis l'or réservé par reserve(or restant) (l'XP conseillée), puis les ◆ de la compo cible, puis
-  // l'actualisation si rolls(or restant) la conseille, puis les ◆ de la compo suivante (hors tout jouer). Les ★ ne s'arrêtent
-  // pas au palier. short : un ★ a été rétrogradé faute d'or (déclenche « Vends »).
-  function shopMarks(game, target, next, data, eco, names, reserve, rolls) {
-    const core = target ? target.core.map(baseLine) : [];
+  // Cartes de la boutique (null pour une case vide) et ce que la compo en attend.
+  function shopCards(game, target, next, data, names) {
     const wanted = targetBases(target);
+    const core = target ? target.core.map(baseLine) : [];
     const later = nextBases(next);
-    const proof = proofText(target?.proof, names);
-    let left = game.gold;
-    let short = false;
     const upgrades = target?.upgrades ?? [];
-    const stronger = target ? `plus fort que ${target.replaced.map(names.line).join(', ')}` : '';
-    const buy = (cost, name, why, detail = '') => {
-      // Coût inconnu (données de jeu indisponibles) : le conseil ne peut pas vérifier l'or.
-      if (cost !== undefined && cost > left) {
-        short = true;
-        return mark('opt', 'Si l’or', `Achète ${name} dès que possible`, `${why} ; il manque de l’or`, detail);
-      }
-      left -= cost ?? 0;
-      return mark('do', 'Achète', `Achète ${name}`, why, detail);
-    };
-    const cards = game.shop.map((base, i) => base && {
+    return game.shop.map((base, i) => base && {
       base, name: names.line(base), cost: lineInfo(data, base)?.c, triple: ones(game, base) === 2,
       inTarget: wanted.includes(base) || upgrades.includes(base), inCore: core.includes(base), inNext: later.includes(base), shiny: game.shopShiny[i],
       // Lignée de la compo pas encore possédée : elle remplit une place libre du plateau.
       fills: wanted.includes(base) && bestStar(game, base) === 0, upgrade: upgrades.includes(base),
     });
-    const marks = cards.map(c => {
-      if (!c) return null;
+  }
+
+  // ★ du trio, des 3ᵉ copies et des shinies, de gauche à droite ; ne s'arrêtent pas au palier. Un ★ que l'or ne couvre pas
+  // devient un ◆ « dès que possible » (short).
+  function starMarks(cards, marks, left, game, target, names) {
+    const proof = proofText(target?.proof, names);
+    let short = false;
+    cards.forEach((c, i) => {
+      if (!c) return;
+      let buy = null;
       if (c.triple && (c.inTarget || !target)) {
-        return buy(c.cost, c.name, c.inCore ? '3ᵉ copie, passe ★★ ; cœur de la compo cible' : '3ᵉ copie, passe ★★', c.inCore ? proof : '');
-      }
-      if (c.inCore) return buy(c.cost, c.name, 'cœur de la compo cible', proof);
+        buy = [c.name, c.inCore ? '3ᵉ copie, passe ★★ ; cœur de la compo cible' : '3ᵉ copie, passe ★★', c.inCore ? proof : ''];
+      } else if (c.inCore) buy = [c.name, 'cœur de la compo cible', proof];
       // +10 % tout de suite seulement si la carte devient la meilleure copie de sa lignée.
-      if (c.shiny && c.inTarget && bestStar(game, c.base) <= 1 && !shinyLine(game, c.base)) return buy(c.cost, `${c.name} shiny`, '+10 % PV, défenses et dégâts');
-      return undefined;
-    });
-    // Places libres, après les ★ ci-dessus et seulement si l'or leur a suffi : une copie par lignée.
-    const filled = new Set();
-    cards.forEach((c, i) => {
-      if (!c || marks[i] !== undefined || short || !c.fills || filled.has(c.base) || c.cost > left) return;
-      filled.add(c.base);
-      marks[i] = buy(c.cost, c.name, 'place libre sur le plateau');
-    });
-    const reserved = reserve(left);
-    left -= reserved;
-    // Motif d'un ✕ faute d'or : l'XP réservée quand la carte tenait sans elle, sinon le palier (aucun en tout jouer).
-    const hold = cost => {
-      if (eco.allIn) return 'il manque de l’or';
-      const beforeXp = cost !== undefined && left + reserved - cost >= eco.floor && left - cost < eco.floor;
-      return beforeXp ? 'l’or va d’abord à l’XP' : `garde ${eco.floor} pièces pour les intérêts`;
-    };
-    cards.forEach((c, i) => {
-      if (!c || marks[i] !== undefined) return;
-      if (!target) {
-        marks[i] = null;
+      else if (c.shiny && c.inTarget && bestStar(game, c.base) <= 1 && !shinyLine(game, c.base)) buy = [`${c.name} shiny`, '+10 % PV, défenses et dégâts'];
+      if (!buy) return;
+      const [name, why, detail = ''] = buy;
+      // Coût inconnu (données de jeu indisponibles) : le conseil ne peut pas vérifier l'or.
+      if (c.cost !== undefined && c.cost > left) {
+        short = true;
+        marks[i] = mark('opt', 'Si l’or', `Achète ${name} dès que possible`, `${why} ; il manque de l’or`, detail);
         return;
       }
-      const fits = c.cost !== undefined && (eco.allIn ? c.cost <= left : left - c.cost >= eco.floor);
-      if ((c.inTarget || (c.triple && !c.inNext)) && fits) {
-        left -= c.cost;
-        let why = 'renforce le plateau de la compo';
-        if (c.triple) why = '3ᵉ copie hors compo';
-        else if (c.upgrade) why = stronger;
-        marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, why);
-      }
+      left -= c.cost ?? 0;
+      marks[i] = mark('do', 'Achète', `Achète ${name}`, why, detail);
     });
-    // L'actualisation conseillée passe avant la compo suivante.
-    const reroll = rolls(left) ? REROLL_COST : 0;
+    return { left, short };
+  }
+
+  // ★ des places libres, après les ★ ci-dessus et seulement si l'or leur a suffi : une copie par lignée.
+  function freeSlotMarks(cards, marks, left) {
+    const filled = new Set();
+    cards.forEach((c, i) => {
+      if (!c || marks[i] !== undefined || !c.fills || filled.has(c.base) || c.cost > left) return;
+      filled.add(c.base);
+      left -= c.cost ?? 0;
+      marks[i] = mark('do', 'Achète', `Achète ${c.name}`, 'place libre sur le plateau');
+    });
+    return left;
+  }
+
+  // ◆ de la compo cible (compléments, cartes plus fortes, 3ᵉ copies hors compo) qui gardent le palier ; en tout jouer, qui
+  // tiennent dans l'or restant.
+  function targetOptMarks(cards, marks, left, eco, target, names) {
+    const stronger = `plus fort que ${target.replaced.map(names.line).join(', ')}`;
+    cards.forEach((c, i) => {
+      if (!c || marks[i] !== undefined) return;
+      const fits = c.cost !== undefined && (eco.allIn ? c.cost <= left : left - c.cost >= eco.floor);
+      if (!(c.inTarget || (c.triple && !c.inNext)) || !fits) return;
+      left -= c.cost;
+      let why = 'renforce le plateau de la compo';
+      if (c.triple) why = '3ᵉ copie hors compo';
+      else if (c.upgrade) why = stronger;
+      marks[i] = mark('opt', 'Si l’or', eco.allIn ? `${c.name} si l’or suffit` : `${c.name} si l’or reste ≥ ${eco.floor}`, why);
+    });
+    return left;
+  }
+
+  // ◆ de la compo suivante (hors tout jouer, après l'actualisation conseillée, qui coûte reroll), puis ✕ pour le reste, avec
+  // le motif de l'or : l'XP réservée (xpCost) quand la carte tenait sans elle, sinon le palier.
+  function restMarks(cards, marks, left, game, eco, target, next, names, xpCost, reroll) {
+    const stronger = `plus fort que ${target.replaced.map(names.line).join(', ')}`;
+    const hold = cost => {
+      if (eco.allIn) return 'il manque de l’or';
+      const beforeXp = cost !== undefined && left + xpCost - cost >= eco.floor && left - cost < eco.floor;
+      return beforeXp ? 'l’or va d’abord à l’XP' : `garde ${eco.floor} pièces pour les intérêts`;
+    };
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
       if (c.inNext && !c.inTarget) {
@@ -879,7 +888,30 @@ const KT = (() => {
       }
       marks[i] = mark('no', 'Ignore', `Ignore ${c.name}`, c.inTarget ? `${c.upgrade ? stronger : 'complément de la compo'} ; ${hold(c.cost)}` : 'hors compo cible');
     });
-    return { marks, left, short };
+    return left;
+  }
+
+  // Dépenses du tour, dans l'ordre où l'or leur va : ★ de la boutique, ★ des places libres, XP réservée (xpMark), ◆ de la
+  // compo cible, actualisation (rerollMark), ◆ de la compo suivante. L'or que ni un achat ni une actualisation n'engage va au
+  // niveau suivant. Sans compo cible, seules les 3ᵉ copies sont marquées. short : un ★ a été rétrogradé faute d'or (déclenche
+  // « Vends »).
+  function spend(game, target, next, data, eco, names) {
+    const cards = shopCards(game, target, next, data, names);
+    const marks = cards.map(() => undefined);
+    const stars = starMarks(cards, marks, game.gold, game, target, names);
+    let left = stars.short ? stars.left : freeSlotMarks(cards, marks, stars.left);
+    const xp = xpMark(game, eco, left, false);
+    left -= xp.cost;
+    let reroll = null;
+    if (target) {
+      left = targetOptMarks(cards, marks, left, eco, target, names);
+      reroll = rerollMark(game, target, data, eco, names, left);
+      left = restMarks(cards, marks, left, game, eco, target, next, names, xp.cost, reroll?.level === 'do' ? REROLL_COST : 0);
+    }
+    const spare = xp.mark?.level !== 'do' && reroll?.level !== 'do';
+    return {
+      shop: marks.map(m => m ?? null), xp: spare ? xpMark(game, eco, left, true).mark : xp.mark, reroll, short: stars.short,
+    };
   }
 
   // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal, sauf ★★★ nettement moins
@@ -1566,15 +1598,7 @@ const KT = (() => {
     const same = previous?.run === run ? previous : null;
     const target = stats && data ? targetComp(stats, data, game, same?.key ?? null) : null;
     const next = target ? nextComp(stats, data, game, target, same?.next ?? null) : null;
-    const rerollWith = left => rerollMark(game, target, data, eco, names, left);
-    let xp;
-    const shop = shopMarks(game, target, next, data, eco, names, left => {
-      xp = xpMark(game, eco, left, false);
-      return xp.cost;
-    }, left => rerollWith(left)?.level === 'do');
-    const reroll = rerollWith(shop.left);
-    // L'or que ni un achat ni une actualisation n'engage va au niveau suivant.
-    if (xp.mark?.level !== 'do' && reroll?.level !== 'do') xp = xpMark(game, eco, shop.left, true);
+    const spent = spend(game, target, next, data, eco, names);
     const choice = offerChoiceMarks(data, game, eco, names);
     const profiles = target ? lineProfiles(stats, data) : null;
     const holders = target ? holdersOf(stats, data, game, target, profiles) : [];
@@ -1584,10 +1608,10 @@ const KT = (() => {
     const units = target ? formation(target, game, data, holders, side) : [];
     return {
       game, eco, target, next, names, run,
-      shop: shop.marks,
-      reroll,
-      xp: xp.mark,
-      bench: sellMarks(game, target, next, names, shop.short),
+      shop: spent.shop,
+      reroll: spent.reroll,
+      xp: spent.xp,
+      bench: sellMarks(game, target, next, names, spent.short),
       bag: items.marks,
       reward: offerMarks(book, game, items.holders, future, names),
       aims: target ? aimsOf(data, game, items, book) : [],
