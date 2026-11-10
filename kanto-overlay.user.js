@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.2.0
+// @version      2.3.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -78,6 +78,13 @@ const KT = (() => {
   const COST_POWER = 0.35;
   const STAR_POWER = [1, 1.9, 3.6];
   const TRAIT_WEIGHT = 0.25;
+  // Écart de victoire d'une forme (lines.d : taux de victoire moins taux attendu sur les ne combats qui en ont un ; corrigé de
+  // la difficulté des combats, pas du niveau des joueurs), rétréci par LINE_PRIOR combats fictifs, le seuil minFlag de l'API.
+  // À partir de SHIFT_GAP points, la forme gagne ou perd un coût, un seul : SHIFT_GAP vaut environ le quart de l'étendue de d
+  // entre les lignées d'un même coût (−5,3 à +5,1, novembre 2026). Au-delà d'un cran, un biais de sélection (qui joue la
+  // lignée) pèserait autant que le coût.
+  const LINE_PRIOR = 400;
+  const SHIFT_GAP = 2.5;
   const MAX_ITEMS = 3;
   // Composants défensifs ; Protéine (Attaque), Calcium (Atq. Spé.) et Carbone (vitesse d'attaque) sont offensifs.
   const DEFENSE = ['hp-up', 'iron', 'zinc'];
@@ -235,7 +242,8 @@ const KT = (() => {
       && t.stops.every(s => typeof s?.stop === 'string' && /^\d+:\w+$/.test(s.stop) && [s.win, s.first, s.tries].every(Number.isFinite))
       && t.stops.some(s => !s.stop.endsWith(':elite'))
       && t.cores.every(c => typeof c?.stop === 'string' && Array.isArray(c.core) && [c.n, c.win, c.lo].every(Number.isFinite))
-      && t.lines.every(l => typeof l?.line === 'string' && Number.isFinite(l.lo))
+      && t.lines.every(l => typeof l?.line === 'string' && [l.lo, l.ne, l.d].every(Number.isFinite))
+      && Array.isArray(t.stars) && t.stars.every(s => typeof s?.line === 'string' && [s.star, s.lo, s.hi, s.exp].every(Number.isFinite))
       && t.holders.every(h => typeof h?.line === 'string' && typeof h.id === 'string' && [h.n, h.lo].every(Number.isFinite));
   }
 
@@ -344,6 +352,10 @@ const KT = (() => {
   }
 
   const unitsOf = (game, base) => game.units.filter(u => baseLine(u.line) === base);
+  // Copie posée en premier d'une lignée : meilleure étoile, shiny, la plus équipée, déjà posée, puis la forme, pour un ordre
+  // qui ne dépend pas de la place des copies dans la sauvegarde.
+  const fieldOrder = (x, y) => y.star - x.star || Number(!!y.shiny) - Number(!!x.shiny) || (y.items?.length ?? 0) - (x.items?.length ?? 0)
+    || Number(y.cell !== undefined) - Number(x.cell !== undefined) || x.line.localeCompare(y.line);
   const bestStar = (game, base) => Math.max(0, ...unitsOf(game, base).map(u => u.star));
   // Lignée shiny : sa copie de meilleure étoile l'est (celle que décrivent la progression et le code KT1).
   const shinyLine = (game, base) => unitsOf(game, base).some(u => u.shiny && u.star === bestStar(game, base));
@@ -366,8 +378,34 @@ const KT = (() => {
     return { gold: game.gold, floor, spend: allIn ? game.gold : Math.max(0, game.gold - floor), allIn, lowHp, retry, nextWall };
   }
 
+  const findLine = (torre, id) => torre.lines.find(l => l.line === id);
+
   function lineLo(torre, id) {
-    return torre.lines.find(l => l.line === id)?.lo ?? torre.lines.find(l => l.line === baseLine(id))?.lo ?? 0;
+    return findLine(torre, id)?.lo ?? findLine(torre, baseLine(id))?.lo ?? 0;
+  }
+
+  // Écart de victoire rétréci d'une forme : vers 0 pour la lignée de base, vers celui de sa lignée de base pour une forme
+  // ancrée, souvent peu jouée ; 0 sans statistiques.
+  function shrunkGap(torre, id) {
+    const shrink = (s, prior) => (s.d * s.ne + prior * LINE_PRIOR) / (s.ne + LINE_PRIOR);
+    const base = findLine(torre, baseLine(id));
+    const prior = base ? shrink(base, 0) : 0;
+    const own = id === baseLine(id) ? undefined : findLine(torre, id);
+    return own ? shrink(own, prior) : prior;
+  }
+
+  // Coût gagné (+1) ou perdu (−1) par une forme selon son écart de victoire rétréci, 0 sous SHIFT_GAP points.
+  function costShift(torre, id) {
+    const gap = shrunkGap(torre, id);
+    return Math.abs(gap) >= SHIFT_GAP ? Math.sign(gap) : 0;
+  }
+
+  // ★★★ nettement moins forte que ★★ pour cette forme exacte (identifiant du trio) : intervalles à 95 % de l'API disjoints,
+  // ramenés à l'écart de victoire (taux − attendu). Sans statistiques aux deux étoiles, la ★★★ se cherche.
+  function flatThirdStar(torre, id) {
+    const at = star => torre.stars.find(s => s.line === id && s.star === star);
+    const [two, three] = [at(2), at(3)];
+    return Boolean(two && three) && three.hi - three.exp < two.lo - two.exp;
   }
 
   // Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
@@ -440,8 +478,10 @@ const KT = (() => {
 
   // Compo cible : le meilleur trio, puis fillers, le remplissage jusqu'au niveau par les lignées possédées les mieux notées ;
   // la boutique ne complète que les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une
-  // carte de boutique vaut une ★) et types apportés à la compo ; à égalité, possédée, shiny, puis la plus forte sur ces combats.
-  // upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ; replaced : ces compléments.
+  // carte de boutique vaut une ★), au coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et
+  // types apportés à la compo ; l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte
+  // sur ces combats. upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ;
+  // replaced : ces compléments ; flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★ (flatThirdStar).
   function targetComp(torre, data, game, previousKey) {
     const stops = nextStops(torre.stops, game.floor, HORIZON);
     const coresByStop = coresAt(torre, stops);
@@ -453,10 +493,13 @@ const KT = (() => {
     const cards = [...new Set(game.shop.filter(Boolean))].filter(b => known(b) && !mine.includes(b));
     const strength = lineStrength(coresByStop, stops);
     const owned = b => Number(bestStar(game, b) > 0);
+    // Forme de la copie posée (fieldOrder, comme holdersOf) : la note décrit l'unité que la formation place.
+    const form = b => unitsOf(game, b).sort(fieldOrder)[0]?.line ?? b;
+    const shift = new Map([...mine, ...cards].map(b => [b, costShift(torre, form(b))]));
     // Meilleures lignées de chaque liste, une liste après l'autre, jusqu'au niveau.
     const fill = pools => {
       const chosen = [...core];
-      const score = b => unitPower(lineInfo(data, b).c, Math.max(1, bestStar(game, b))) + TRAIT_WEIGHT * traitGain(data, chosen, b);
+      const score = b => unitPower(lineInfo(data, b).c + shift.get(b), Math.max(1, bestStar(game, b))) + TRAIT_WEIGHT * traitGain(data, chosen, b);
       for (const pool of pools) {
         while (chosen.length < game.level) {
           const next = pool
@@ -474,7 +517,8 @@ const KT = (() => {
     const upgrades = mixed.filter(b => cards.includes(b) && !fillers.includes(b));
     // Autant de compléments possédés que de cartes, les moins bien notés.
     const replaced = upgrades.length ? fillers.filter(b => owned(b) && !mixed.includes(b)).slice(-upgrades.length) : [];
-    return { ...best, fillers, upgrades: upgrades.slice(0, replaced.length), replaced };
+    const flat = best.core.filter(id => flatThirdStar(torre, id)).map(baseLine);
+    return { ...best, fillers, upgrades: upgrades.slice(0, replaced.length), replaced, flat };
   }
 
   // Trio des 9 combats suivants (10 à 18), à préparer avec le surplus ; null s'il est déjà la compo cible.
@@ -591,13 +635,14 @@ const KT = (() => {
     return { marks, left, short };
   }
 
-  // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal), et toute lignée qui a
-  // 2 copies ★ (la 3ᵉ donne la ★★) ou 2 copies ★★ (la 3ᵉ ★★ donne la ★★★).
+  // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal, sauf ★★★ nettement moins
+  // forte, target.flat), et toute lignée qui a 2 copies ★ (la 3ᵉ donne la ★★) ou 2 copies ★★ (la 3ᵉ ★★ donne la ★★★).
   function seekLines(game, target) {
     const core = target.core.map(baseLine);
-    const coreStar = game.level >= maxLevel(game.floor) ? 3 : 2;
+    const top = game.level >= maxLevel(game.floor);
+    const coreStar = base => (top && !target.flat.includes(base) ? 3 : 2);
     return targetBases(target).filter(base => bestStar(game, base) < 3
-      && ((core.includes(base) && bestStar(game, base) < coreStar) || ones(game, base) === 2 || copies(game, base, 2) === 2));
+      && ((core.includes(base) && bestStar(game, base) < coreStar(base)) || ones(game, base) === 2 || copies(game, base, 2) === 2));
   }
 
   // left : or restant après les achats conseillés. Hors tout jouer, le niveau visé passe avant l'actualisation, et seules
@@ -749,13 +794,11 @@ const KT = (() => {
   // Portée inconnue ou nulle : mêlée.
   const rangeOf = (data, base) => Math.max(1, lineInfo(data, base)?.range ?? 1);
 
-  // Porteurs : un Pokémon possédé par lignée de la compo cible (le plus étoilé, puis celui qui porte le plus d'objets, puis
-  // posé). Rôles lus sur le profil de la lignée : porteur (attaquant du cœur le mieux classé), tanks (aux PV max d'abord),
-  // puis les autres attaquants (★, puis lineLo).
+  // Porteurs : un Pokémon possédé par lignée de la compo cible (fieldOrder). Rôles lus sur le profil de la lignée : porteur
+  // (attaquant du cœur le mieux classé), tanks (aux PV max d'abord), puis les autres attaquants (★, puis lineLo).
   function holdersOf(torre, data, game, target, profiles) {
     const own = targetBases(target)
-      .map(b => unitsOf(game, b).sort((x, y) => y.star - x.star || Number(!!y.shiny) - Number(!!x.shiny) || (y.items?.length ?? 0) - (x.items?.length ?? 0)
-        || Number(y.cell !== undefined) - Number(x.cell !== undefined))[0])
+      .map(b => unitsOf(game, b).sort(fieldOrder)[0])
       .filter(Boolean);
     const profile = u => profiles.get(baseLine(u.line)) ?? null;
     const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || lineLo(torre, b.line) - lineLo(torre, a.line);
