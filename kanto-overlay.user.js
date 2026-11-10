@@ -1525,13 +1525,14 @@ const KT = (() => {
   // ne quittent leur case. Ramoloss (Mur Lumière) protège aussi chaque allié collé : le centre de l'avant lui revient. Le Séisme
   // de Grolem (Racaillou ★★★ ; Éboulement, à ★★, ne touche pas les alliés) inflige 25 % de ses dégâts aux alliés collés, et les
   // assassins quittent leur case dès le début du combat (bond, tunnel, vol, ruée) : ils partent des bords du plateau, colonnes
-  // 1, 2, 6 et 7.
+  // 0, 1, 5 et 6 (1, 2, 6 et 7 dans le panneau). La colonne 0 d'abord : à l'avant, elle touche deux cases alliées, la colonne 6
+  // trois (rangées impaires décalées vers la droite).
   const UNCOPIED = new Set(['metronome', 'transform', 'splash', 'teleport']);
   const ALLY_SHIELD = new Set(['slowpoke']);
   const ALLY_QUAKE = { geodude: 3 };
   const OPENERS = new Set(['aerodactyl', 'diglett', 'doduo', 'ekans', 'pidgey', 'scyther', 'zubat']);
   const moveKind = (data, base, star) => lineInfo(data, base)?.stars?.[star - 1]?.move?.kind;
-  const EDGE_OUT = [...CENTER_OUT].reverse();
+  const EDGE_OUT = [0, 6, 1, 5, 2, 4, 3];
   const EDGE_COLS = [0, 1, 5, 6];
 
   // Zones du porteur à distance : ses colonnes préférées sur sa rangée, et ordre de remplissage des rangées derrière l'avant (une
@@ -1573,8 +1574,8 @@ const KT = (() => {
   // derrière, dans l'ordre de la zone choisie (coin gauche, centre ou coin droit), le porteur d'abord dans les colonnes de cette
   // zone, en évitant la colonne d'une autre unité à distance, quelle que soit sa rangée (sur deux rangées voisines, deux cases de
   // la même colonne se touchent). Déjà sur une case de sa première liste, un Pokémon la garde ; rangée pleine, il passe
-  // derrière, puis devant. Mew prend une case collée à l'allié qu'il copiera (copies : sa lignée), sur la rangée la plus proche
-  // de la sienne qui en a une libre ; sans allié connu des données ni case libre collée, il se place comme les autres. unit :
+  // derrière, puis devant. Mew prend une case collée à l'allié qu'il copiera (copies : sa lignée), sur sa rangée, sinon derrière,
+  // sinon devant ; sans allié à copier ni case libre collée, il se place comme les autres. unit :
   // l'unité possédée (porteur de holdersOf), from : sa cellule, 'bench', ou null s'il n'est pas possédé.
   function formation(target, game, data, holders, side) {
     const stars = id => bestStar(game, baseLine(id));
@@ -1592,28 +1593,30 @@ const KT = (() => {
     const zone = CARRY_ZONES[side];
     const rows = [0, 1, 2, 3];
     const center = cellAt(0, 3);
-    const shield = units.some(u => u.row === 0 && ALLY_SHIELD.has(u.base));
+    // Le centre n'est réservé qu'à un Ramoloss possédé : un Pokémon posé ne bouge pas pour un Ramoloss encore à acheter.
+    const shield = units.some(u => u.row === 0 && ALLY_SHIELD.has(u.base) && u.from !== null);
     const edge = u => u.row === 0 && (OPENERS.has(u.base) || u.star >= ALLY_QUAKE[u.base]);
     // Première liste (case gardée) : à l'avant, le centre seul pour Ramoloss, et le reste de la rangée pour les autres quand il
     // est là ; les colonnes du bord pour les assassins et Grolem ★★★.
     const zones = u => {
-      const cols = u.row > 0 ? zone.order : edge(u) ? EDGE_OUT : CENTER_OUT;
+      const onEdge = edge(u);
+      const cols = u.row > 0 ? zone.order : onEdge ? EDGE_OUT : CENTER_OUT;
       const cells = [...rows.slice(u.row), ...rows.slice(0, u.row).reverse()].map(r => cols.map(c => cellAt(r, c)));
       if (u.row > 0) return u.role === 'carry' ? [cells[0].filter(c => zone.cols.includes(colOf(c))), ...cells] : cells;
       if (ALLY_SHIELD.has(u.base)) return [[center], ...cells];
-      if (edge(u)) return [cells[0].filter(c => EDGE_COLS.includes(colOf(c))), ...cells];
+      if (onEdge) return [cells[0].filter(c => EDGE_COLS.includes(colOf(c))), ...cells];
       return shield ? [cells[0].filter(c => c !== center), ...cells] : cells;
     };
-    // Mew se place en dernier, collé à l'allié qu'il copiera : sa case dépend de celle de cet allié. Sa case actuelle lui reste
-    // réservée jusque-là.
+    // Mew se place en dernier, collé à l'allié qu'il copiera : sa case dépend de celle de cet allié.
     const mimic = units.find(u => moveKind(data, u.base, u.star) === 'metronome');
-    const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
+    const stay = new Set(units.filter(u => u !== mimic && zones(u)[0].includes(u.from)));
     const taken = new Set([...stay].map(u => u.from));
-    const rangedCols = new Set([...stay].filter(u => u !== mimic && u.row > 0).map(u => colOf(u.from)));
+    const rangedCols = new Set([...stay].filter(u => u.row > 0).map(u => colOf(u.from)));
+    // Grolem avant les assassins : ceux-ci quittent leur case, le bord compte moins pour eux.
     const frontRank = u => {
       if (ALLY_SHIELD.has(u.base)) return 0;
-      if (u.star >= ALLY_QUAKE[u.base]) return 4;
-      if (OPENERS.has(u.base)) return 3;
+      if (OPENERS.has(u.base)) return 4;
+      if (u.star >= ALLY_QUAKE[u.base]) return 3;
       return u.role === 'tank' ? 1 : 2;
     };
     const first = role => (a, b) => Number(b.role === role) - Number(a.role === role);
@@ -1624,25 +1627,30 @@ const KT = (() => {
       taken.add(cell);
       if (u.row > 0) rangedCols.add(colOf(cell));
     };
+    // Derrière l'avant, une unité à distance évite la colonne d'une autre.
+    const spaced = c => rowOf(c) === 0 || !rangedCols.has(colOf(c));
     const place = u => {
       const free = zones(u).map(cells => cells.filter(c => !taken.has(c))).find(cells => cells.length);
-      put(u, (u.row > 0 ? free.find(c => !rangedCols.has(colOf(c))) : undefined) ?? free[0]);
+      put(u, (u.row > 0 ? free.find(spaced) : undefined) ?? free[0]);
     };
     for (const u of order) {
       if (stay.has(u)) put(u, u.from);
       else place(u);
     }
     if (mimic) {
-      if (stay.has(mimic)) taken.delete(mimic.from);
+      // Modèles par valeur décroissante, capacité connue (les lignées v41 hors de data.json n'en ont pas) et copiable : le
+      // premier qui a une case libre collée. Les modèles mieux classés n'en ont aucune : Mew ne les touchera pas.
+      const kind = u => moveKind(data, u.base, mimic.star);
       const value = u => lineInfo(data, u.base).c * 3 ** (u.star - 1);
-      const model = others.filter(u => lineInfo(data, u.base) && !UNCOPIED.has(moveKind(data, u.base, mimic.star)))
-        .sort((a, b) => value(b) - value(a) || a.cell - b.cell)[0];
-      // Cases collées libres de la première rangée qui en a, dans l'ordre des rangées de Mew.
-      const near = model && zones(mimic).map(cells => cells.filter(c => !taken.has(c) && touching(c, model.cell))).find(cells => cells.length);
-      if (near) {
-        put(mimic, near.includes(mimic.from) ? mimic.from : near.find(c => !rangedCols.has(colOf(c))) ?? near[0]);
+      const near = model => zones(mimic).map(cells => cells.filter(c => !taken.has(c) && touching(c, model.cell))).find(cells => cells.length);
+      const model = others.filter(u => kind(u) && !UNCOPIED.has(kind(u)))
+        .sort((a, b) => value(b) - value(a) || a.cell - b.cell).find(near);
+      const keep = cells => cells.includes(mimic.from) && !taken.has(mimic.from) && spaced(mimic.from);
+      if (model) {
+        const cells = near(model);
+        put(mimic, keep(cells) ? mimic.from : cells.find(spaced) ?? cells[0]);
         mimic.copies = model.base;
-      } else if (stay.has(mimic)) put(mimic, mimic.from);
+      } else if (keep(zones(mimic)[0])) put(mimic, mimic.from);
       else place(mimic);
     }
     // Doc de l'API : unités triées par cellule.

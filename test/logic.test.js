@@ -1063,8 +1063,8 @@ test('formation : code KT1 trié par cellule, Pokémon bien placé gardé, porte
   // en 3ᵉ rangée, Magmar (portée 3) deux colonnes plus loin ; Rattata (tank, au banc) prend le centre de l'avant, puis Caninos
   // la case libre suivante ; les assassins Ptéra et Abo partent des bords.
   assert.equal(advise(S57).code,
-    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;ekans:1:0;dratini:2:1:choice-band.focus-sash.scope-lens;growlithe:1:2:scope-lens.choice-band.focus-sash;'
-    + 'rattata:1:3:eviolite.rocky-helmet.leftovers;aerodactyl:1:6;'
+    'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;aerodactyl:1:0;dratini:2:1:choice-band.focus-sash.scope-lens;growlithe:1:2:scope-lens.choice-band.focus-sash;'
+    + 'rattata:1:3:eviolite.rocky-helmet.leftovers;ekans:1:6;'
     + 'vulpix:2:14:choice-specs.quick-claw.twisted-spoon;magmar:1:16');
   assert.match(advise(S57, { side: 'right' }).code, /magmar:1:18;vulpix:2:20:choice-specs.quick-claw.twisted-spoon$/);
 });
@@ -1151,7 +1151,7 @@ test('formation : rangée pleine, débordement derrière, puis devant', () => {
   const all = ids => Object.fromEntries(ids.map(id => [id, 1]));
   // 8 unités de mêlée : la 8ᵉ, un assassin, en 2ᵉ rangée, depuis le bord.
   const melee = ['rattata', 'pidgey', 'zubat', 'caterpie', 'weedle', 'machop', 'diglett', 'geodude'];
-  assert.deepEqual(sortedCells(trioAdvice(melee.slice(0, 3), all(melee), { level: 8 }).code), [0, 1, 2, 3, 4, 5, 6, 13]);
+  assert.deepEqual(sortedCells(trioAdvice(melee.slice(0, 3), all(melee), { level: 8 }).code), [0, 1, 2, 3, 4, 5, 6, 7]);
   // 8 unités de portée 3 : la 8ᵉ au fond, dans la première colonne de la zone (toutes les colonnes sont déjà prises).
   const ranged = ['vulpix', 'psyduck', 'oddish', 'gastly', 'squirtle', 'magnemite', 'jynx', 'magmar'];
   assert.deepEqual(sortedCells(trioAdvice(ranged.slice(0, 3), all(ranged), { level: 8 }).code), [14, 15, 16, 17, 18, 19, 20, 21]);
@@ -1227,22 +1227,27 @@ test('formation : Mew collé à l’allié de plus grande valeur, dont Métronom
   assert.deepEqual(said(trioAdvice(['mew', 'abra', 'ditto'], { mew: 1, abra: 1, ditto: 1 }, { board: { 37: 'mew', 49: 'abra', 30: 'ditto' } })), []);
   // Posé à l'avant contre Minidraco, il recule en 2ᵉ rangée, toujours collé à lui.
   const back = trioAdvice(['mew', 'dratini', 'abra'], { mew: 1, dratini: 2, abra: 2 }, { board: { 30: 'mew', 31: 'dratini' } });
-  assert.ok(cellsOf(back.code).mew >= 7 && cellsOf(back.code).mew < 14);
+  const { mew: m, dratini: d } = cellsOf(back.code);
+  assert.ok(m >= 7 && m < 14 && KT.touching(m, d), `Mew case ${m}`);
 });
 
 test('formation : Ramoloss au centre de l’avant, assassins et Grolem ★★★ sur les bords', () => {
   // Mur Lumière protège les alliés collés à Ramoloss : il passe avant Machoc et Rattata, tanks comme lui.
   assert.equal(cellsOf(trioAdvice(['machop', 'slowpoke', 'rattata'], { machop: 1, slowpoke: 1, rattata: 1 }).code).slowpoke, 3);
-  // Séisme blesse les alliés collés, à ★★★ seulement : Racaillou ★★ garde le centre, ★★★ passe au bord, colonne 7.
+  // Séisme blesse les alliés collés, à ★★★ seulement : Racaillou ★★ garde le centre, ★★★ passe au bord, colonne 1, qui touche
+  // deux cases alliées (trois en colonne 7).
   const quake = (star, board) => cellsOf(trioAdvice(['geodude', 'machop', 'rattata'], { geodude: star, machop: 1, rattata: 1 }, { board }).code).geodude;
-  assert.deepEqual([quake(2), quake(3)], [3, 6]);
+  assert.deepEqual([quake(2), quake(3)], [3, 0]);
   // Déjà posé : Grolem ★★★ quitte le centre, mais garde une colonne du bord.
-  assert.deepEqual([quake(3, { 31: 'geodude' }), quake(3, { 29: 'geodude' })], [6, 1]);
+  assert.deepEqual([quake(3, { 31: 'geodude' }), quake(3, { 29: 'geodude' })], [0, 1]);
   // Ramoloss prend le centre même quand Machoc y est déjà.
   const shield = cellsOf(trioAdvice(['machop', 'slowpoke', 'rattata'], { machop: 1, slowpoke: 1, rattata: 1 }, { board: { 31: 'machop' } }).code);
   assert.equal(shield.slowpoke, 3);
+  // Ramoloss encore à acheter : Machoc, déjà au centre, y reste.
+  const later = cellsOf(trioAdvice(['machop', 'slowpoke', 'rattata'], { machop: 1, rattata: 1 }, { board: { 31: 'machop' } }).code);
+  assert.equal(later.machop, 3);
   // Nosferapti et Insécateur quittent leur case au début du combat : Caninos, qui n'est pas un tank, garde le centre.
-  assert.deepEqual(cellsOf(trioAdvice(['zubat', 'growlithe', 'scyther'], { zubat: 1, growlithe: 1, scyther: 1 }).code), { scyther: 0, growlithe: 3, zubat: 6 });
+  assert.deepEqual(cellsOf(trioAdvice(['zubat', 'growlithe', 'scyther'], { zubat: 1, growlithe: 1, scyther: 1 }).code), { zubat: 0, growlithe: 3, scyther: 6 });
 });
 
 // Unités de S57 remplacées ou ajoutées ; shiny : +10 % (makeUnit du jeu), transmis par la fusion.
