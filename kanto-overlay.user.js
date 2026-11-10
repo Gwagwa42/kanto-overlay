@@ -451,7 +451,16 @@ const KT = (() => {
   // champion dont gymOrder fixe le choix, celui-là seul. share : part des combats de la manche (ses variantes sont tirées au
   // sort ; à une manche de champion pas encore choisi, c'est la part de chaque champion dans les choix des joueurs) ;
   // fightWin : taux de victoire de la manche, moyenne de ses variantes pondérée par share ; fight : libellés de ses variantes.
+  // Calculés une fois par couple (arrêts de l'API, mode) : le rendu et chaque conseil les relisent plusieurs fois.
+  const modeStopsMemo = new WeakMap();
   function modeStops(stops, mode) {
+    if (!modeStopsMemo.has(stops)) modeStopsMemo.set(stops, new WeakMap());
+    const memo = modeStopsMemo.get(stops);
+    if (!memo.has(mode)) memo.set(mode, readModeStops(stops, mode));
+    return memo.get(mode);
+  }
+
+  function readModeStops(stops, mode) {
     const parsed = stops.map(s => ({ ...s, ...parseStop(s.stop) }));
     if (mode.id === TOWER.id) return parsed.map(s => ({ ...s, share: 1, fightWin: s.win, fight: [s.boss] }));
     const table = mode.adv?.stops;
@@ -497,6 +506,7 @@ const KT = (() => {
     return ahead.filter(s => floors.includes(s.floor))
       .map(s => ({ ...s, weight: s.share * Math.max(1, 100 - (s.win - mode.penalty)) }));
   }
+  const totalWeight = stops => stops.reduce((sum, st) => sum + st.weight, 0);
 
   function topCores(cores, stop, limit = 3) {
     return cores
@@ -632,7 +642,7 @@ const KT = (() => {
 
   // Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
   function coreScore(core, stops, coresByStop, game, data) {
-    const total = stops.reduce((s, st) => s + st.weight, 0);
+    const total = totalWeight(stops);
     const key = coreKey(core);
     const stat = stops.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop)?.get(key)?.lo ?? 0), 0) / total;
     const owned = core.reduce((s, id) => {
@@ -644,15 +654,26 @@ const KT = (() => {
     return stat + owned;
   }
 
-  // Trios d'au moins MIN_FIGHTS combats de chaque combat, par clé de trio.
-  const coresAt = (stats, stops) => new Map(stops.map(st => [st.stop, new Map(stats.cores
-    .filter(c => c.stop === st.stop && c.n >= MIN_FIGHTS)
-    .map(c => [coreKey(c.core), c]))]));
+  // Trios d'au moins MIN_FIGHTS combats de chaque combat, par clé de trio ; index des trios de l'API construit une fois par liste.
+  const coresMemo = new WeakMap();
+  function coresIndex(cores) {
+    if (!coresMemo.has(cores)) {
+      const index = new Map();
+      for (const c of cores) {
+        if (c.n < MIN_FIGHTS) continue;
+        if (!index.has(c.stop)) index.set(c.stop, new Map());
+        index.get(c.stop).set(coreKey(c.core), c);
+      }
+      coresMemo.set(cores, index);
+    }
+    return coresMemo.get(cores);
+  }
+  const coresAt = (stats, stops) => new Map(stops.map(st => [st.stop, coresIndex(stats.cores).get(st.stop) ?? new Map()]));
 
   // Force de chaque lignée de base sur une fenêtre de combats : écart, pondéré par la difficulté des combats, entre le taux de
   // victoire des trios où elle figure (pondéré par leurs combats) et celui du combat. Un combat sans trio pour elle compte zéro.
   function lineStrength(coresByStop, stops) {
-    const total = stops.reduce((s, st) => s + st.weight, 0);
+    const total = totalWeight(stops);
     const strength = new Map();
     for (const st of stops) {
       const sums = new Map();
