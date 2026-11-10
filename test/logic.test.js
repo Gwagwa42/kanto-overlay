@@ -35,10 +35,10 @@ const brockAdvice = (core, game, extra = {}) => advise({ ...save, round: 1009, l
   { stats: brockStats([brockCore(core)]), ...extra });
 // Trio et unités possédées, boutique vide : le porteur est l'attaquant possédé du trio le plus étoilé. stars : lignée → étoile de
 // l'unité possédée, qui prend la lignée pour identifiant ; hors du plateau, elle est au banc.
-const trioAdvice = (core, stars, { board = {}, level = 3, side = 'left', lines = data.lines } = {}) => brockAdvice(core, {
+const trioAdvice = (core, stars, { board = {}, level = 3, side = 'left', lines = data.lines, dive = false } = {}) => brockAdvice(core, {
   level, board, bench: Object.keys(stars).filter(id => !Object.values(board).includes(id)),
   units: Object.fromEntries(Object.entries(stars).map(([line, star]) => [line, { id: line, line, star }])),
-}, { side, data: { ...data, lines } });
+}, { side, dive, data: { ...data, lines } });
 // Code KT1 → cellule de chaque lignée.
 const cellsOf = code => Object.fromEntries(code.split(';').slice(4).map(u => u.split(':')).map(([line, , cell]) => [line, Number(cell)]));
 
@@ -1195,6 +1195,99 @@ test('formation : porteur de portée 3 en 3ᵉ rangée, dans sa zone', () => {
   assert.deepEqual(said(carry3({}, 'right')), ['Pose Goupix — 3ᵉ rangée, colonne 7']);
   assert.deepEqual(said(carry3({ 44: 'vulpix' }, 'left')), []);
   assert.deepEqual(said(carry3({ 44: 'vulpix' }, 'right')), ['Déplace Goupix — 3ᵉ rangée, colonne 3 → 3ᵉ rangée, colonne 7']);
+});
+
+// Règle du moteur (backmost) : les assassins adverses visent la rangée la plus au fond. Le porteur n'y est pas.
+const diveTarget = code => Math.max(...Object.values(cellsOf(code)).map(c => Math.floor(c / 7)));
+const rowOfLine = (code, line) => Math.floor(cellsOf(code)[line] / 7);
+
+test('parade aux assassins adverses : porteur du fond avancé d’une rangée, appât au fond colonne 4', () => {
+  const owned = { abra: 2, onix: 1, geodude: 1 };
+  // Sans assassin signalé, Abra (portée 4) est seul au fond : c'est lui que visent Insécateur, Doduo et Abo.
+  const plain = trioAdvice(['abra', 'onix', 'geodude'], owned);
+  assert.deepEqual([cellsOf(plain.code), plain.guard], [{ geodude: 2, onix: 3, abra: 21 }, null]);
+  // Signalés : Abra en 3ᵉ rangée dans sa zone, Racaillou (tank de moindre valeur, Onix reste devant) au fond.
+  const dive = trioAdvice(['abra', 'onix', 'geodude'], owned, { dive: true });
+  assert.deepEqual([cellsOf(dive.code), dive.guard], [{ onix: 3, abra: 14, geodude: 24 }, { bait: 'geodude', carry: 'abra' }]);
+  assert.deepEqual(said(dive), ['Pose Onix — avant, colonne 4', 'Pose Abra — 3ᵉ rangée, colonne 1, moins au fond que l’appât',
+    'Pose Racaillou — fond, colonne 4, appât des assassins adverses']);
+  assert.ok(rowOfLine(dive.code, 'abra') < diveTarget(dive.code));
+});
+
+test('parade aux assassins adverses : la parade prime sur la case gardée et sur la zone du porteur', () => {
+  // Abra au fond colonne 4 (zone centre, case gardée sans assassin) : il avance, Onix quitte l'avant, Ronflex y reste.
+  const board = { 52: 'abra', 31: 'onix', 30: 'snorlax' };
+  const owned = { abra: 2, onix: 1, snorlax: 1 };
+  assert.deepEqual(trioAdvice(['abra', 'onix', 'snorlax'], owned, { board, side: 'center' }).moves, []);
+  const dive = trioAdvice(['abra', 'onix', 'snorlax'], owned, { board, side: 'center', dive: true });
+  assert.deepEqual(said(dive), ['Déplace Abra — fond, colonne 4 → 3ᵉ rangée, colonne 3, moins au fond que l’appât',
+    'Déplace Onix — avant, colonne 4 → fond, colonne 4, appât des assassins adverses']);
+  // L'appât ne touche pas le porteur : l'assassin arrivé sur lui ne se retourne pas vers son voisin.
+  const cells = cellsOf(dive.code);
+  assert.equal(KT.touching(cells.abra, cells.onix), false);
+  // Porteur de portée 3 en colonne 4 : Abo peut entrer des deux côtés, l'appât tient la colonne 4 même s'il le touche.
+  const mid = trioAdvice(['vulpix', 'onix', 'snorlax'], { vulpix: 2, onix: 1, snorlax: 1 }, { side: 'center', dive: true });
+  assert.deepEqual(cellsOf(mid.code), { snorlax: 2, vulpix: 17, onix: 24 });
+  // Coin droit : le porteur avance dans sa zone (colonne 7), l'appât reste dans sa moitié.
+  const right = trioAdvice(['abra', 'onix', 'snorlax'], owned, { side: 'right', dive: true });
+  assert.deepEqual(cellsOf(right.code), { snorlax: 2, abra: 20, onix: 24 });
+});
+
+test('parade aux assassins adverses : un Pokémon déjà plus au fond sert d’appât, sans déplacement de plus', () => {
+  // Goupix (portée 3) en 3ᵉ rangée, Pikachu (portée 4) au fond : rien ne bouge.
+  const owned = { vulpix: 2, pikachu: 1, onix: 1 };
+  const plain = trioAdvice(['vulpix', 'pikachu', 'onix'], owned);
+  const dive = trioAdvice(['vulpix', 'pikachu', 'onix'], owned, { dive: true });
+  assert.deepEqual(cellsOf(dive.code), cellsOf(plain.code));
+  assert.deepEqual(dive.guard, { bait: 'pikachu', carry: 'vulpix' });
+  // Appât déjà au fond mais dans l'autre moitié (Goupix colonne 7, Pikachu colonne 1) : il vient en colonne 4, sinon l'Abo
+  // entré par la droite viserait Goupix.
+  const far = trioAdvice(['vulpix', 'pikachu', 'onix'], owned, { board: { 48: 'vulpix', 49: 'pikachu' }, side: 'right', dive: true });
+  assert.deepEqual(cellsOf(far.code), { onix: 3, vulpix: 20, pikachu: 24 });
+  // Parade déjà posée sur le plateau (Abra en 3ᵉ rangée colonne 3, Racaillou au fond colonne 4) : aucun déplacement.
+  const done = trioAdvice(['abra', 'onix', 'geodude'], { abra: 2, onix: 1, geodude: 1 }, { board: { 44: 'abra', 31: 'onix', 52: 'geodude' }, dive: true });
+  assert.deepEqual([said(done), done.guard], [[], { bait: 'geodude', carry: 'abra' }]);
+  // Deux unités au fond : le porteur avance, l'autre reste et prend l'assaut.
+  const two = trioAdvice(['abra', 'pikachu', 'onix'], { abra: 2, pikachu: 1, onix: 1 }, { dive: true });
+  assert.deepEqual([cellsOf(two.code), two.guard], [{ onix: 3, abra: 14, pikachu: 23 }, { bait: 'pikachu', carry: 'abra' }]);
+});
+
+test('parade aux assassins adverses : sans porteur à distance ou sans appât, formation inchangée', () => {
+  // Porteur de mêlée : le Pokémon du fond n'est pas lui.
+  const melee = [['dratini', 'onix', 'snorlax'], { dratini: 2, onix: 1, snorlax: 1 }];
+  assert.equal(trioAdvice(...melee, { dive: true }).code, trioAdvice(...melee).code);
+  assert.equal(trioAdvice(...melee, { dive: true }).guard, null);
+  // Racaillou pas encore acheté : un appât absent du plateau ne couvrirait personne, et Onix reste seul devant.
+  const unowned = [['abra', 'onix', 'geodude'], { abra: 2, onix: 1 }];
+  assert.equal(trioAdvice(...unowned, { dive: true }).code, trioAdvice(...unowned).code);
+  assert.equal(trioAdvice(...unowned, { dive: true }).guard, null);
+  // Ramoloss garde le centre de l'avant : l'appât est l'autre unité de mêlée.
+  const shield = trioAdvice(['abra', 'slowpoke', 'growlithe'], { abra: 2, slowpoke: 1, growlithe: 1 }, { dive: true });
+  assert.deepEqual([cellsOf(shield.code).slowpoke, shield.guard], [3, { bait: 'growlithe', carry: 'abra' }]);
+  // Ramoloss compte parmi les tanks qui restent devant : Onix, seul autre tank, part au fond.
+  const wall = trioAdvice(['abra', 'slowpoke', 'onix'], { abra: 2, slowpoke: 1, onix: 1 }, { dive: true });
+  assert.deepEqual([cellsOf(wall.code).slowpoke, wall.guard], [3, { bait: 'onix', carry: 'abra' }]);
+  // Seule unité de mêlée à côté d'un de tes assassins, qui quitte sa case : elle reste devant.
+  const lone = [['abra', 'growlithe', 'zubat'], { abra: 2, growlithe: 1, zubat: 1 }];
+  assert.equal(trioAdvice(...lone, { dive: true }).guard, null);
+  // Onix seul tank, Nosferapti assassin (il quitte sa case) : personne à envoyer au fond.
+  const none = [['abra', 'onix', 'zubat'], { abra: 2, onix: 1, zubat: 1 }];
+  assert.equal(trioAdvice(...none, { dive: true }).code, trioAdvice(...none).code);
+  assert.equal(trioAdvice(...none, { dive: true }).guard, null);
+});
+
+test('parade aux assassins adverses : le porteur n’est jamais au fond, niveaux 3 à 7, pour chaque zone', () => {
+  // Abra ★★ porteur, deux tanks du trio, puis des compléments de mêlée et à distance selon le niveau.
+  const owned = { abra: 2, onix: 1, snorlax: 1, pikachu: 1, vulpix: 1, geodude: 1, rattata: 1 };
+  for (const side of ['left', 'center', 'right']) {
+    for (let level = 3; level <= 7; level += 1) {
+      const a = trioAdvice(['abra', 'onix', 'snorlax'], owned, { level, side, dive: true });
+      assert.equal(a.guard?.carry, 'abra', `${side} ${level}`);
+      assert.ok(rowOfLine(a.code, 'abra') < diveTarget(a.code), `${side} ${level}`);
+      const cells = Object.values(cellsOf(a.code));
+      assert.equal(new Set(cells).size, cells.length, `${side} ${level}`);
+    }
+  }
 });
 
 test('formation : cases collées sur le plateau en hexagones, rangées impaires décalées vers la droite', () => {

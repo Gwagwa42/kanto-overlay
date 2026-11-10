@@ -20,7 +20,7 @@ sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rie
 
 En tête du panneau, toujours visibles : l'or à dépenser au-dessus du palier, l'alerte « tout jouer » et le prochain boss avec son
 taux de victoire. Dessous, quatre onglets : **Tour** (les conseils ★ et ◆, les ✕ regroupés sous « N à éviter »), **Compo** (compo
-cible, compo suivante, objets visés, copie de la formation), **Boss** (taux, premier essai, essais moyens, meilleurs trios) et
+cible, compo suivante, objets visés, copie de la formation, assassins adverses), **Boss** (taux, premier essai, essais moyens, meilleurs trios) et
 **Règles** (règles d'or de la tranche, bilan de tes combats). Replié, le panneau garde l'étage, l'or à dépenser et le premier conseil ★.
 
 Le menu ⚙ règle le thème (auto, clair, sombre), les pastilles affichées par niveau, la largeur (320 ou 380 px), la taille du texte,
@@ -143,6 +143,22 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
       collés : il est posé au bord avant les assassins, colonne 1 d'abord (deux cases alliées collées, trois en colonne 7).
     - Les bonus de types ne dépendent pas des cases : seuls les Électrik électrocutent les ennemis collés, ce qui ne change
       rien pour une unité de mêlée, déjà à l'avant.
+  - Assassins adverses (case de l'onglet Compo, à cocher quand l'adversaire affiché en aligne ; elle vaut pour le combat en
+    cours et se vide au suivant). Le panneau ne lit pas l'équipe adverse : elle n'est ni dans la sauvegarde ni dans la page,
+    le jeu la calcule à partir de la graine de la partie. Règles du moteur : Insécateur, Doduo et Abo plongent sur ton
+    Pokémon le plus au fond (à rangée égale, celui qui a le moins de PV ; Abo, dans la moitié du plateau par où il entre, la
+    colonne 4 comptant dans les deux) ; Nosferapti, sur le plus au fond de la colonne la plus proche de la sienne. La parade
+    pose donc un appât plus au fond que le porteur à distance, dans la même moitié que lui : le porteur du fond avance en
+    3ᵉ rangée, dans sa zone et hors de la colonne 4 s'il le peut, et l'appât prend le fond, colonne 4 d'abord, puis du côté
+    du porteur, sur une case qui ne le touche pas quand il y en a une (l'assassin arrivé sur l'appât se retournerait vers
+    son voisin). L'appât est un Pokémon que tu possèdes : celui qui est déjà plus au fond que le porteur (de l'autre côté, il est ramené du sien), sinon
+    le tank de moindre valeur s'il en reste un devant, sinon l'unité de mêlée de plus grande valeur s'il en reste une devant,
+    sinon l'unité à distance de plus grande valeur ; jamais Ramoloss ni un de tes assassins. La parade prime sur la zone du
+    porteur et sur une case déjà occupée ; une parade déjà posée sur le plateau ne donne aucun déplacement. Sans porteur à
+    distance, sans appât ou sans case libre, la formation ne change pas et le panneau le dit. Limites : contre Nosferapti,
+    le porteur reste exposé s'il est le plus au fond de la colonne visée ; un porteur en colonne 4 touche son appât ; Mew,
+    placé après les autres, n'est ni couvert ni appât ; Taupiqueur (PV max les plus bas) et Roucool (plus grande valeur)
+    visent sans regarder les cases.
   - Hors des cas ci-dessus, un Pokémon déjà sur sa rangée garde sa case ; le porteur à distance, seulement dans les colonnes de sa zone. Les déplacements
     sont listés dans l'ordre où les faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors
     formation si le plateau est plein.
@@ -260,7 +276,7 @@ Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pok
 ## Développement
 
 ```sh
-node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur, campagne, événements du panneau, journal des combats
+node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur, campagne, événements du panneau, journal des combats, parade aux assassins adverses
 node scripts/preview.mjs   # deux pages par état dans build/, puis les commandes de rendu des pages panneau
 ```
 
