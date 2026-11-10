@@ -1,6 +1,8 @@
 'use strict';
-// Statistiques de la Tour réduites à des combats contre Pierre à 50 % de victoires, communes aux tests et aux pages d'aperçu.
+// Statistiques de la Tour réduites à des combats contre Pierre à 50 % de victoires, et parties jouées contre lui, communes aux
+// tests et aux pages d'aperçu.
 const { torre } = require('./campana.json').modes;
+const save = require('./save-tower.json');
 
 const brockStop = floor => ({ stop: `${floor}:brock`, n: 100, win: 50, lo: 45, first: 50, tries: 2 });
 // Pierre à l'étage 10 ; trio noté contre lui (50 combats, 90 %), de borne basse lo.
@@ -17,4 +19,18 @@ const twoWindows = later => {
   return { ...torre, stops, cores };
 };
 
-module.exports = { brockStop, BROCK, brockCore, brockStats, twoWindows };
+// Partie à l'étage 10 : niveau 3, boutique, plateau et sac vides, sauf ce que game précise.
+const brockSave = game => ({ ...save, round: 1009, level: 3, shop: [], board: {}, items: [], ...game });
+// Unités possédées : stars, lignée → étoile de l'unité, qui prend la lignée pour identifiant ; hors de board, elle est au banc.
+const ownedGame = (stars, board = {}) => ({
+  board, bench: Object.keys(stars).filter(id => !Object.values(board).includes(id)),
+  units: Object.fromEntries(Object.entries(stars).map(([line, star]) => [line, { id: line, line, star }])),
+});
+// Étage 5, niveau 4 : trio Abra + Onix + Nosferapti à trouver (twoWindows), Abo ★ pour seul complément ; Chenipan et
+// Roucool ne servent que la compo des étages 19–27.
+const NEXT_SHOP = {
+  ...save, round: 1004, level: 4, xp: 0, units: { e: { id: 'e', line: 'ekans', star: 1 } }, board: {}, bench: ['e'],
+  shop: ['caterpie', 'pidgey', 'ekans', null, null], runSeed: 7,
+};
+
+module.exports = { brockStop, BROCK, brockCore, brockStats, twoWindows, brockSave, ownedGame, NEXT_SHOP };

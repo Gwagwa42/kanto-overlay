@@ -13,7 +13,7 @@ const data = require('./fixtures/data.json');
 const lang = require('./fixtures/lang.json');
 const save = require('./fixtures/save-tower.json');
 const ids = require('./fixtures/ids.json');
-const { brockStop, BROCK, brockCore, brockStats, twoWindows } = require('./fixtures/brock.js');
+const { brockStop, BROCK, brockCore, brockStats, twoWindows, brockSave, ownedGame, NEXT_SHOP } = require('./fixtures/brock.js');
 
 const names = KT.namer(lang);
 // Étage 57, 38 pièces, niveau 8 : scénario commun avec la maquette et les pages d'aperçu.
@@ -26,15 +26,11 @@ const T = KT.TOWER_MODE;
 const floorAt = raw => KT.floorFromSave(raw, T);
 const readGame = s => KT.readGame(s, T);
 
-// Conseils à l'étage 10 pour une compo réduite à ce trio : niveau 3, boutique, plateau et sac vides, sauf ce que game précise.
-const brockAdvice = (core, game, extra = {}) => advise({ ...save, round: 1009, level: 3, shop: [], board: {}, items: [], ...game },
-  { stats: brockStats([brockCore(core)]), ...extra });
-// Trio et unités possédées, boutique vide : le porteur est l'attaquant possédé du trio le plus étoilé. stars : lignée → étoile de
-// l'unité possédée, qui prend la lignée pour identifiant ; hors du plateau, elle est au banc.
-const trioAdvice = (core, stars, { board = {}, level = 3, side = 'left', lines = data.lines, dive = false } = {}) => brockAdvice(core, {
-  level, board, bench: Object.keys(stars).filter(id => !Object.values(board).includes(id)),
-  units: Object.fromEntries(Object.entries(stars).map(([line, star]) => [line, { id: line, line, star }])),
-}, { side, dive, data: { ...data, lines } });
+// Conseils à l'étage 10 (brockSave) pour une compo réduite à ce trio.
+const brockAdvice = (core, game, extra = {}) => advise(brockSave(game), { stats: brockStats([brockCore(core)]), ...extra });
+// Trio et unités possédées (ownedGame), boutique vide : le porteur est l'attaquant possédé du trio le plus étoilé.
+const trioAdvice = (core, stars, { board = {}, level = 3, side = 'left', lines = data.lines, dive = false } = {}) => brockAdvice(core,
+  { level, ...ownedGame(stars, board) }, { side, dive, data: { ...data, lines } });
 // Code KT1 → cellule de chaque lignée.
 const cellsOf = code => Object.fromEntries(code.split(';').slice(4).map(u => u.split(':')).map(([line, , cell]) => [line, Number(cell)]));
 
@@ -408,6 +404,30 @@ test('compléments : celui du conseil précédent reste sous 10 points d’écar
   assert.deepEqual(advise(PAIR, { stats: nextFight(5), previous: { ...previous, run: 8 } }).target.fillers, ['rattata']);
 });
 
+test('compléments : toutes les variantes du prochain combat comptent, à leur part', () => {
+  // Étage 10 à deux variantes (Pierre, Ondine) : Rattata ne figure que dans un trio contre Ondine (+20), soit +10 sur le combat.
+  const variants = nextFight(0);
+  const stats = {
+    ...variants, stops: [variants.stops[0], { ...variants.stops[0], stop: '10:misty' }, variants.stops[1]],
+    cores: [...variants.cores, { stop: '10:misty', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 },
+      { stop: '10:misty', core: ['abra', 'onix', 'rattata'], n: 50, win: 70, lo: 10 }],
+  };
+  assert.deepEqual(advise(PAIR, { stats }).target.fillers, ['rattata']);
+});
+
+test('compléments : conseil précédent gardé pour l’inertie tant qu’il ne change pas', () => {
+  const a = advise(PAIR, { stats: nextFight(10) });
+  const kept = KT.rememberedTarget(a, null);
+  assert.deepEqual(kept, { key: 'abra+onix+zubat', run: 7, next: null, fillers: ['rattata'] });
+  assert.equal(KT.rememberedTarget(a, kept), kept);
+  assert.equal(KT.rememberedTarget(null, kept), kept);
+  // Compléments changés : nouveau conseil, que le suivant relit.
+  assert.deepEqual(KT.rememberedTarget(a, { ...kept, fillers: ['magikarp'] }).fillers, ['rattata']);
+  // Rattata faible sur le prochain combat (−5) : gardé par l'inertie du conseil retenu.
+  assert.deepEqual(advise(PAIR, { stats: nextFight(-5), previous: kept }).target.fillers, ['rattata']);
+  assert.deepEqual(advise(PAIR, { stats: nextFight(-5) }).target.fillers, ['magikarp']);
+});
+
 test('compo cible : un trio monté en ★★ l’emporte sur l’inertie d’un trio non possédé', () => {
   const cores = [
     // Inertie : abra 70 + 30 = 100 ; possession : pidgey 50 + 60 = 110 (80 avec l'ancien bonus de 5).
@@ -656,13 +676,9 @@ test('compo suivante : inertie de 30 points dans la même partie', () => {
 });
 
 test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamais sous le palier ni en tout jouer', () => {
-  // Étage 5 (aucun niveau visé), niveau 4 : trio Abra + Onix + Nosferapti à trouver, Abo ★ possédé pour seul complément ;
-  // Chenipan et Roucool ne servent que la compo des étages 19–27.
+  // Étage 5, aucun niveau visé (NEXT_SHOP).
   const t = twoWindows([[['caterpie', 'pidgey', 'rattata'], 80]]);
-  const base = {
-    ...EMPTY10, round: 1004, level: 4, xp: 0, units: { e: { id: 'e', line: 'ekans', star: 1 } }, bench: ['e'],
-    shop: ['caterpie', 'pidgey', 'ekans', null, null],
-  };
+  const base = NEXT_SHOP;
   const at = (gold, extra = {}) => advise({ ...base, gold, ...extra }, { stats: t });
   // 32 pièces : Abo (2, compo cible) passe avant Chenipan (1) malgré sa place ; Chenipan ferait passer sous 30.
   const a = at(32);
@@ -1340,6 +1356,15 @@ test('parade aux assassins adverses : le porteur n’est jamais au fond, niveaux
   }
 });
 
+test('parade aux assassins adverses : un Pokémon posé autour plus au fond que le porteur ne le touche pas', () => {
+  // Centre, niveau 5 : Abra avance en 3ᵉ rangée colonne 5 et libère la colonne 4 du fond ; Osselait (portée 4) ne la prend
+  // pas, collée à Abra, l'assassin arrivé sur lui se retournerait vers le porteur.
+  const a = trioAdvice(['abra', 'onix', 'snorlax'], { abra: 2, onix: 1, snorlax: 1, pikachu: 1, cubone: 1 }, { level: 5, side: 'center', dive: true });
+  const cells = cellsOf(a.code);
+  const deeper = Object.entries(cells).filter(([line, c]) => line !== 'abra' && Math.floor(c / 7) > Math.floor(cells.abra / 7));
+  assert.deepEqual([cells.abra, deeper.some(([, c]) => KT.touching(c, cells.abra))], [18, false]);
+});
+
 test('formation : cases collées sur le plateau en hexagones, rangées impaires décalées vers la droite', () => {
   // Avant (rangée paire), colonne 4 : en 2ᵉ rangée, colonnes 3 et 4. 2ᵉ rangée (impaire), colonne 4 : à l'avant et en 3ᵉ
   // rangée, colonnes 4 et 5.
@@ -1588,6 +1613,16 @@ test('options du panneau : valeurs inconnues ramenées aux défauts, valeurs con
   const ok = { theme: 'light', width: 'compact', text: 'small', alpha: '85', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true }, pace: 'late', allIn: 'bold', comp: 'stable', owned: 'high' };
   KT.checkUi(ok);
   assert.deepEqual(ok, { theme: 'light', width: 'compact', text: 'small', alpha: '85', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true }, pace: 'late', allIn: 'bold', comp: 'stable', owned: 'high' });
+  // Compléments du conseil précédent : tableau de lignées, sinon vidé ; conseil d'une version antérieure (clé seule) gardé.
+  const target = fillers => {
+    const t = { target: { key: 'abra+onix+zubat', run: 7, next: null, fillers } };
+    KT.checkUi(t);
+    return t.target.fillers;
+  };
+  assert.deepEqual([target(['rattata']), target('rattata'), target([3]), target(undefined)], [['rattata'], [], [], []]);
+  const old = { target: 'abra+onix+zubat' };
+  KT.checkUi(old);
+  assert.equal(old.target, 'abra+onix+zubat');
   // Compteur de l'onglet Tour : conseils ★ et ◆ plus bénédictions inconnues, nom accessible accordé.
   const a = advise(S57);
   const count = n => KT.tabsHtml({ advice: n }, { tab: 'tour' }).match(/aria-label="Tour (\d+) conseils?"/)?.[1];

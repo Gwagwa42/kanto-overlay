@@ -15,7 +15,7 @@ const lang = require(`${root}test/fixtures/lang.json`);
 
 // Scénario et statistiques réduites communs avec les tests et la maquette.
 const S57 = require(`${root}test/fixtures/s57.js`);
-const { brockCore, brockStats, twoWindows } = require(`${root}test/fixtures/brock.js`);
+const { brockCore, brockStats, twoWindows, brockSave, ownedGame, NEXT_SHOP } = require(`${root}test/fixtures/brock.js`);
 const MODALS = { ...S57, itemReward: ['protein', 'carbos', 'zinc'], tower: { boons: ['nugget'], offer: { ids: ['nugget', 'leftovers', 'flute'] } } };
 
 // Maquette 2026-11-06-shiny : Minidraco shiny dans la compo, Rattata shiny sur un banc plein (pas de « Vends » avant l'étage 121).
@@ -34,19 +34,10 @@ const SHINY = {
 // sans table d'arrêts : compo sans trio.
 const CAMP = { ...S57, mode: 'campaign', round: 14, league: 3, gymOrder: ['sabrina', 'koga'], level: 6, gold: 47, tower: undefined };
 const SAVE_KANTO = 'kanto-tactics-save';
-// Étage 5, 33 pièces, niveau 4 : trio Abra + Onix + Nosferapti à trouver, Abo ★ pour seul complément ; Chenipan ne sert que la
-// compo des étages 19–27 (test « boutique : ◆ pour la compo suivante… »).
-const PREPARE = {
-  ...S57, round: 1004, level: 4, xp: 0, gold: 33, items: [], units: { e: { id: 'e', line: 'ekans', star: 1 } }, board: {},
-  bench: ['e', ...Array(8).fill(null)], shop: ['caterpie', 'pidgey', 'ekans', null, null],
-};
-// Étage 10, niveau 3 : Abra ★★ porteur à distance, Onix et Racaillou au banc (test « parade aux assassins adverses : porteur du
-// fond avancé d'une rangée… »).
-const PARADE = {
-  ...S57, round: 1009, level: 3, xp: 0, items: [], shop: [null, null, null, null, null], board: {},
-  units: { a: { id: 'a', line: 'abra', star: 2 }, b: { id: 'b', line: 'onix', star: 1 }, c: { id: 'c', line: 'geodude', star: 1 } },
-  bench: ['a', 'b', 'c', ...Array(6).fill(null)],
-};
+// 33 pièces : Abo, puis Chenipan pour la compo des étages 19–27 (test « boutique : ◆ pour la compo suivante… »).
+const PREPARE = { ...NEXT_SHOP, gold: 33 };
+// Abra ★★ porteur à distance, Onix et Racaillou au banc (test « parade aux assassins adverses : porteur du fond avancé… »).
+const PARADE = brockSave(ownedGame({ abra: 2, onix: 1, geodude: 1 }));
 
 const STATES = {
   conseils: { save: S57, api: 'ok', tip: true },

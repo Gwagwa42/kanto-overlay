@@ -109,8 +109,8 @@ const KT = (() => {
   const LINE_PRIOR = 400;
   const SHIFT_GAP = 2.5;
   // Force d'une lignée sur le prochain combat (lineStrength, en points), bornée à NEXT_FIGHT_CAP et comptée NEXT_FIGHT_WEIGHT
-  // par point dans la note d'un complément : ±0,2 au plus, moins qu'un cran de coût (0,35), si bien qu'elle ne départage que
-  // des puissances voisines. La moitié des lignées d'un combat s'écartent de plus de 5 points (fixture du 10 novembre 2026),
+  // par point dans la note d'un complément : ±0,2 par lignée, 0,4 au plus entre deux, à peine plus qu'un cran de coût (0,35)
+  // et seulement entre une lignée parmi les plus fortes du combat et une parmi les plus faibles. La moitié des lignées d'un combat s'écartent de plus de 5 points (fixture du 10 novembre 2026),
   // un sur dix de plus de 20. Un complément du conseil précédent garde FILLER_INERTIA : il faut 10 points d'écart sur le
   // prochain combat pour le remplacer, sinon le plan, les objets visés et le Planificateur changeraient à chaque combat.
   const NEXT_FIGHT_WEIGHT = 0.01;
@@ -888,8 +888,8 @@ const KT = (() => {
   // coût décalé par costShift de la forme possédée (la lignée de base pour une carte), types apportés à la compo, force sur
   // le prochain combat (nextFight, NEXT_FIGHT_WEIGHT) et inertie des compléments du conseil précédent (previous,
   // FILLER_INERTIA) ; les égalités restantes sont départagées par possédée, shiny, puis la plus forte sur ces combats
-  // (strength). upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ; replaced :
-  // ces compléments.
+  // (strength). upgrades : cartes de boutique mieux notées qu'un complément possédé, inertie comprise (achetée, la carte doit
+  // le remplacer), à acheter pour le remplacer ; replaced : ces compléments.
   function fillersOf(stats, data, game, core, { strength, nextFight, previous }) {
     const known = b => lineInfo(data, b) && !core.includes(b);
     const mine = [...new Set(game.units.map(u => baseLine(u.line)))].filter(known);
@@ -940,8 +940,9 @@ const KT = (() => {
       ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
     if (!best) return null;
     const strength = lineStrength(coresByStop, stops);
-    // Sans trio d'au moins MIN_FIGHTS combats sur le prochain combat, la carte est vide : rien ne change.
-    const nextFight = lineStrength(coresByStop, stops.slice(0, 1));
+    // Toutes les variantes du prochain combat (champions possibles d'une manche), pondérées par leur part. Sans trio d'au moins
+    // MIN_FIGHTS combats sur ce combat, la carte est vide : rien ne change.
+    const nextFight = lineStrength(coresByStop, stops.filter(st => st.floor === stops[0].floor));
     const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), { strength, nextFight, previous: previousFillers });
     if (!best.core.length && !fillers.length) return null;
     const flat = best.core.filter(id => flatThirdStar(stats, id)).map(baseLine);
@@ -1734,23 +1735,25 @@ const KT = (() => {
       else if (!o.values.some(([v]) => v === ui[o.key])) ui[o.key] = o.def;
     }
     if (!TABS.some(([t]) => t === ui.tab)) ui.tab = 'tour';
+    // Compléments du conseil précédent : un tableau de lignées, sinon l'inertie lirait des sous-chaînes ou lèverait une erreur.
+    if (isObject(ui.target) && !(Array.isArray(ui.target.fillers) && ui.target.fillers.every(f => typeof f === 'string'))) ui.target.fillers = [];
   }
 
-  // Plateau en cours de pose : cases prises, colonnes des unités à distance derrière l'avant (sur deux rangées voisines, deux
-  // cases de la même colonne se touchent). place : première liste de zonesOf(u) qui a une case libre, et derrière l'avant,
-  // la première case de cette liste hors de la colonne d'une autre unité à distance.
-  function newBoard(zonesOf) {
+  // Plateau en cours de pose : cases prises, colonnes occupées derrière l'avant (sur deux rangées voisines, deux cases de la
+  // même colonne se touchent). place : première liste de zonesOf(u) qui a une case libre ; pour une unité à distance, la
+  // première case de cette liste hors d'une colonne occupée et qui convient (apart), sinon hors d'une colonne occupée.
+  function newBoard(zonesOf, apart = () => true) {
     const taken = new Set();
-    const rangedCols = new Set();
+    const backCols = new Set();
     const put = (u, cell) => {
       u.cell = cell;
       taken.add(cell);
-      if (u.row > 0) rangedCols.add(colOf(cell));
+      if (rowOf(cell) > 0) backCols.add(colOf(cell));
     };
-    const spaced = c => rowOf(c) === 0 || !rangedCols.has(colOf(c));
+    const spaced = c => rowOf(c) === 0 || !backCols.has(colOf(c));
     const place = u => {
       const free = zonesOf(u).map(cells => cells.filter(c => !taken.has(c))).find(cells => cells.length);
-      put(u, (u.row > 0 ? free.find(spaced) : undefined) ?? free[0]);
+      put(u, (u.row > 0 ? free.find(c => spaced(c) && apart(c)) ?? free.find(spaced) : undefined) ?? free[0]);
     };
     return { taken, put, spaced, place };
   }
@@ -1764,9 +1767,9 @@ const KT = (() => {
   };
 
   // Pose des unités sur un plateau vide : un Pokémon déjà sur une case de sa première liste la garde ; les autres se posent
-  // dans l'ordre first, l'avant (frontRank), puis derrière, le porteur d'abord.
-  function arrange(units, zonesOf, first = []) {
-    const board = newBoard(zonesOf);
+  // dans l'ordre first, l'avant (frontRank), puis derrière, le porteur d'abord. apart : voir newBoard.
+  function arrange(units, zonesOf, first = [], apart = undefined) {
+    const board = newBoard(zonesOf, apart);
     const stay = units.filter(u => zonesOf(u)[0].includes(u.from));
     for (const u of stay) board.put(u, u.from);
     const rest = units.filter(u => !first.includes(u));
@@ -1825,7 +1828,10 @@ const KT = (() => {
     const parade = dive ? guard(others, board.taken, zone, value) : null;
     if (parade) {
       const pinned = new Map([[parade.carry, parade.spot], [parade.bait, parade.cell]]);
-      board = arrange(others, u => (pinned.has(u) ? [[pinned.get(u)], ...zones(u)] : zones(u)), [...pinned.keys()]);
+      // Comme guard pour sa case : plus au fond que le porteur, une unité ne le touche pas si elle peut (l'assassin arrivé
+      // sur elle se retournerait vers lui).
+      const apart = c => rowOf(c) <= rowOf(parade.spot) || !touching(c, parade.spot);
+      board = arrange(others, u => (pinned.has(u) ? [[pinned.get(u)], ...zones(u)] : zones(u)), [...pinned.keys()], apart);
       parade.carry.guarded = true;
       parade.bait.bait = true;
     }
@@ -2805,11 +2811,11 @@ function shellHtml({ look = {}, label = 'Étage', floor = null, src = '', sum = 
 </div>`;
 }
 
-// Réglages du panneau hors options du menu (checkUi les complète) : position, replié, sections ouvertes, compo choisie,
-// combat aux assassins adverses.
 // Combat en cours (sauvegarde, partie et étage) : les assassins adverses cochés (ui.dive) ne valent que pour lui.
 const fightKey = state => `${state.saveKey}:${state.save?.runSeed ?? ''}:${state.floor}`;
 const diveOn = (ui, state) => ui.dive === fightKey(state);
+// Réglages du panneau hors options du menu (checkUi les complète) : position, replié, sections ouvertes, conseil précédent
+// (target, rememberedTarget), combat aux assassins adverses.
 const UI_DEFAULTS = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, dive: null };
 
 // Conseils de la partie à l'écran : null hors de l'étage de sa sauvegarde, ou tant qu'aucune source n'a répondu. ui.target :
@@ -2818,6 +2824,15 @@ function adviceOf(state, ui) {
   return onSaveFloor(state) && (state.stats || state.error)
     ? KT.advise({ stats: modeStats(state), data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side, mode: state.mode, dive: diveOn(ui, state) })
     : null;
+}
+
+// ui.target après le conseil a : trio et compléments de la compo cible, trio de la compo suivante et partie, gardés pour
+// l'inertie du conseil suivant. Renvoie target lui-même s'il ne change pas (rien à réécrire dans le stockage) ou sans compo cible.
+function rememberedTarget(a, target) {
+  if (!a?.target) return target;
+  const next = { key: a.target.key, run: a.run, next: a.next?.key ?? null, fillers: a.target.fillers };
+  const same = ['key', 'run', 'next'].every(k => next[k] === target?.[k]) && next.fillers.join('+') === target.fillers?.join('+');
+  return same ? target : next;
 }
 
 function mount() {
@@ -2894,11 +2909,9 @@ function mount() {
       saveUi();
     }
     if (state.advice?.code !== code) state.copied = null;
-    const a = state.advice;
-    const next = a?.next?.key ?? null;
-    const fillers = a?.target?.fillers.join('+');
-    if (a?.target && (a.target.key !== ui.target?.key || a.run !== ui.target?.run || next !== ui.target?.next || fillers !== ui.target?.fillers?.join('+'))) {
-      ui.target = { key: a.target.key, run: a.run, next, fillers: a.target.fillers };
+    const target = rememberedTarget(state.advice, ui.target);
+    if (target !== ui.target) {
+      ui.target = target;
       saveUi();
     }
   }
@@ -3177,7 +3190,7 @@ function mount() {
 if (typeof module !== 'undefined') {
   module.exports = {
     ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, optionsHtml, summaryHtml, footHtml, shellHtml,
-    PlannerError, tabForKey, keptByPanel, foldKey, setOption, diveHtml, fightKey, diveOn, UI_DEFAULTS, modeStats, adviceOf,
+    PlannerError, tabForKey, keptByPanel, foldKey, setOption, diveHtml, fightKey, diveOn, UI_DEFAULTS, modeStats, adviceOf, rememberedTarget,
     SOURCE_FILES, sourcesState,
   };
 } else mount();
