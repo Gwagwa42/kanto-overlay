@@ -40,8 +40,11 @@ barre le remet en haut à droite.
   niveau. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
   Le reste du plateau est rempli par tes unités les mieux notées, puis par la boutique pour les places restantes (★ « place libre »).
   La note d'une unité est sa puissance, `(1 + 0,35 × (coût − 1))` × 1, 1,9 ou 3,6 selon l'étoile, plus 0,25 par type renforcé et
-  0,5 par seuil de type franchi ; à égalité, l'unité possédée, la shiny, puis la lignée qui gagne le plus dans les trios de ces
-  combats. Une carte de boutique mieux notée qu'un de tes compléments est conseillée en ◆ (« plus fort que Rattata ») : elle
+  0,5 par seuil de type franchi. Le coût est décalé d'un cran par 5 points d'écart de victoire de la lignée en Tour (champ `d` de
+  l'API : taux de victoire moins le taux attendu sur les mêmes combats), rétréci vers 0 par 400 combats fictifs : Mystherbe et
+  Carapuce gagnent un coût, Salamèche, Pikachu et Magmar en perdent un. On lit l'écart de la forme possédée (ancrée ou non),
+  celui de la lignée de base pour une carte de boutique. À égalité, l'unité possédée, la shiny, puis la lignée qui gagne le plus
+  dans les trios de ces combats. Une carte de boutique mieux notée qu'un de tes compléments est conseillée en ◆ (« plus fort que Rattata ») : elle
   n'entre dans la compo qu'une fois achetée, pour que le plan ne change pas à chaque actualisation. Un complément possédé reçoit
   des objets comme les autres Pokémon de la compo.
 - **Compo suivante** : le même calcul sur les 9 combats d'après (« Ensuite · étages 80–100 » sous la compo cible), affiché quand
@@ -59,7 +62,8 @@ barre le remet en haut à droite.
   3. Les ◆ de la compo cible.
   4. L'actualisation, s'il y a quelque chose à chercher dont le coût sort à 15 % ou plus à ton niveau : un Pokémon du trio sous ★★,
      ou un Pokémon de la compo qui a 2 copies ★ ou 2 copies ★★. Au niveau maximal, le trio se cherche jusqu'à ★★★ et le seuil de
-     15 % ne vaut plus : l'or n'a pas d'autre emploi. Une lignée trouvable seulement plus haut est annoncée (« Kabuto (coût 4 :
+     15 % ne vaut plus : l'or n'a pas d'autre emploi. Seule exception, une forme dont la ★★★ ne gagne pas plus que la ★★ en Tour
+     (au moins 400 combats à chaque étoile : Hypotrempe, Évoli, Ptitard, Kabuto, Rhinocorne…) reste à ★★. Une lignée trouvable seulement plus haut est annoncée (« Kabuto (coût 4 :
      12 %) au niveau 7 : à chercher au niveau 8 ») ; un coût 1 ou 2, qui sort de moins en moins, ne donne aucun conseil.
   5. Les ◆ de la compo suivante.
   6. L'XP avec ce qui reste, jusqu'au niveau maximal (9, puis 10 à partir de l'étage 60).
@@ -123,6 +127,10 @@ L'API publique s'arrête aux règles 40 alors que la Tour tourne en 41 : quelque
 le script (seuils d'XP, 1 XP gratuite par étage, chances de chaque coût en boutique par niveau, plafond d'intérêts, intérêts perdus
 sur une deuxième défaite au même étage, voies et noms des bénédictions, coût, types et portée de 24 lignées, effet d'un shiny :
 +10 % de PV, dégâts et défenses, transmis par la fusion). La puissance d'une unité et le seuil de 15 % sont ceux des robots du jeu.
+L'écart de victoire `d` corrige la difficulté du combat, pas le niveau du joueur : une lignée que choisissent surtout les bons
+joueurs paraît plus forte qu'elle n'est, d'où le décalage limité à un cran par 5 points et le seuil de 400 combats. Le profil
+physique ou spécial reste lu sur les objets : en v41, une quinzaine de lignées (Staross, Salamèche, Caninos, Sulfura…) changent d'attaque
+selon la stat que leur donnent leurs objets, alors que `data.json` (règles 40) leur prête une seule attaque.
 La courbe de niveaux visés est un choix de jeu : aucune statistique publique ne donne le niveau des joueurs en Tour. La liste des
 shinies à saisir par tranche d'étages vient d'un guide et n'est pas vérifiée.
 
