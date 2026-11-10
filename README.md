@@ -55,8 +55,8 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
   2,5 points. Sur les 85 lignées de base (novembre 2026), 3 gagnent un coût (Mystherbe, Nidoran♀, Carapuce) et 18 en perdent un
   (dont Salamèche, Pikachu, Magmar, Roucool, Abra). On lit l'écart de la forme possédée, rétréci vers celui de sa lignée de
   base pour une forme ancrée, et celui de la lignée de base pour une carte de boutique. La force de la lignée sur le prochain
-  combat (victoires de ses trios d'au moins 20 combats moins celles du combat, bornées à 20 points) ajoute 0,01 par point :
-  ±0,2 au plus, moins qu'un cran de coût, elle départage des puissances voisines. Un complément du conseil précédent, dans la
+  combat (victoires de ses trios d'au moins 20 combats moins celles du combat, sur toutes ses variantes à leur part, bornées
+  à 20 points) ajoute 0,01 par point : ±0,2 par lignée, 0,4 au plus entre deux, à peine plus qu'un cran de coût. Un complément du conseil précédent, dans la
   même partie, garde 0,1 : il faut 10 points d'écart sur le prochain combat pour le remplacer, sinon le plan, les objets visés
   et le Planificateur changeraient à chaque combat. À égalité, l'unité possédée, la shiny, puis la lignée qui gagne le plus
   dans les trios de ces combats. Une carte de boutique mieux notée qu'un de tes compléments est conseillée en ◆ (« plus fort que Rattata ») : elle
@@ -161,7 +161,7 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
     sinon l'unité à distance de plus grande valeur ; jamais Ramoloss ni un de tes assassins. La parade prime sur la zone du
     porteur et sur une case déjà occupée ; une parade déjà posée sur le plateau ne donne aucun déplacement. Les autres
     Pokémon se placent ensuite autour du porteur et de l'appât : celui qui débordait derrière un avant plein y revient quand
-    l'appât libère sa case. Sans porteur à
+    l'appât libère sa case, et un Pokémon plus au fond que le porteur évite les cases qui le touchent. Sans porteur à
     distance, sans appât ou sans case libre, la formation ne change pas et le panneau le dit. Limites : contre Nosferapti,
     le porteur reste exposé s'il est le plus au fond de la colonne visée ; un porteur en colonne 4 touche son appât ; Mew,
     placé après les autres, collé à son modèle, n'est ni couvert ni appât (porteur, il n'a pas de parade) ; Taupiqueur (PV max les plus bas) et Roucool (plus grande valeur)
