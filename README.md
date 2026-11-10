@@ -151,7 +151,7 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
     pose donc un appât plus au fond que le porteur à distance, dans la même moitié que lui : le porteur du fond avance en
     3ᵉ rangée, dans sa zone et hors de la colonne 4 s'il le peut, et l'appât prend le fond, colonne 4 d'abord, puis du côté
     du porteur, sur une case qui ne le touche pas quand il y en a une (l'assassin arrivé sur l'appât se retournerait vers
-    son voisin). L'appât est un Pokémon que tu possèdes : celui qui est déjà plus au fond que le porteur du bon côté, sinon
+    son voisin). L'appât est un Pokémon que tu possèdes : celui qui est déjà plus au fond que le porteur (de l'autre côté, il est ramené du sien), sinon
     le tank de moindre valeur s'il en reste un devant, sinon l'unité de mêlée de plus grande valeur s'il en reste une devant,
     sinon l'unité à distance de plus grande valeur ; jamais Ramoloss ni un de tes assassins. La parade prime sur la zone du
     porteur et sur une case déjà occupée ; une parade déjà posée sur le plateau ne donne aucun déplacement. Sans porteur à
