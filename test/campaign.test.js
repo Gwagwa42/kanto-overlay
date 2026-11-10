@@ -210,7 +210,7 @@ test('mode à l’écran : barre du haut, Nuzlocke avant la campagne', () => {
 });
 
 test('lecture de la sauvegarde : mode, Nuzlocke, étage manuel oublié au changement de partie', () => {
-  const poll = (prev, found, shown, choice = KT.STRATEGY_DEFAULTS) => KT.pollState(prev, found, shown, choice);
+  const poll = (prev, found, shown, choice = KT.STRATEGY_DEFAULTS) => KT.pollState(prev, found, shown, choice, []);
   const kanto = { key: 'kanto-tactics-save', raw: JSON.stringify(CAMP), mode: mode(CAMP) };
   const start = { mode: KT.TOWER_MODE, saveKey: undefined, lastAuto: undefined, floor: null, source: 'manuel' };
   const first = poll(start, kanto, 'campaign');

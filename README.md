@@ -11,7 +11,9 @@ aventures) de [Kanto Tactics](https://einoow.com/playables/kanto-tactics/) :
   ses ombres s'affichent sur le plateau. Le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos », avant, colonne 4) ;
 - un bouton **Copier la formation** : le même code `KT1;…`, pour le partager ou le coller à la main (Planificateur → Coller un code)
   si l'écriture automatique échoue ;
-- les règles d'or (intérêts, actualisation, tout jouer, shinies en Tour) du mode et de la difficulté en cours.
+- les règles d'or (intérêts, actualisation, tout jouer, shinies en Tour) du mode et de la difficulté en cours ;
+- le **bilan de tes combats** : tes victoires comparées aux taux publics, qui corrige ces taux pour toi quand l'écart est établi
+  (voir [Tes résultats](#tes-résultats)).
 
 Les conseils apparaissent aussi en **pastilles** sur le jeu : ★ fais-le, ◆ si l'or le permet, ✕ évite. Survoler une pastille (ou la
 sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rien.
@@ -19,7 +21,7 @@ sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rie
 En tête du panneau, toujours visibles : l'or à dépenser au-dessus du palier, l'alerte « tout jouer » et le prochain boss avec son
 taux de victoire. Dessous, quatre onglets : **Tour** (les conseils ★ et ◆, les ✕ regroupés sous « N à éviter »), **Compo** (compo
 cible, compo suivante, objets visés, copie de la formation), **Boss** (taux, premier essai, essais moyens, meilleurs trios) et
-**Règles** (règles d'or de la tranche). Replié, le panneau garde l'étage, l'or à dépenser et le premier conseil ★.
+**Règles** (règles d'or de la tranche, bilan de tes combats). Replié, le panneau garde l'étage, l'or à dépenser et le premier conseil ★.
 
 Le menu ⚙ règle le thème (auto, clair, sombre), les pastilles affichées par niveau, la largeur (320 ou 380 px), la taille du texte,
 l'opacité du fond (100, 90 ou 85 % : en deçà, le texte secondaire passe sous un contraste de 4,5:1 sur les zones claires du jeu en
@@ -163,9 +165,38 @@ Changer un préréglage recalcule tout de suite les conseils et les règles d'or
 | Réglage | Valeurs | Effet |
 | --- | --- | --- |
 | Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 5, 6 dès 9, 7 dès 15, 8 dès 23, 9 dès 34, 10 dès 60 ; plus tard : 8, 15, 25, 38, 56, 81. Campagne plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38, sous la taille des équipes des champions (8 au 6ᵉ badge, 9 contre Mewtwo). Le niveau maximal ne change pas : le niveau 10 n'est jamais visé avant l'étage 60 en Tour. |
-| Tout jouer | Prudent, Normal, Audacieux | Combat sous 50, 45 ou 40 % de victoires (plus la pénalité de difficulté en campagne), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
+| Tout jouer | Prudent, Normal, Audacieux | Combat sous 50, 45 ou 40 % de victoires (plus la pénalité de difficulté en campagne et l'écart appris sur [tes résultats](#tes-résultats)), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
 | Compo cible | Réactive, Normale, Stable | Combats vus d'avance (6, 9 ou 12, la compo suivante sur autant d'après) et gain minimal pour changer de trio (15, 30 ou 45 points). |
 | Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver introuvable à ton niveau (autant). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
+
+### Tes résultats
+
+Le panneau note le résultat de chaque combat joué avec lui et apprend de l'écart entre tes victoires et les taux publics.
+
+- **Journal** : à chaque combat fini, une ligne dans le navigateur (`localStorage`, clé `kt-overlay:journal`) : la partie, la
+  Tour ou l'aventure et sa difficulté, l'étage ou le combat, le taux attendu (taux public, moins 10 ou 20 points en Vétéran et en Légende), le
+  résultat, et si le trio de la compo cible était posé à la dernière lecture avant le combat. Le résultat se lit dans la
+  sauvegarde du jeu, relue toutes les 2 s : la série de victoires (`streak`) change à chaque combat, et la partie avance d'une
+  manche ou compte un essai de plus. Le journal garde les 300 derniers combats de la Tour et de chaque aventure à chaque difficulté, pour suivre ton
+  niveau et les rééquilibrages du jeu ; rien ne quitte le navigateur.
+- **Bilan** (onglet Règles) : pour la Tour, ou pour l'aventure et la difficulté en cours, tes victoires, les victoires attendues (somme des taux) et la
+  marge à 95 % sur cette somme, puis les mêmes chiffres avec et sans le trio de la compo cible posé. Ces deux lignes décrivent,
+  sans départager : on s'écarte du conseil surtout quand la partie va déjà mal.
+- **Écart appris** : la moyenne de (résultat − taux attendu), rétrécie par 50 combats fictifs sans écart et bornée à 20 points.
+  Il s'ajoute à la pénalité de difficulté : seuil de « tout jouer », couleur des taux et poids des combats dans la compo cible.
+  Avec 30 victoires pour 50 attendues sur 100 combats, les taux comptent 13 points de moins : tout jouer sous 58 % au lieu de
+  45 %, ce que l'en-tête rappelle (« Tour · tout jouer sous 58 % »). Les taux affichés restent les taux publics. Il n'y a pas de
+  seuil en deçà duquel l'écart serait ignoré : il ferait sauter les conseils d'une dizaine de points sur un seul combat. Un
+  combat de plus déplace l'écart de 2 points au plus, et la chance seule en laisse environ 3 après 100 combats, 2,5 après 300.
+- **Ce que le panneau n'apprend pas** : les préréglages de stratégie, le choix du trio et les objets restent fixés par les
+  statistiques publiques. À quelques parties par semaine, les résultats d'un joueur ne départagent pas ces choix avant le
+  rééquilibrage suivant du jeu.
+- **Limites** : les combats d'une même partie se ressemblent (même équipe), la marge affichée est donc trop étroite. Le dernier
+  combat d'une partie n'est noté qu'en Tour, où le jeu garde la liste des parties finies (`kanto-tactics:tower-runs`) ; en
+  campagne, la sauvegarde disparaît à la défaite finale, à la victoire finale et à l'abandon, et ce combat manque au bilan : une
+  défaite par partie perdue, une victoire par aventure finie. Un combat joué panneau fermé, à un étage saisi à la main ou sans
+  taux public d'au moins 20 combats n'est pas noté. Pour repartir de zéro : supprimer la clé `kt-overlay:journal` dans le
+  stockage du site, puis recharger la page.
 
 ### Campagne
 
@@ -210,7 +241,8 @@ types). Conformément à ses conditions, chaque source est gardée **une heure**
 L'API publique s'arrête aux règles 40 alors que la Tour tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
 le script (seuils d'XP, 1 XP gratuite par étage, chances de chaque coût en boutique par niveau, plafond d'intérêts, intérêts perdus
 sur une deuxième défaite au même étage, voies et noms des bénédictions, coût, types, portée et stats d'attaque utiles de 24 lignées, effet d'un shiny :
-+10 % de PV, dégâts et défenses, transmis par la fusion). La puissance d'une unité et le seuil de 15 % sont ceux des robots du jeu.
++10 % de PV, dégâts et défenses, transmis par la fusion, série de victoires changée à chaque combat, sauvegarde supprimée à la
+défaite finale). La puissance d'une unité et le seuil de 15 % sont ceux des robots du jeu.
 L'écart de victoire `d` corrige la difficulté du combat, pas le niveau du joueur : une lignée que choisissent surtout les bons
 joueurs paraît plus forte qu'elle n'est, d'où le décalage borné à un cran et les 400 combats fictifs. L'API ne publie
 ni le rôle d'une lignée (mage, tireur, tank…) ni les capacités qui peuvent être critiques. Que ses attaques de base comptent se
@@ -228,7 +260,7 @@ Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pok
 ## Développement
 
 ```sh
-node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur, campagne, événements du panneau
+node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur, campagne, événements du panneau, journal des combats
 node scripts/preview.mjs   # deux pages par état dans build/, puis les commandes de rendu des pages panneau
 ```
 
