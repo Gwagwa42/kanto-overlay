@@ -415,7 +415,7 @@ const KT = (() => {
     return [
       `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus ${mode.where} → garder ${10 * mode.interest} pièces${mode.fortuneNote}.`,
       `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation pour les copies trouvables, puis XP.${mode.xpNote}`,
-      'Actualisation à 2 pièces : ne pas en enchaîner pour un shiny.',
+      `Actualisation à ${REROLL_COST} pièces : ne pas en enchaîner pour un shiny.`,
       `Tout jouer sur un combat sous ${hard} % de victoires${notes.length ? ` (${notes.join(' ; ')})` : ''}, sous ${mode.lowHp} PV, ou ${mode.retryNote}.`,
     ];
   }
