@@ -124,7 +124,7 @@ test('compo de campagne : trio des 9 prochains combats de l’aventure, code KT1
   assert.match(a.bag[0].why, /Ceinture Force, meilleur objet de sa lignée en campagne$/);
 });
 
-test('shiny : jamais proposé à la vente en campagne', () => {
+test('shiny : pas de « Vends » en campagne (38 combats, sous le seuil de la Tour comme sous shinyKeepTo)', () => {
   const units = { ...S57.units, f: { id: 'f', line: 'ekans', star: 1 }, g: { id: 'g', line: 'zubat', star: 1 },
     h: { id: 'h', line: 'zubat', star: 1 }, i: { id: 'i', line: 'pidgey', star: 1 }, j: { id: 'j', line: 'pidgey', star: 1 } };
   const full = { ...CAMP, level: 4, units, bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null] };
@@ -169,4 +169,46 @@ test('panneau : Nuzlocke sans conseils, invite neutre sans partie', () => {
   const base = { stats: { torre: modes.torre, camp }, error: null, mode: KT.TOWER_MODE, floor: null, advice: null, save: null };
   assert.match(KT.panelHtml({ ...base, unsupported: true }, ui), /Nuzlocke : pas de conseils/);
   assert.match(KT.panelHtml({ ...base, unsupported: false, mode: mode({}) }, ui), /partie Tour ou campagne.*saisir le combat/);
+});
+
+test('mode à l’écran : barre du haut, Nuzlocke avant la campagne', () => {
+  const doc = present => ({ querySelector: sel => (present.includes(sel) ? {} : null) });
+  assert.equal(KT.shownMode(doc([KT.TOWER.hud])), 'tower');
+  assert.equal(KT.shownMode(doc([KT.CAMPAIGN.hud])), 'campaign');
+  assert.equal(KT.shownMode(doc([KT.CAMPAIGN.hud, KT.NUZLOCKE_HUD])), 'nuzlocke');
+  assert.equal(KT.shownMode(doc([])), null);
+});
+
+test('lecture de la sauvegarde : mode, Nuzlocke, étage manuel oublié au changement de partie', () => {
+  const kanto = { key: 'kanto-tactics-save', raw: JSON.stringify(CAMP), mode: mode(CAMP) };
+  const start = { mode: KT.TOWER_MODE, saveKey: undefined, lastAuto: undefined, floor: null, source: 'manuel' };
+  const first = KT.pollState(start, kanto, 'campaign');
+  assert.deepEqual([first.mode.id, first.floor, first.source, first.unsupported, first.save.round], ['campaign', 15, 'auto', false, 14]);
+  // Étage saisi à la main, même partie au même combat : il tient.
+  const typed = { ...first, floor: 30, source: 'manuel' };
+  assert.deepEqual([KT.pollState(typed, kanto, 'campaign').floor, KT.pollState(typed, kanto, 'campaign').source], [30, 'manuel']);
+  // Tour à l'étage 15 : autre partie, l'étage manuel tombe même si le numéro est le même.
+  const tower = { key: 'kanto-tactics-save-tower', raw: JSON.stringify({ ...S57, round: 1014 }), mode: KT.TOWER_MODE };
+  const swapped = KT.pollState(typed, tower, 'tower');
+  assert.deepEqual([swapped.mode.id, swapped.floor, swapped.source], ['tower', 15, 'auto']);
+  // Mode à l'écran sans sauvegarde : son mode quand même ; Nuzlocke dit non pris en charge.
+  assert.equal(KT.pollState(first, null, 'tower').mode.id, 'tower');
+  assert.deepEqual([KT.pollState(first, null, 'tower').floor, KT.pollState(first, null, 'tower').source], [null, 'manuel']);
+  assert.equal(KT.pollState(swapped, null, 'campaign').mode.adventure, 'kanto');
+  assert.equal(KT.pollState(first, null, 'nuzlocke').unsupported, true);
+  assert.equal(KT.pollState(first, { key: 'kanto-tactics-save-nuzlocke', raw: '{}', mode: null }, 'nuzlocke').unsupported, true);
+});
+
+test('alerte : campagne refusée signalée en campagne seulement, avec les autres effets', () => {
+  const base = { error: null, failed: [], campBroken: true };
+  assert.equal(KT.alertHtml({ ...base, mode: KT.TOWER_MODE }), '');
+  assert.match(KT.alertHtml({ ...base, mode: mode(CAMP) }), /statistiques de campagne au format inattendu\)<\/strong>En campagne, seuls l’économie/);
+  const both = KT.alertHtml({ ...base, mode: mode(CAMP), error: 'lang.json : réseau', failed: ['lang'] });
+  assert.match(both, /lang\.json : réseau ; campana\.json : statistiques de campagne/);
+  assert.match(both, /En campagne, seuls l’économie.*nommés par leur identifiant/);
+});
+
+test('en-tête de la Tour sans aucun arrêt : format de l’API, pas « cette aventure »', () => {
+  const head = KT.headHtml({ advice: null, stats: { torre: { ...modes.torre, stops: [] } }, mode: KT.TOWER_MODE, floor: 5 });
+  assert.match(head, /Aucun boss de la Tour dans les statistiques publiques/);
 });

@@ -127,9 +127,10 @@ test('planificateur : statut du panneau', () => {
   assert.match(KT.statusHtml(state({ code: null, error: null })), /non mis à jour en affichage portrait/);
 });
 
-test('planificateur : rien collé quand la barre du mode conseillé n’est pas à l’écran', async () => {
+test('planificateur : la barre attendue est celle du mode conseillé (paramètre hud), rien collé sans elle', async () => {
   install({ plans: [] });
-  // Barre de la Tour affichée, plan de campagne : le Planificateur reste fermé.
+  // Barre de la Tour affichée, barre de campagne attendue : le Planificateur reste fermé. Le faux DOM ne lit pas le CSS : que
+  // :not(.tw) exclue la Tour n'est vérifiable qu'en jeu.
   assert.equal(await KT.pastePlan(CODE, KT.CAMPAIGN.hud), false);
   assert.equal(game.opened, 0);
 });

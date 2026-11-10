@@ -269,11 +269,11 @@ const KT = (() => {
     retryFrom: 1, shinyKeepTo: Infinity, floorOf: round => Math.max(1, Math.floor(round) + 1),
   };
 
-  // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null) et difficulté. Une difficulté hors de 1 à 3
-  // (autre version de sauvegarde) est signalée en console et comptée Normal : les seuils de la Tour.
+  // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null) et difficulté. Sans league (sauvegarde
+  // d'avant les difficultés), Normal ; une valeur hors de 1 à 3 est signalée en console et comptée Normal.
   function modeContext(rules, save = {}, adventure = null) {
     const known = [1, 2, 3].includes(save.league);
-    if (rules === CAMPAIGN && !known) console.warn('kanto-overlay : difficulté inconnue, comptée Normal', save.league);
+    if (rules === CAMPAIGN && !known && save.league !== undefined) console.warn('kanto-overlay : difficulté inconnue, comptée Normal', save.league);
     const league = rules === CAMPAIGN && known ? save.league : 1;
     return {
       ...rules, adventure, adv: adventure ? ADVENTURES[adventure] ?? null : null, league,
@@ -303,13 +303,45 @@ const KT = (() => {
       if (!kind && key !== SAVE_NUZLOCKE) continue;
       if (shown !== null && (kind?.rules.id ?? 'nuzlocke') !== shown) continue;
       const raw = storage.getItem(key);
-      if (memo.get(key)?.raw !== raw) memo.set(key, { raw, save: parseRound(raw) });
+      if (memo.get(key)?.raw !== raw) memo.set(key, { raw, save: parseRound(raw), mode: undefined });
       const { save } = memo.get(key);
       const at = Number.isFinite(save?.savedAt) ? save.savedAt : 0;
       if (save && (!best || at > best.at)) best = { key, raw, save, at, kind };
     }
     if (!best) return null;
-    return { key: best.key, raw: best.raw, mode: best.kind && modeContext(best.kind.rules, best.save, best.kind.adventure) };
+    const entry = memo.get(best.key);
+    if (entry.mode === undefined) entry.mode = best.kind && modeContext(best.kind.rules, best.save, best.kind.adventure);
+    return { key: best.key, raw: best.raw, mode: entry.mode };
+  }
+
+  // Mode à l'écran d'après la barre du haut ; null hors partie (accueil, combat, transition). Le Nuzlocke passe avant la
+  // campagne, dont il a la barre.
+  function shownMode(doc) {
+    if (doc.querySelector(NUZLOCKE_HUD)) return 'nuzlocke';
+    if (doc.querySelector(TOWER.hud)) return TOWER.id;
+    if (doc.querySelector(CAMPAIGN.hud)) return CAMPAIGN.id;
+    return null;
+  }
+
+  // Nouvel état du panneau après une lecture : prev { mode, saveKey, lastAuto, floor, source }, found : latestSave, shown : mode
+  // à l'écran. Sans sauvegarde du mode à l'écran, son mode quand même (libellés, règles), et le Nuzlocke dit non pris en
+  // charge. L'étage saisi à la main tient jusqu'à ce que la sauvegarde change d'étage, et tombe avec un changement de partie.
+  function pollState(prev, found, shown) {
+    let { mode } = prev;
+    if (found?.mode) mode = found.mode;
+    else if (!found && shown === TOWER.id) mode = TOWER_MODE;
+    else if (!found && shown === CAMPAIGN.id && mode.id !== CAMPAIGN.id) mode = modeContext(CAMPAIGN, {}, 'kanto');
+    const saveKey = found?.key;
+    let { lastAuto, floor, source } = prev;
+    if (saveKey !== prev.saveKey) lastAuto = undefined;
+    const f = found?.mode ? floorFromSave(found.raw, mode) : null;
+    if (f !== lastAuto) {
+      lastAuto = f;
+      if (f !== null) [floor, source] = [f, 'auto'];
+      else if (source === 'auto') [floor, source] = [null, 'manuel'];
+    }
+    const unsupported = found ? found.mode === null : shown === 'nuzlocke';
+    return { mode, unsupported, saveKey, lastAuto, floor, source, save: found?.mode ? parseSave(found.raw) : null };
   }
 
   const levelGoal = (floor, mode) => mode.levelGoals
@@ -1550,7 +1582,7 @@ const KT = (() => {
   const shortDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
   return {
-    SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, lineInfo, loadJson, goldRules, leagueNote, modeContext, latestSave,
+    SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, lineInfo, loadJson, goldRules, leagueNote, modeContext, latestSave, shownMode, pollState,
     parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss,
     baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
@@ -1909,6 +1941,16 @@ function rulesHtml(state) {
 ${rules}`;
 }
 
+// Pas de prochain boss : fin des statistiques (last), ou aucun arrêt du mode (-Infinity) : Tour ou aventure dont les libellés
+// ont changé dans l'API, aventure sans table d'arrêts.
+function noBossHtml(mode, last) {
+  const msg = (title, text) => `<p class="kt-msg"><strong>${esc(title)}</strong>${esc(text)}</p>`;
+  if (last !== -Infinity) return msg(`Aucun boss connu après ${mode.the} ${last}`, 'Les statistiques publiques s’arrêtent là.');
+  if (mode.id === KT.TOWER.id) return msg('Aucun boss de la Tour dans les statistiques publiques', 'Le format de l’API a sans doute changé.');
+  if (mode.adv?.stops) return msg(`Aucun combat de ${mode.adv.name} dans les statistiques publiques`, 'Le format de l’API a sans doute changé : compo sans trio, avec tes meilleures unités.');
+  return msg('Pas de statistiques publiques pour cette aventure', 'La compo cible se fait sans trio, avec tes meilleures unités.');
+}
+
 // En-tête toujours visible : or à dépenser, alerte « tout jouer », prochain boss.
 function headHtml(state) {
   const parts = [];
@@ -1930,14 +1972,7 @@ function headHtml(state) {
     parts.push(`<div class="kt-boss"><span class="n">${esc(KT.fightName(stop))}</span><span class="kt-rate ${lvl.cls}">${lvl.sym} ${KT.pct(stop.fightWin)}<span class="kt-sr"> de victoires</span></span>
 <span class="w">${mode.unit} ${stop.floor} · ${dist ? `dans ${dist}` : 'en cours'}</span></div>`);
   } else if (stats) {
-    const last = KT.lastBossFloor(stats.stops, mode);
-    let msg = `<p class="kt-msg"><strong>Aucun boss connu après ${mode.the} ${last}</strong>Les statistiques publiques s’arrêtent là.</p>`;
-    if (last === -Infinity) {
-      msg = mode.adv?.stops
-        ? `<p class="kt-msg"><strong>Aucun combat de ${esc(mode.adv.name)} dans les statistiques publiques</strong>Le format de l’API a sans doute changé : compo sans trio, avec tes meilleures unités.</p>`
-        : '<p class="kt-msg"><strong>Pas de statistiques publiques pour cette aventure</strong>La compo cible se fait sans trio, avec tes meilleures unités.</p>';
-    }
-    parts.push(msg);
+    parts.push(noBossHtml(mode, KT.lastBossFloor(stats.stops, mode)));
   }
   return parts.length ? `<div class="kt-head">${parts.join('')}</div>` : '';
 }
@@ -1982,13 +2017,16 @@ function optionsHtml(ui) {
 <p class="kt-hint">Alt+K replie le panneau ; double-clic sur la barre pour le remettre en haut à droite.</p>`;
 }
 
+// Statistiques de campagne refusées : signalées seulement pendant une partie de campagne, la Tour n'en a pas besoin.
 function alertHtml(state) {
-  if (!state.error) return '';
-  let effect = state.failed.some(k => !['lang', 'camp'].includes(k))
-    ? 'Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées.'
-    : 'Les objets et les sceaux sont nommés par leur identifiant.';
-  if (state.failed.length === 1 && state.failed[0] === 'camp') effect = 'En campagne, seuls l’économie et les évolutions sont conseillées.';
-  return `<p class="kt-msg"><strong>Données indisponibles (${esc(state.error)})</strong>${effect} Recharge la page dans une heure.</p>`;
+  const camp = state.campBroken && state.mode.id !== KT.TOWER.id;
+  const errors = [state.error, camp && 'campana.json : statistiques de campagne au format inattendu'].filter(Boolean);
+  if (!errors.length) return '';
+  const effects = [];
+  if (state.failed.some(k => k !== 'lang')) effects.push('Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées.');
+  else if (camp) effects.push('En campagne, seuls l’économie et les évolutions sont conseillées.');
+  if (state.failed.includes('lang')) effects.push('Les objets et les sceaux sont nommés par leur identifiant.');
+  return `<p class="kt-msg"><strong>Données indisponibles (${esc(errors.join(' ; '))})</strong>${effects.join(' ')} Recharge la page dans une heure.</p>`;
 }
 
 function footHtml(state) {
@@ -2200,10 +2238,7 @@ async function loadSources(state) {
     if (r.value.stale) stale.push(r.value.at);
     if (r.value.uncached) state.uncached = true;
   });
-  if (state.stats && !state.stats.camp) {
-    state.failed.push('camp');
-    errors.push('campana.json : statistiques de campagne au format inattendu');
-  }
+  state.campBroken = state.stats !== null && !state.stats.camp;
   state.error = errors.length ? errors.join(' ; ') : null;
   state.stale = stale.length ? Math.min(...stale) : null;
 }
@@ -2211,7 +2246,7 @@ async function loadSources(state) {
 function mount() {
   const ui = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
   KT.checkUi(ui);
-  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, mode: KT.TOWER_MODE, unsupported: false, stats: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: undefined, save: null, saveKey: undefined, mode: KT.TOWER_MODE, unsupported: false, stats: null, campBroken: false, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
@@ -2387,36 +2422,18 @@ function mount() {
   }
 
   // Partie jouée en dernier : la Tour, Kanto ou une autre aventure ; le Nuzlocke n'a pas de conseils.
+  // Sauvegardes déjà lues (latestSave) ; mode à l'écran gardé quand la barre du haut disparaît le temps d'un combat ou d'une
+  // modale, sinon le panneau basculerait sur la sauvegarde la plus récente de tous les modes.
   const saves = new Map();
+  let shown = null;
   function pollSave() {
-    let shown = null;
-    if (document.querySelector(KT.NUZLOCKE_HUD)) shown = 'nuzlocke';
-    else if (document.querySelector(KT.TOWER.hud)) shown = KT.TOWER.id;
-    else if (document.querySelector(KT.CAMPAIGN.hud)) shown = KT.CAMPAIGN.id;
-    const found = KT.latestSave(localStorage, shown, saves);
+    const now = KT.shownMode(document) ?? shown;
+    const found = KT.latestSave(localStorage, now, saves);
     const raw = found?.raw ?? null;
-    if (raw === state.lastRaw) return;
+    if (raw === state.lastRaw && now === shown) return;
+    shown = now;
     state.lastRaw = raw;
-    // Autre partie : l'étage saisi à la main pour la précédente ne vaut plus.
-    if (found?.key !== state.saveKey) {
-      state.saveKey = found?.key;
-      state.lastAuto = undefined;
-    }
-    state.unsupported = found !== null && found.mode === null;
-    if (found?.mode) state.mode = found.mode;
-    state.save = found?.mode ? KT.parseSave(raw) : null;
-    // L'étage saisi à la main tient jusqu'à ce que la sauvegarde change d'étage.
-    const f = found?.mode ? KT.floorFromSave(raw, state.mode) : null;
-    if (f !== state.lastAuto) {
-      state.lastAuto = f;
-      if (f !== null) {
-        state.floor = f;
-        state.source = 'auto';
-      } else if (state.source === 'auto') {
-        state.floor = null;
-        state.source = 'manuel';
-      }
-    }
+    Object.assign(state, KT.pollState(state, found, shown));
     compute();
     render();
   }
@@ -2575,5 +2592,5 @@ function mount() {
 }
 
 // Les tests reçoivent aussi le pilote du Planificateur, joué sur un faux DOM.
-if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, PlannerError };
+if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, PlannerError };
 else mount();
