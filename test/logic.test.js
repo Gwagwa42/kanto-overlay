@@ -719,6 +719,9 @@ test('objets : une 2ᵉ copie du composant seul posé n’attend pas sa fusion',
   const bag = titles(advise(withItems(['iron', 'iron', 'iron'])));
   assert.match(bag[0], /^Fer → Goupix — /);
   assert.deepEqual(bag.slice(1), ['Garde Fer — Cuiller Tordue pour Lokhlass, à venir', 'Garde Fer — hors des meilleurs objets de la compo']);
+  // Calcium seul sur Goupix, qui vise encore Vive Griffe et Cuiller Tordue, deux recettes au Calcium : après la fusion du
+  // premier, la copie du sac entame l'autre.
+  assert.deepEqual(titles(advise(withItems(['calcium'], { d: ['choice-specs', 'calcium'] }))), ['Garde Calcium — pour Goupix, une fois Calcium fusionné']);
 });
 
 test('objets : un complément possédé est porteur, même faible', () => {

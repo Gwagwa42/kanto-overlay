@@ -837,7 +837,7 @@ const KT = (() => {
     return { left, short };
   }
 
-  // ★ des places libres, après les ★ ci-dessus et seulement si l'or leur a suffi : une copie par lignée.
+  // ★ des places libres, après les ★ ci-dessus : une copie par lignée (spend la saute quand un ★ manque d'or).
   function freeSlotMarks(cards, marks, left) {
     const filled = new Set();
     cards.forEach((c, i) => {
@@ -851,7 +851,7 @@ const KT = (() => {
 
   // ◆ de la compo cible (compléments, cartes plus fortes, 3ᵉ copies hors compo) qui gardent le palier ; en tout jouer, qui
   // tiennent dans l'or restant.
-  function targetOptMarks(cards, marks, left, eco, target, names) {
+  function targetOptMarks(cards, marks, left, eco) {
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
       const fits = c.cost !== undefined && (eco.allIn ? c.cost <= left : left - c.cost >= eco.floor);
@@ -865,9 +865,9 @@ const KT = (() => {
     return left;
   }
 
-  // ◆ de la compo suivante (hors tout jouer, après l'actualisation conseillée, qui coûte reroll), puis ✕ pour le reste, avec
+  // ◆ de la compo suivante (hors tout jouer, après l'actualisation conseillée, qui coûte rerollCost), puis ✕ pour le reste, avec
   // le motif de l'or : l'XP réservée (xpCost) quand la carte tenait sans elle, sinon le palier.
-  function restMarks(cards, marks, left, game, eco, target, next, names, xpCost, reroll) {
+  function restMarks(cards, marks, left, game, eco, next, names, xpCost, rerollCost) {
     const hold = cost => {
       if (eco.allIn) return 'il manque de l’or';
       const beforeXp = cost !== undefined && left + xpCost - cost >= eco.floor && left - cost < eco.floor;
@@ -878,7 +878,7 @@ const KT = (() => {
       if (c.inNext && !c.inTarget) {
         const range = floorRange(next.stops, game.mode);
         const fits = c.cost !== undefined && left - c.cost >= eco.floor;
-        if (!eco.allIn && fits && left - c.cost - reroll >= eco.floor) {
+        if (!eco.allIn && fits && left - c.cost - rerollCost >= eco.floor) {
           left -= c.cost;
           marks[i] = mark('opt', 'Si l’or', `${c.name} si l’or reste ≥ ${eco.floor}`, `prépare la compo des ${range}`, proofText(next.proof, names));
           return;
@@ -907,9 +907,9 @@ const KT = (() => {
     left -= xp.cost;
     let reroll = null;
     if (target) {
-      left = targetOptMarks(cards, marks, left, eco, target, names);
+      left = targetOptMarks(cards, marks, left, eco);
       reroll = rerollMark(game, target, data, eco, names, left);
-      left = restMarks(cards, marks, left, game, eco, target, next, names, xp.cost, reroll?.level === 'do' ? REROLL_COST : 0);
+      left = restMarks(cards, marks, left, game, eco, next, names, xp.cost, reroll?.level === 'do' ? REROLL_COST : 0);
     }
     const spare = xp.mark?.level !== 'do' && reroll?.level !== 'do';
     return {
@@ -1152,7 +1152,7 @@ const KT = (() => {
   // Objets du sac libres : ni posés par un conseil (★), ni gardés pour un Pokémon ou une lignée à venir.
   const freeBag = (bag, marks, reserved) => bag.filter((id, i) => marks[i]?.level !== 'do' && !reserved.has(i));
 
-  // État des conseils du sac, partagé par itemMarks, magnetMarks et placePart. hs : porteurs (holdersOf) avec on, leurs objets
+  // État des conseils du sac, partagé par itemMarks, magnetMarks, placePart et keepMarks. hs : porteurs (holdersOf) avec on, leurs objets
   // à la fin des conseils de ce passage ; slots : places libres ; lone : composant seul porté ; loneAt : case du sac du
   // composant seul conseillé dans ce passage ; after : paire à poser avant ; held : objets du sac gardés pour lui après
   // l'Aimant ; emptied : vidé par un Aimant de ce passage. reserved : cases du sac gardées pour un Pokémon précis (après
@@ -1174,10 +1174,13 @@ const KT = (() => {
   const pendingIn = (s, k) => s.game.bag.map((id, i) => ({ id, i })).filter(x => s.marks[x.i] === null && itemKind(s.data, x.id) === k);
   // Recettes idéales encore à faire du Pokémon qui contiennent ce composant.
   const recipesWith = (s, h, id) => h.ideal.filter(f => idealTo(h, f) && s.book.parts.get(f)?.includes(id));
-  // Recettes idéales où ce composant manque encore : celle qu'entame le composant seul du Pokémon n'attend que l'autre (une
-  // deuxième copie du même composant n'y entre pas).
-  const missingIn = (s, h, id) => recipesWith(s, h, id)
-    .filter(f => !h.lone || !s.book.parts.get(f).includes(h.lone) || otherPart(s.book, f, h.lone) === id);
+  // Recettes idéales où ce composant manque encore. Une copie du composant seul du Pokémon ne sert que si une autre recette
+  // idéale le demande après sa fusion (deux recettes au moins qui le contiennent), ou si la recette le demande deux fois.
+  function missingIn(s, h, id) {
+    const all = recipesWith(s, h, id);
+    if (id !== h.lone || all.length >= 2) return all;
+    return all.filter(f => otherPart(s.book, f, id) === id);
+  }
   // Pokémon de la compo qui attendent cet objet, ou un objet idéal où ce composant manque.
   const takers = (s, id) => s.hs.filter(h => idealTo(h, id) || missingIn(s, h, id).length);
   // Composant seul porté qui entre dans une recette idéale encore à faire ; sinon il bloque le Pokémon (Aimant).
