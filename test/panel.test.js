@@ -39,6 +39,9 @@ test('menu d’options : bouton radio, case de pastille, rendu dans l’ordre de
   const legends = [...KT.optionsHtml(ui).matchAll(/<legend>([^<]+)<\/legend>/g)].map(m => m[1]);
   assert.deepEqual(legends, KT.OPTIONS.map(o => o.label));
   assert.match(KT.optionsHtml(ui), /name="pins" value="no"><span>✕ Éviter/);
+  // Préréglages de stratégie sous leur titre, après les options d'affichage.
+  assert.match(KT.optionsHtml(ui), /Porteur à distance \(formation\)<\/legend>.*<h2>Stratégie<\/h2><fieldset><legend>Niveaux visés<\/legend>/s);
+  assert.match(KT.optionsHtml(ui), /name="allIn" value="normal" checked><span>Normal/);
   // Pastilles absentes ou partielles du stockage : cochées par défaut.
   const old = { pins: { opt: false } };
   KT.checkUi(old);

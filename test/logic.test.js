@@ -165,6 +165,69 @@ test('tout jouer : étage rejoué à partir de l’étage 50', () => {
   assert.equal(at(1048, 1).allIn, false);
 });
 
+// Mode de la Tour avec ces préréglages de stratégie, les autres en normal.
+const strategy = (choice, mode = T) => KT.withStrategy(mode, { ...KT.STRATEGY_DEFAULTS, ...choice });
+
+test('stratégie : préréglages normaux = règles par défaut du mode', () => {
+  assert.deepEqual(strategy({}), T);
+  assert.deepEqual([T.hardWin, T.lowHp, T.horizon, T.inertia, T.ownedBonus], [45, 40, 9, 30, 10]);
+});
+
+test('stratégie : niveaux visés plus tôt ou plus tard, repartis des règles du mode', () => {
+  const at = (mode, pace) => strategy({ pace }, mode).levelGoals.map(([from]) => from);
+  // Niveau 10 : pas avant l'étage 60, où le jeu l'autorise.
+  assert.deepEqual(at(T, 'early'), [5, 9, 15, 23, 34, 60]);
+  assert.deepEqual(at(T, 'late'), [8, 15, 25, 38, 56, 81]);
+  // Un nouveau choix remplace le précédent au lieu de s'y ajouter.
+  assert.deepEqual(at(strategy({ pace: 'late' }), 'early'), [5, 9, 15, 23, 34, 60]);
+  const camp = KT.modeContext(KT.CAMPAIGN, {}, 'kanto');
+  assert.deepEqual(at(camp, 'early'), [3, 6, 9, 12, 18, 23]);
+  assert.deepEqual(at(camp, 'late'), [5, 10, 15, 20, 30, 38]);
+  assert.ok(KT.goldRules(strategy({ pace: 'early' })).some(r => r.includes('(5 dès l’étage 5, 6 dès l’étage 9, 7 dès l’étage 15,')));
+  // Étage 40, niveau 7 : niveau 8 visé en normal (dès 30), 9 plus tôt (dès 34).
+  const xp = pace => why(advise({ ...S57, round: 1039, level: 7, xp: 0, gold: 60 }, { mode: strategy({ pace }) }).xp);
+  assert.match(xp('normal'), /niveau 8 visé à cet étage/);
+  assert.match(xp('early'), /niveau 9 visé à cet étage/);
+  // Étage 50 au niveau 9 (maximal avant l'étage 60) : l'actualisation reste conseillée plus tôt comme en normal.
+  const reroll = pace => brief(advise({ ...S57, round: 1049, level: 9, xp: 0, gold: 60 }, { mode: strategy({ pace }) }).reroll);
+  assert.deepEqual([reroll('normal'), reroll('early')], ['do Actualise', 'do Actualise']);
+});
+
+test('stratégie : tout jouer prudent ou audacieux', () => {
+  const eco = (allIn, round, hp) => advise({ ...S57, round, hp }, { mode: strategy({ allIn }) }).eco;
+  // PV 45 : sous 50 en prudent, pas sous 40.
+  assert.deepEqual([eco('careful', 1056, 45).allIn, eco('normal', 1056, 45).allIn], [true, false]);
+  // PV 35 : sous 40 en normal, pas sous 30.
+  assert.deepEqual([eco('normal', 1056, 35).allIn, eco('bold', 1056, 35).allIn], [true, false]);
+  // Électhor (étage 60, 40,8 %) : sous 45, pas sous 40.
+  assert.deepEqual([eco('normal', 1059, 62).allIn, eco('bold', 1059, 62).allIn], [true, false]);
+  assert.ok(KT.goldRules(strategy({ allIn: 'careful' })).includes('Tout jouer sur un combat sous 50 % de victoires, sous 50 PV, ou sur un étage rejoué à partir de l’étage 50.'));
+  const head = headHtml({ advice: advise({ ...S57, hp: 45 }, { mode: strategy({ allIn: 'careful' }) }), stats: { torre }, mode: strategy({ allIn: 'careful' }), floor: 57 });
+  assert.match(head, /Tout jouer : PV sous 50./);
+  const camp = strategy({ allIn: 'bold' }, KT.modeContext(KT.CAMPAIGN, { league: 3 }, 'kanto'));
+  assert.equal(KT.leagueNote(camp), 'Kanto · Légende · tout jouer sous 60 %');
+});
+
+test('stratégie : compo réactive ou stable (combats vus d’avance, inertie)', () => {
+  const stops = comp => advise(S57, { mode: strategy({ comp }) }).target.stops.length;
+  assert.deepEqual([stops('reactive'), stops('normal'), stops('stable')], [6, 9, 12]);
+  const cores = [brockCore(['abra', 'onix', 'zubat']), brockCore(['pidgey', 'rattata', 'spearow'], 40)];
+  const game = comp => KT.readGame({ ...save, round: 1009, level: 6, units: {}, board: {}, bench: [], shop: [] }, strategy({ comp }));
+  // Écart de 40 points : gardé avec une inertie de 45, pas de 30.
+  const key = comp => KT.targetComp(brockStats(cores), data, game(comp), 'pidgey+rattata+spearow').key;
+  assert.deepEqual([key('normal'), key('stable')], ['abra+onix+zubat', 'pidgey+rattata+spearow']);
+});
+
+test('stratégie : bonus des Pokémon possédés faible ou fort', () => {
+  const stops = KT.nextStops(BROCK, 10, 3, T);
+  const unit = { g: { id: 'g', line: 'giovanni', star: 1 } };
+  const score = (owned, units) => KT.coreScore(['giovanni', 'koga', 'samurai'], stops, new Map(),
+    KT.readGame({ ...save, round: 1009, level: 8, units, board: {}, bench: Object.keys(units), shop: [] }, strategy({ owned })), data);
+  // Niveau 8 : Koga et Samouraï (coût 5) introuvables, un malus chacun ; Giovanni possédé, un bonus.
+  assert.deepEqual([score('low', unit), score('normal', unit), score('high', unit)], [-5, -10, -20]);
+  assert.deepEqual([score('low', {}), score('high', {})], [-15, -60]);
+});
+
 test('compo cible : meilleur trio pondéré, remplissage par puissance', () => {
   const a = advise(S57);
   assert.deepEqual(a.target.core, ['aerodactyl', 'dratini', 'growlithe']);
@@ -1322,12 +1385,12 @@ test('niveaux de taux et formats français', () => {
 });
 
 test('options du panneau : valeurs inconnues ramenées aux défauts, valeurs connues gardées', () => {
-  const ui = { theme: 'bogus', width: 'wide', text: 'huge', alpha: '75', side: 'nowhere', tab: 'zzz', pins: { no: false } };
+  const ui = { theme: 'bogus', width: 'wide', text: 'huge', alpha: '75', side: 'nowhere', tab: 'zzz', pins: { no: false }, pace: 'fast', allIn: 2 };
   KT.checkUi(ui);
-  assert.deepEqual(ui, { theme: 'auto', width: 'wide', text: 'normal', alpha: '90', side: 'left', tab: 'tour', pins: { do: true, opt: true, no: false } });
-  const ok = { theme: 'light', width: 'compact', text: 'small', alpha: '85', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true } };
+  assert.deepEqual(ui, { theme: 'auto', width: 'wide', text: 'normal', alpha: '90', side: 'left', tab: 'tour', pins: { do: true, opt: true, no: false }, pace: 'normal', allIn: 'normal', comp: 'normal', owned: 'normal' });
+  const ok = { theme: 'light', width: 'compact', text: 'small', alpha: '85', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true }, pace: 'late', allIn: 'bold', comp: 'stable', owned: 'high' };
   KT.checkUi(ok);
-  assert.deepEqual(ok, { theme: 'light', width: 'compact', text: 'small', alpha: '85', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true } });
+  assert.deepEqual(ok, { theme: 'light', width: 'compact', text: 'small', alpha: '85', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true }, pace: 'late', allIn: 'bold', comp: 'stable', owned: 'high' });
   // Compteur de l'onglet Tour : conseils ★ et ◆ plus bénédictions inconnues, nom accessible accordé.
   const a = advise(S57);
   const count = n => KT.tabsHtml({ advice: n }, { tab: 'tour' }).match(/aria-label="Tour (\d+) conseils?"/)?.[1];

@@ -23,7 +23,8 @@ cible, compo suivante, objets visés, copie de la formation), **Boss** (taux, pr
 
 Le menu ⚙ règle le thème (auto, clair, sombre), les pastilles affichées par niveau, la largeur (320 ou 380 px), la taille du texte,
 l'opacité du fond (100, 90 ou 85 % : en deçà, le texte secondaire passe sous un contraste de 4,5:1 sur les zones claires du jeu en
-thème sombre, sombres en thème clair) et la zone du porteur dans la formation. Les réglages sont gardés dans le navigateur.
+thème sombre, sombres en thème clair) et la zone du porteur dans la formation. Sa partie Stratégie règle quatre préréglages
+(voir [Stratégie](#stratégie)). Les réglages sont gardés dans le navigateur.
 
 Pages où il s'affiche : les pages d'entrée du jeu, `https://einoow.com/` et `/kanto-tactics`, `/tower`, `/pvp`, `/duo`, `/nuzlocke`
 (avec ou sans `?…`), ainsi que `https://einoow.com/playables/kanto-tactics/…`. Le jeu change de mode sans changer d'adresse : le panneau
@@ -37,6 +38,8 @@ partie, on saisit l'étage (ou le combat) avec − / + ou dans le champ. `Alt+K`
 barre le remet en haut à droite.
 
 ## Comment les conseils sont choisis
+
+Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change quatre ([Stratégie](#stratégie)).
 
 - **Compo cible** : parmi les trios d'au moins 20 combats des 9 prochains combats (élites comprises, environ 20 étages), celui dont la
   borne basse du taux de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat, avec un bonus pour
@@ -137,6 +140,18 @@ barre le remet en haut à droite.
 - **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny »
   dans la compo cible, ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, et s'écrit `ligne:2s:…` dans
   le code KT1. Une unité shiny n'est pas proposée à la vente : jusqu'à l'étage 120 en Tour, sur toute la campagne.
+
+### Stratégie
+
+Quatre préréglages du menu ⚙, « Normal » par défaut. Ce sont des choix de jeu : aucune statistique publique ne les départage.
+Changer un préréglage recalcule tout de suite les conseils et les règles d'or.
+
+| Réglage | Valeurs | Effet |
+| --- | --- | --- |
+| Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 5, 6 dès 9, 7 dès 15, 8 dès 23, 9 dès 34, 10 dès 60 ; plus tard : 8, 15, 25, 38, 56, 81. Campagne plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38, sous la taille des équipes des champions (8 au 6ᵉ badge, 9 contre Mewtwo). Le niveau maximal ne change pas : le niveau 10 n'est jamais visé avant l'étage 60 en Tour. |
+| Tout jouer | Prudent, Normal, Audacieux | Combat sous 50, 45 ou 40 % de victoires (plus la pénalité de difficulté en campagne), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
+| Compo cible | Réactive, Normale, Stable | Combats vus d'avance (6, 9 ou 12, la compo suivante sur autant d'après) et gain minimal pour changer de trio (15, 30 ou 45 points). |
+| Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver introuvable à ton niveau (autant). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
 
 ### Campagne
 

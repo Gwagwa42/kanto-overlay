@@ -138,7 +138,7 @@ function panelPage(name, s) {
   const failed = FAILED[s.api] ?? [];
   const loaded = k => s.api !== 'pending' && !failed.includes(k);
   const state = {
-    ...KT.pollState(start, found, null), lastRaw: raw, stats: loaded('stats') ? { torre: modes.torre, camp: modes.camp } : null,
+    ...KT.pollState(start, found, null, ui), lastRaw: raw, stats: loaded('stats') ? { torre: modes.torre, camp: modes.camp } : null,
     campBroken: false, data: loaded('data') ? data : null, lang: loaded('lang') ? lang : null, failed, stale: null, uncached: false,
     error: failed.length ? failed.map(k => `${FILES[k]} : HTTP 429`).join(' ; ') : null, copied: null,
   };
