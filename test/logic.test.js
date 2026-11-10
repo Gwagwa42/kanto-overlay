@@ -801,10 +801,13 @@ test('formation : dans la limite du niveau, cœur possédé d’abord', () => {
   assert.deepEqual(units.sort(), ['dratini', 'growlithe']);
 });
 
-test('formation : une seule unité par cellule, niveaux 3 à 9, pour chaque zone du porteur', () => {
+// Cellule de chaque lignée d'un code KT1.
+const cellsOf = code => Object.fromEntries(code.split(';').slice(4).map(u => u.split(':')).map(([line, , cell]) => [line, Number(cell)]));
+
+test('formation : une seule unité par cellule, niveaux 3 à 10, pour chaque zone du porteur', () => {
   for (const side of ['left', 'center', 'right']) {
-    for (let level = 3; level <= 9; level++) {
-      const cells = advise({ ...S57, level }, { side }).code.split(';').slice(4).map(u => Number(u.split(':')[2]));
+    for (let level = 3; level <= 10; level++) {
+      const cells = Object.values(cellsOf(advise({ ...S57, level }, { side }).code));
       assert.equal(new Set(cells).size, cells.length, `niveau ${level}, ${side}`);
       assert.ok(cells.every(c => c >= 0 && c <= 27));
     }
@@ -855,46 +858,42 @@ test('déplacements rejoués comme le jeu : échange, occupant déplacé, Pokém
 });
 
 const BROCK = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
-// Compo réduite à un trio, niveau 3, boutique vide : le porteur est l'unité ★★ du trio.
-const trio = (core, units, board, bench, side = 'left') => KT.advise({
-  torre: { ...torre, stops: BROCK, cores: [{ stop: '10:brock', core, n: 50, win: 90, lo: 80 }] }, data, lang, side, previous: null,
-  save: { ...save, round: 1009, level: 3, shop: [], units, board, bench },
+// Compo réduite à un trio et aux unités possédées, boutique vide : le porteur est l'unité la plus étoilée du trio. stars : lignée
+// → étoile de l'unité possédée, qui prend la lignée pour identifiant ; hors du plateau, elle est au banc.
+const trio = (core, stars, { board = {}, level = 3, side = 'left', lines = data.lines } = {}) => KT.advise({
+  torre: { ...torre, stops: BROCK, cores: [{ stop: '10:brock', core, n: 50, win: 90, lo: 80 }] }, data: { ...data, lines }, lang, side, previous: null,
+  save: {
+    ...save, round: 1009, level, shop: [], board, bench: Object.keys(stars).filter(id => !Object.values(board).includes(id)),
+    units: Object.fromEntries(Object.entries(stars).map(([line, star]) => [line, { id: line, line, star }])),
+  },
 });
-const cellsOf = code => Object.fromEntries(code.split(';').slice(4).map(u => u.split(':')).map(([line, , cell]) => [line, Number(cell)]));
+const sortedCells = code => Object.values(cellsOf(code)).sort((a, b) => a - b);
 
-test('formation : rangée = portée, 4 et plus au fond, pour chaque zone du porteur', () => {
-  for (const side of ['left', 'center', 'right']) {
-    for (let level = 3; level <= 9; level++) {
-      for (const [line, cell] of Object.entries(cellsOf(advise({ ...S57, level }, { side }).code))) {
-        assert.equal(Math.floor(cell / 7), Math.min(data.lines[line].range, 4) - 1, `${line}, niveau ${level}, ${side}`);
-      }
-    }
-  }
-  // Kicklee (portée 2), Goupix (3), Abra (4, porteur) et Stari (5, complément) : 2ᵉ rangée, 3ᵉ rangée, fond, sans colonne commune.
-  const units = {
-    x: { id: 'x', line: 'abra', star: 2 }, k: { id: 'k', line: 'hitmonlee', star: 1 }, v: { id: 'v', line: 'vulpix', star: 1 },
-    s: { id: 's', line: 'staryu', star: 1 },
-  };
-  const spread = KT.advise({
-    torre: { ...torre, stops: BROCK, cores: [{ stop: '10:brock', core: ['abra', 'hitmonlee', 'vulpix'], n: 50, win: 90, lo: 80 }] }, data, lang,
-    side: 'left', previous: null, save: { ...save, round: 1009, level: 4, shop: [], units, board: {}, bench: ['x', 'k', 'v', 's'] },
-  });
+test('formation : rangée = portée, 4 et plus au fond, sans colonne commune derrière l’avant', () => {
+  // Kicklee (portée 2), Goupix (3), Abra (4, porteur) et Stari (5, complément) : 2ᵉ rangée, 3ᵉ rangée, fond.
+  const spread = trio(['abra', 'hitmonlee', 'vulpix'], { abra: 2, hitmonlee: 1, vulpix: 1, staryu: 1 }, { level: 4 });
   assert.deepEqual(cellsOf(spread.code), { hitmonlee: 9, vulpix: 18, abra: 21, staryu: 27 });
+  // Portée nulle dans les données : mêlée, à l'avant.
+  const lines = { ...data.lines, vulpix: { ...data.lines.vulpix, range: 0 } };
+  assert.equal(cellsOf(trio(['abra', 'hitmonlee', 'vulpix'], { vulpix: 1 }, { lines }).code).vulpix, 3);
 });
 
-test('formation : rangée pleine, la mêlée déborde en 2ᵉ rangée depuis le centre', () => {
-  const lines = ['rattata', 'pidgey', 'zubat', 'caterpie', 'weedle', 'machop', 'diglett', 'geodude'];
-  const units = Object.fromEntries(lines.map((line, i) => [`u${i}`, { id: `u${i}`, line, star: 1 }]));
-  const full = KT.advise({
-    torre: { ...torre, stops: BROCK, cores: [{ stop: '10:brock', core: lines.slice(0, 3), n: 50, win: 90, lo: 80 }] }, data, lang,
-    side: 'left', previous: null, save: { ...save, round: 1009, level: 8, shop: [], units, board: {}, bench: Object.keys(units) },
-  });
-  assert.deepEqual(Object.values(cellsOf(full.code)).sort((a, b) => a - b), [0, 1, 2, 3, 4, 5, 6, 10]);
+test('formation : rangée pleine, débordement derrière, puis devant', () => {
+  const all = ids => Object.fromEntries(ids.map(id => [id, 1]));
+  // 8 unités de mêlée : la 8ᵉ en 2ᵉ rangée, depuis le centre.
+  const melee = ['rattata', 'pidgey', 'zubat', 'caterpie', 'weedle', 'machop', 'diglett', 'geodude'];
+  assert.deepEqual(sortedCells(trio(melee.slice(0, 3), all(melee), { level: 8 }).code), [0, 1, 2, 3, 4, 5, 6, 10]);
+  // 8 unités de portée 3 : la 8ᵉ au fond, dans la première colonne de la zone (toutes les colonnes sont déjà prises).
+  const ranged = ['vulpix', 'psyduck', 'oddish', 'gastly', 'squirtle', 'magnemite', 'jynx', 'magmar'];
+  assert.deepEqual(sortedCells(trio(ranged.slice(0, 3), all(ranged), { level: 8 }).code), [14, 15, 16, 17, 18, 19, 20, 21]);
+  // Les mêmes en portée 4 : le fond est plein, la 8ᵉ passe devant, en 3ᵉ rangée, dans la première colonne de la zone.
+  const lines = { ...data.lines, ...Object.fromEntries(ranged.map(id => [id, { ...data.lines[id], range: 4 }])) };
+  assert.deepEqual(sortedCells(trio(ranged.slice(0, 3), all(ranged), { level: 8, lines }).code), [14, 21, 22, 23, 24, 25, 26, 27]);
 });
 
 test('formation : porteur à distance sur la rangée de sa portée, dans la zone choisie, gardé s’il y est déjà', () => {
   // Abra, portée 4 : au fond.
-  const at = (cell, side) => trio(['abra', 'onix', 'zubat'], { x: { id: 'x', line: 'abra', star: 2 } }, { [cell]: 'x' }, [], side);
+  const at = (cell, side) => trio(['abra', 'onix', 'zubat'], { abra: 2 }, { board: { [cell]: 'abra' }, side });
   assert.deepEqual(at(29, 'left').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 1']);
   assert.deepEqual(at(29, 'right').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 7']);
   // Fond, colonne 3 : dans le coin gauche (gardé), hors du coin droit.
@@ -904,22 +903,19 @@ test('formation : porteur à distance sur la rangée de sa portée, dans la zone
   // Centre : colonnes 3 à 5 du fond, colonne 4 d'abord ; fond colonne 3 est dans la zone, gardé.
   assert.deepEqual(at(29, 'center').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 4']);
   assert.deepEqual(at(51, 'center').moves, []);
-  const abra = { id: 'x', line: 'abra', star: 2 };
   const said = a => a.moves.map(m => `${m.title} — ${m.why}`);
   // Pikachu et Voltali (portée 4) déjà au fond en colonnes 1 et 3 : le porteur reste dans le coin (colonne 2), pas en colonne 5.
-  const corner = trio(['abra', 'pikachu', 'jolteon'],
-    { x: abra, p: { id: 'p', line: 'pikachu', star: 1 }, j: { id: 'j', line: 'jolteon', star: 1 } }, { 49: 'p', 51: 'j' }, ['x']);
+  const corner = trio(['abra', 'pikachu', 'jolteon'], { abra: 2, pikachu: 1, jolteon: 1 }, { board: { 49: 'pikachu', 51: 'jolteon' } });
   assert.deepEqual(said(corner), ['Pose Abra — fond, colonne 2']);
   // Centre : Psykokwak (à acheter) et Goupix, portée 3, évitent la colonne 4 du porteur : colonnes 2 puis 6 de la 3ᵉ rangée.
-  const vulpix = { id: 'v', line: 'vulpix', star: 1 };
-  const center = trio(['abra', 'psyduck', 'vulpix'], { x: abra, v: vulpix }, {}, ['x', 'v'], 'center');
+  const center = trio(['abra', 'psyduck', 'vulpix'], { abra: 2, vulpix: 1 }, { side: 'center' });
   assert.deepEqual(cellsOf(center.code), { psyduck: 15, vulpix: 19, abra: 24 });
   assert.deepEqual(said(center), ['Pose Goupix — 3ᵉ rangée, colonne 6', 'Pose Abra — fond, colonne 4']);
   // Porteur de portée 3 (Goupix ★★) : 3ᵉ rangée, colonnes de sa zone ; déjà en 3ᵉ rangée colonne 3 (case 44), il la garde à gauche.
-  const carry3 = (board, bench, side) => trio(['vulpix', 'onix', 'zubat'], { v: { ...vulpix, star: 2 } }, board, bench, side);
-  assert.deepEqual(said(carry3({}, ['v'], 'right')), ['Pose Goupix — 3ᵉ rangée, colonne 7']);
-  assert.deepEqual(said(carry3({ 44: 'v' }, [], 'left')), []);
-  assert.deepEqual(said(carry3({ 44: 'v' }, [], 'right')), ['Déplace Goupix — 3ᵉ rangée, colonne 3 → 3ᵉ rangée, colonne 7']);
+  const carry3 = (board, side) => trio(['vulpix', 'onix', 'zubat'], { vulpix: 2 }, { board, side });
+  assert.deepEqual(said(carry3({}, 'right')), ['Pose Goupix — 3ᵉ rangée, colonne 7']);
+  assert.deepEqual(said(carry3({ 44: 'vulpix' }, 'left')), []);
+  assert.deepEqual(said(carry3({ 44: 'vulpix' }, 'right')), ['Déplace Goupix — 3ᵉ rangée, colonne 3 → 3ᵉ rangée, colonne 7']);
 });
 
 // Unités de S57 remplacées ou ajoutées ; shiny : +10 % (makeUnit du jeu), transmis par la fusion.

@@ -746,8 +746,8 @@ const KT = (() => {
     return (own.length ? own : topHolders(torre, data, baseLine(line), profile)).map(h => h.id);
   }
 
-  // Portée inconnue : mêlée.
-  const rangeOf = (data, base) => lineInfo(data, base)?.range ?? 1;
+  // Portée inconnue ou nulle : mêlée.
+  const rangeOf = (data, base) => Math.max(1, lineInfo(data, base)?.range ?? 1);
 
   // Porteurs : un Pokémon possédé par lignée de la compo cible (le plus étoilé, puis celui qui porte le plus d'objets, puis
   // posé). Rôles lus sur le profil de la lignée : porteur (attaquant du cœur le mieux classé), tanks (aux PV max d'abord),
@@ -1103,11 +1103,12 @@ const KT = (() => {
 
   // Formation KT1 : la compo cible dans la limite du niveau (cœur possédé d'abord pour la coupe). La rangée d'un Pokémon est sa
   // portée, 1 à l'avant, 4 et plus au fond : les deux camps se touchent sur un plateau en hexagones, il atteint de là la première
-  // rangée ennemie. Un tank reste à l'avant quelle que soit sa portée. Colonnes : depuis le centre à l'avant ; derrière, dans
-  // l'ordre de la zone choisie (coin gauche, centre ou coin droit), le porteur d'abord dans les colonnes de cette zone, en
-  // évitant une colonne déjà prise derrière l'avant (d'une rangée à l'autre, deux cases de la même colonne se touchent). Déjà sur
-  // une case de sa première liste, un Pokémon la garde ; rangée pleine, il passe derrière, puis devant. unit : l'unité possédée
-  // (porteur de holdersOf), from : sa cellule, 'bench', ou null s'il n'est pas possédé.
+  // rangée ennemie. Un tank possédé (le rôle vient de holdersOf) reste à l'avant quelle que soit sa portée. Colonnes : depuis le
+  // centre à l'avant ; derrière, dans l'ordre de la zone choisie (coin gauche, centre ou coin droit), le porteur d'abord dans les
+  // colonnes de cette zone, en évitant la colonne d'une autre unité à distance, quelle que soit sa rangée (sur deux rangées
+  // voisines, deux cases de la même colonne se touchent). Déjà sur une case de sa première liste, un Pokémon la garde ; rangée
+  // pleine, il passe derrière, puis devant. unit : l'unité possédée (porteur de holdersOf), from : sa cellule, 'bench', ou null
+  // s'il n'est pas possédé.
   function formation(target, game, data, holders, side) {
     const stars = id => bestStar(game, baseLine(id));
     const kept = new Set([...[...target.core].sort((a, b) => stars(b) - stars(a)), ...target.fillers].slice(0, game.level));
@@ -1130,17 +1131,17 @@ const KT = (() => {
     };
     const stay = new Set(units.filter(u => zones(u)[0].includes(u.from)));
     const taken = new Set([...stay].map(u => u.from));
-    const behindCols = new Set([...stay].filter(u => u.row > 0).map(u => colOf(u.from)));
+    const rangedCols = new Set([...stay].filter(u => u.row > 0).map(u => colOf(u.from)));
     const first = role => (a, b) => Number(b.role === role) - Number(a.role === role);
     const order = [...units.filter(u => u.row === 0).sort(first('tank')), ...units.filter(u => u.row > 0).sort(first('carry'))];
     for (const u of order) {
       if (stay.has(u)) u.cell = u.from;
       else {
         const free = zones(u).map(cells => cells.filter(c => !taken.has(c))).find(cells => cells.length);
-        u.cell = (u.row > 0 ? free.find(c => !behindCols.has(colOf(c))) : undefined) ?? free[0];
+        u.cell = (u.row > 0 ? free.find(c => !rangedCols.has(colOf(c))) : undefined) ?? free[0];
       }
       taken.add(u.cell);
-      if (u.row > 0) behindCols.add(colOf(u.cell));
+      if (u.row > 0) rangedCols.add(colOf(u.cell));
     }
     // Doc de l'API : unités triées par cellule.
     return units.sort((a, b) => a.cell - b.cell);
