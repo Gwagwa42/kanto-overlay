@@ -834,8 +834,8 @@ const KT = (() => {
       const on = [...(h.unit.items ?? [])];
       const lone = on.find(id => kind(id) === 'part') ?? null;
       // loneAt : case du sac du composant seul conseillé dans ce passage ; after : paire à poser avant.
-      // held : objets du sac gardés pour lui après l'Aimant.
-      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, after: null, held: [] };
+      // held : objets du sac gardés pour lui après l'Aimant ; emptied : vidé par un Aimant de ce passage.
+      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, after: null, held: [], emptied: false };
     });
     // Cases du sac gardées pour un Pokémon précis (après l'Aimant) ou pour une lignée à venir.
     const reserved = new Set();
@@ -867,20 +867,26 @@ const KT = (() => {
       h.on.push(id);
       Object.assign(h, { lone: id, loneAt: i });
     };
-    // Fusion avec le composant seul du Pokémon : s'il a été conseillé dans ce passage, les deux bulles annoncent la paire.
+    // Fusion avec le composant seul du Pokémon : s'il a été conseillé dans ce passage, les deux bulles annoncent la paire. Sinon
+    // ce composant se pose avant tout autre conseillé ensuite au Pokémon, qui fusionnerait à sa place avec le composant porté.
     const fuse = (i, h, id, why) => {
       const made = fused(h, id);
       if (h.loneAt !== null) pair(h.loneAt, i, h, h.lone, id, why);
-      else put(i, h, `${names.item(id)} → ${h.who}`, `fusionne avec ${names.item(h.lone)} : ${why}`);
+      else {
+        put(i, h, `${names.item(id)} → ${h.who}`, `fusionne avec ${names.item(h.lone)} : ${why}`);
+        h.after = names.item(id);
+      }
       h.on[h.on.indexOf(h.lone)] = made;
       Object.assign(h, { lone: null, loneAt: null });
     };
 
+    // Recettes idéales encore à faire du Pokémon qui contiennent ce composant.
+    const recipesWith = (h, id) => h.ideal.filter(f => ideal(h, f) && book.parts.get(f)?.includes(id));
     // Paire idéale du sac : recette idéale d'un Pokémon libre, sans paire dans ce passage, dont l'autre composant attend dans le sac.
     const idealPair = (free, id, i) => {
       const waiting = pending('part');
       for (const h of free.filter(x => !x.after)) {
-        for (const f of h.ideal.filter(x => ideal(h, x) && book.parts.get(x)?.includes(id))) {
+        for (const f of recipesWith(h, id)) {
           const ab = book.parts.get(f);
           const j = waiting.find(p => p.i !== i && p.id === (ab[0] === id ? ab[1] : ab[0]))?.i;
           if (j !== undefined) return { h, f, ab, j };
@@ -891,17 +897,15 @@ const KT = (() => {
     // Composants encore à réunir pour chaque recette idéale des lignées à venir : une copie gardée par composant demandé.
     const needs = future.flatMap(x => x.ideal.map(f => ({ x, f, left: [...(book.parts.get(f) ?? [])] })));
     // Pokémon de la compo qui attend cet objet, ou un objet idéal dont c'est un composant.
-    const wantedBy = id => hs.find(h => h.ideal.some(f => ideal(h, f) && (f === id || book.parts.get(f)?.includes(id))));
+    const wantedBy = id => hs.find(h => ideal(h, id) || recipesWith(h, id).length);
     // Composant seul porté qui entre dans une recette idéale encore à faire ; sinon il bloque le Pokémon (Aimant).
-    const kept = h => h.ideal.some(f => ideal(h, f) && book.parts.get(f)?.includes(h.lone));
-    const completes = id => hs.find(h => h.lone && ideal(h, fused(h, id)));
-    const complete = (i, h, id) => fuse(i, h, id, `${names.item(fused(h, id))}, ${BEST}`);
+    const kept = h => recipesWith(h, h.lone).length > 0;
     // Composant, première règle qui s'applique : complète une recette idéale, paire idéale du sac, entame une recette idéale,
     // attend un Pokémon de la compo qui ne peut pas le recevoir (motif dans la boucle finale), reste au sac pour la recette
     // idéale d'une lignée à venir.
     const placePart = (id, i) => {
-      const done = completes(id);
-      if (done) return complete(i, done, id);
+      const done = hs.find(h => h.lone && ideal(h, fused(h, id)));
+      if (done) return fuse(i, done, id, `${names.item(fused(done, id))}, ${BEST}`);
       const free = hs.filter(h => h.slots > 0 && !h.lone);
       const duo = idealPair(free, id, i);
       if (duo) {
@@ -913,7 +917,7 @@ const KT = (() => {
       // L'effet du composant seul n'est pas annoncé quand c'est la stat d'attaque contraire (Protéine seule sur un spécial).
       const contrary = h => h.profile !== null && id === (h.profile.special ? 'protein' : 'calcium');
       const now = h => (contrary(h) ? '' : `${names.effect(id) ?? 'son effet'} tout de suite ; `);
-      const begun = free.map(h => ({ h, f: h.ideal.find(f => ideal(h, f) && book.parts.get(f)?.includes(id)) })).find(x => x.f);
+      const begun = free.map(h => ({ h, f: recipesWith(h, id)[0] })).find(x => x.f);
       if (begun) {
         const [a, b] = book.parts.get(begun.f);
         return alone(i, begun.h, id, `${now(begun.h)}plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
@@ -927,10 +931,11 @@ const KT = (() => {
       }
     };
 
-    // Aimant : sur un Pokémon de la compo qui porte un objet contraire à son profil, puis sur un Pokémon plein, ou bloqué par un
-    // composant seul hors de ses recettes idéales, dont un objet idéal attend au sac (complet, ou ses deux composants), enfin sur un Pokémon posé hors des deux compos qui porte des objets
-    // (au banc, la vente les rend : sellMarks). Il rend tous ses objets au sac : le Pokémon ne reçoit plus rien dans ce passage,
-    // les conseils suivent au passage d'après.
+    // Aimant : sur un Pokémon de la compo qui porte un objet contraire à son profil, puis sur un Pokémon plein dont un objet
+    // idéal attend au sac (complet, ou ses deux composants), ou sur un Pokémon bloqué par un composant seul hors de ses recettes
+    // idéales dont les deux composants d'une recette idéale attendent au sac (un objet complet se pose sans fusionner), enfin
+    // sur un Pokémon posé hors des deux compos qui porte des objets (au banc, la vente les rend : sellMarks). Il rend tous ses
+    // objets au sac : le Pokémon ne reçoit plus rien dans ce passage, les conseils suivent au passage d'après.
     const count = id => pending(kind(id)).filter(x => x.id === id).length;
     const inBag = f => {
       const [a, b] = book.parts.get(f) ?? [];
@@ -946,7 +951,8 @@ const KT = (() => {
         return ab.includes(h.lone) && count(ab[0] === h.lone ? ab[1] : ab[0]) > 0;
       };
       const blocked = h.lone && !kept(h);
-      const f = (h.slots === 0 || blocked) && h.ideal.find(x => !h.on.includes(x) && !fusable(x) && inBag(x));
+      const ready = x => !h.on.includes(x) && !fusable(x) && inBag(x) && (h.slots === 0 || count(x) === 0);
+      const f = (h.slots === 0 || blocked) && h.ideal.find(ready);
       const out = f && (blocked ? h.lone : h.on.find(x => ['part', 'full'].includes(kind(x)) && !h.ideal.includes(x)));
       return out ? { why: `retire ${names.item(out)} ; ${names.item(f)} prêt au sac`, ready: f } : null;
     };
@@ -980,17 +986,19 @@ const KT = (() => {
       const h = hs.filter(x => x.slots > 0 && ideal(x, id)).sort((a, b) => a.ideal.indexOf(id) - b.ideal.indexOf(id))[0];
       if (h) full(i, h, id, BEST);
     }
-    // Les fusions qui complètent une recette idéale d'abord : elles libèrent le composant seul avant les autres conseils.
-    for (const { id, i } of pending('part')) {
-      const h = completes(id);
-      if (h) complete(i, h, id);
-    }
-    for (const { id, i } of pending('part')) if (marks[i] === null) placePart(id, i);
-    // Ce qui empêche un Pokémon qui attend un objet de le recevoir : places libres sans composant seul, la pose aurait eu lieu.
+    // Jusqu'à ce qu'un tour ne pose plus rien : une fusion libère le composant seul d'un Pokémon qu'un composant vu plus tôt
+    // dans le sac attendait.
+    let left;
+    do {
+      left = pending('part').length;
+      for (const { id, i } of pending('part')) if (marks[i] === null) placePart(id, i);
+    } while (pending('part').length < left);
+    // Ce qui empêche un Pokémon qui attend un objet de le recevoir. Avec des places libres et sans composant seul, la pose
+    // aurait eu lieu au dernier tour.
     const obstacle = h => {
       if (h.emptied) return 'après l’Aimant';
       if (h.slots === 0) return 'sans place libre';
-      return kept(h) ? `une fois ${names.item(h.lone)} fusionné` : `${names.item(h.lone)} seul à retirer (Aimant)`;
+      return kept(h) ? `une fois ${names.item(h.lone)} fusionné` : `bloqué par ${names.item(h.lone)} seul`;
     };
     for (const { id, i } of [...pending('full'), ...pending('part')]) {
       const stuck = wantedBy(id);
