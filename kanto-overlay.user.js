@@ -145,8 +145,9 @@ const KT = (() => {
   // Campagne : modes.camp de l'API mélange les aventures, sous des arrêts « N:Libellé » (N = manche + 1, libellé = fin du nom
   // espagnol de la manche jouée, après le dernier « · »). Arrêts possibles de chaque aventure, relevés dans les manches du jeu
   // (route-*.js, ul) ; les événements n'ont pas de statistiques. Safari, Lavanda et Rocket chargent leurs manches par un module
-  // chiffré : absentes, elles reçoivent une compo sans trio (targetComp). bosses : manches de badge, de Ligue et Mewtwo ; sans
-  // liste, chaque combat compte comme boss. gyms : manches des champions dont l'ordre suit gymOrder de la sauvegarde.
+  // chiffré : absentes, elles reçoivent une compo sans trio (targetComp). Méthode de relevé : README, Développement. bosses :
+  // manches de badge, de Ligue et Mewtwo ; sans liste, chaque combat compte comme boss. gyms : manches des champions dont
+  // l'ordre suit gymOrder de la sauvegarde.
   const ADVENTURES = {
     kanto: {
       name: 'Kanto',
