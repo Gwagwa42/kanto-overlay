@@ -1,6 +1,7 @@
-// Pages d'aperçu autonomes, une par état : le userscript inline sur un décor qui reprend les classes du jeu (boutique, banc,
-// objets, modales), l'API, le Cache Storage et la sauvegarde simulés.
-// Usage : node scripts/preview.mjs → build/preview-<état>.html, puis render-html.sh sur chaque page (commande imprimée).
+// Pages d'aperçu, deux par état. preview-<état>.html : le userscript inline sur un décor qui reprend les classes du jeu (boutique,
+// banc, objets, modales), l'API, le Cache Storage et la sauvegarde simulés ; trop lourde pour une URL data:, elle s'ouvre servie en
+// local (README, Développement). panel-<état>.html : le panneau seul, statique, rendu par render-html.sh (commande imprimée).
+// Usage : node scripts/preview.mjs → build/preview-<état>.html et build/panel-<état>.html.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
@@ -21,7 +22,7 @@ const SHINY = {
   ...S57,
   units: {
     ...S57.units, a: { ...S57.units.a, shiny: true }, e: { ...S57.units.e, shiny: true },
-    // Lignées hors compo déjà dans la page (trios affichés, boutique) : même compo que la maquette, page sous la limite d'une URL data:.
+    // Lignées hors compo déjà dans la page (trios affichés, boutique) : même compo que la maquette, page allégée.
     f: { id: 'f', line: 'shellder', star: 1 }, g: { id: 'g', line: 'shellder', star: 1 }, h: { id: 'h', line: 'staryu', star: 1 },
     i: { id: 'i', line: 'staryu', star: 1 }, j: { id: 'j', line: 'ekans', star: 1 },
   },
@@ -39,7 +40,9 @@ const STATES = {
   'campagne-compo': { save: CAMP, key: SAVE_KANTO, api: 'ok', ui: { tab: 'compo' } },
   'campagne-regles': { save: CAMP, key: SAVE_KANTO, api: 'ok', ui: { tab: 'rules' } },
   'aventure-sans-stats': { save: { ...CAMP, league: 1, gymOrder: [] }, key: 'kanto-tactics-save-adv-safari', api: 'ok', ui: { tab: 'compo' } },
-  // Leveinard et Lokhlass (compo suivante) en boutique : ◆ « prépare » sur le surplus, ✕ au-delà.
+  // Leveinard et Lokhlass, de la compo suivante, en boutique : avec des places libres, ce sont des compléments de la compo cible
+  // (★ « place libre »). Le ◆ « prépare la compo » n'a pas de scénario sur ces données : sans place libre, les cartes de la compo
+  // suivante y deviennent des cartes plus fortes de la compo cible ; le test « boutique : ◆ pour la compo suivante… » le couvre.
   'compo-suivante': { save: { ...S57, gold: 40, shop: ['chansey', 'lapras', 'magmar', 'rattata', 'ekans'] }, api: 'ok', tip: true, ui: { tab: 'compo' } },
   shiny: { save: SHINY, api: 'ok', ui: { tab: 'compo' } },
   // Onglets, menu ⚙ et panneau replié (maquette 2026-11-09-refonte).
@@ -58,7 +61,7 @@ const STATES = {
   erreur: { save: S57, api: 'error' },
 };
 
-// Seules les données lues par ces états restent dans la page (URL data: limitée à ~90 Ko de HTML) : le mode de la partie,
+// Seules les données lues par ces états restent dans la page, qui porte déjà les 160 Ko du script : le mode de la partie,
 // l'autre réduit à un arrêt (campana.json est refusé sans la Tour).
 function slim(s, key) {
   const camp = key !== undefined;
@@ -121,6 +124,44 @@ const STYLE = `body{margin:0;min-height:100vh;background:#2b3a2a;color:#eef1ff;f
 .modal{background:#232c55;border-radius:12px;padding:32px 16px 16px}.ir-cards,.ev-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 .ir-card,.ev-card{height:120px;border:0;border-radius:10px;background:#3a3f8c;color:#eef1ff;font:700 14px system-ui}`;
 
+// Page « panneau seul » : le gabarit du script rempli comme le ferait render, dans un Shadow DOM déclaratif, sans le script ni
+// les données (quelques dizaines de Ko) : render-html.sh la rend telle quelle. Les pastilles, posées sur le jeu, n'y sont pas ; le
+// thème « auto » suit le système par une ligne de script.
+const FAILED = { error: ['stats', 'data', 'lang'], partial: ['data'] };
+const FILES = { stats: 'campana.json', data: 'data.json', lang: 'lang.json' };
+function panelPage(name, s) {
+  const ui = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, ...s.ui };
+  KT.checkUi(ui);
+  const raw = s.save ? JSON.stringify(s.save) : null;
+  const found = raw && KT.latestSave({ length: 1, key: () => s.key ?? 'kanto-tactics-save-tower', getItem: () => raw });
+  const start = { mode: KT.TOWER_MODE, saveKey: undefined, lastAuto: undefined, floor: null, source: 'manuel' };
+  const failed = FAILED[s.api] ?? [];
+  const loaded = k => s.api !== 'pending' && !failed.includes(k);
+  const state = {
+    ...KT.pollState(start, found, null), lastRaw: raw, stats: loaded('stats') ? { torre: modes.torre, camp: modes.camp } : null,
+    campBroken: false, data: loaded('data') ? data : null, lang: loaded('lang') ? lang : null, failed, stale: null, uncached: false,
+    error: failed.length ? failed.map(k => `${FILES[k]} : HTTP 429`).join(' ; ') : null, copied: null,
+  };
+  const stats = state.stats?.[state.mode.stats] ?? null;
+  state.advice = state.save && state.floor === KT.floorFromSave(raw, state.mode) && (state.stats || state.error)
+    ? KT.advise({ stats, data: state.data, lang: state.lang, save: state.save, previous: null, side: ui.side, mode: state.mode })
+    : null;
+  // Plan collé dans le Planificateur : le statut du panneau synchronisé.
+  state.planner = { code: state.advice?.code ?? null, error: null };
+  const look = { scheme: ui.theme === 'auto' ? 'dark' : ui.theme, width: ui.width, text: ui.text, alpha: ui.alpha };
+  const shell = KT.shellHtml({
+    look, label: state.mode.label, floor: state.floor, src: state.source, sum: KT.summaryHtml(state), alert: KT.alertHtml(state),
+    opts: s.menu ? KT.optionsHtml(ui) : null, body: KT.panelHtml(state, ui), status: KT.statusHtml(state),
+    foot: stats ? KT.footHtml(state) : '', collapsed: ui.collapsed,
+  });
+  const auto = ui.theme === 'auto'
+    ? `<script>if (!matchMedia('(prefers-color-scheme: dark)').matches) document.getElementById('kt').shadowRoot.querySelector('.kt-root').dataset.scheme = 'light';</script>`
+    : '';
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Panneau ${name}</title><style>${STYLE}</style></head>
+<body><div id="kt"><template shadowrootmode="open">${shell}<style>.kt { top: 16px; right: 16px; }</style></template></div>
+${auto}</body></html>`;
+}
+
 mkdirSync(`${root}build`, { recursive: true });
 for (const [name, s] of Object.entries(STATES)) {
   const api = slim(s.save ?? S57, s.key);
@@ -147,7 +188,8 @@ ${s.tip ? `setTimeout(() => { const r = [...document.body.children].find(e => e.
 <body>${s.save ? decor(s.save, s.modal) : '<p style="padding:24px">Jeu (fond simulé) · aucune partie Tour</p>'}
 <script>${stub}</script>
 <script>${script}</script></body></html>`;
-  const out = `${root}build/preview-${name}.html`;
-  writeFileSync(out, html);
-  console.log(`bash ~/.claude/skills/ui-design/scripts/render-html.sh ${out} --sizes 1440x900`);
+  writeFileSync(`${root}build/preview-${name}.html`, html);
+  const panel = `${root}build/panel-${name}.html`;
+  writeFileSync(panel, panelPage(name, s));
+  console.log(`bash ~/.claude/skills/ui-design/scripts/render-html.sh ${panel} --sizes 1440x900`);
 }
