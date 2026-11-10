@@ -6,6 +6,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const KT = require('../kanto-overlay.user.js');
+const { adviseOn } = require('./helpers.js');
 const { headHtml } = KT;
 const torre = require('./fixtures/campana.json').modes.torre;
 const data = require('./fixtures/data.json');
@@ -18,7 +19,7 @@ const names = KT.namer(lang);
 const S57 = require('./fixtures/s57.js');
 // S57 au niveau 4 : la compo se réduit au trio et à Goupix ★★, Rattata reste hors compo.
 const S57_4 = { ...S57, level: 4, xp: 0 };
-const advise = (s, extra = {}) => KT.advise({ mode: T, stats: torre, data, lang, save: s, previous: null, side: 'left', ...extra });
+const advise = (s, extra = {}) => adviseOn(s, { mode: T, stats: torre, ...extra });
 const brief = m => m && `${m.level} ${m.label}`;
 const T = KT.TOWER_MODE;
 const floorAt = raw => KT.floorFromSave(raw, T);
