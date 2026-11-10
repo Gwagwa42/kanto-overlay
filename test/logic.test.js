@@ -13,6 +13,7 @@ const data = require('./fixtures/data.json');
 const lang = require('./fixtures/lang.json');
 const save = require('./fixtures/save-tower.json');
 const ids = require('./fixtures/ids.json');
+const { brockStop, BROCK, brockCore, brockStats, twoWindows } = require('./fixtures/brock.js');
 
 const names = KT.namer(lang);
 // Étage 57, 38 pièces, niveau 8 : scénario commun avec la maquette et les pages d'aperçu.
@@ -25,11 +26,6 @@ const T = KT.TOWER_MODE;
 const floorAt = raw => KT.floorFromSave(raw, T);
 const readGame = s => KT.readGame(s, T);
 
-// Combat de test : Pierre à l'étage 10, 50 % de victoires ; trio noté contre lui (50 combats, 90 %), de borne basse lo.
-const BROCK = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
-const brockCore = (core, lo = 80) => ({ stop: BROCK[0].stop, core, n: 50, win: 90, lo });
-// Statistiques de la Tour réduites au combat contre Pierre et à ces trios.
-const brockStats = (cores, extra = {}) => ({ ...torre, stops: BROCK, cores, ...extra });
 // Conseils à l'étage 10 pour une compo réduite à ce trio : niveau 3, boutique, plateau et sac vides, sauf ce que game précise.
 const brockAdvice = (core, game, extra = {}) => advise({ ...save, round: 1009, level: 3, shop: [], board: {}, items: [], ...game },
   { stats: brockStats([brockCore(core)]), ...extra });
@@ -380,7 +376,7 @@ test('compléments : à l’étage 72, les unités fortes possédées passent av
 // figure dans un trio de l'étage 10 (n combats), Magicarpe dans un trio de l'étage 11, chacun à tant de points du combat.
 const nextFight = (rattata, n = 50) => ({
   ...torre, lines: [],
-  stops: [10, 11].map(f => ({ stop: `${f}:brock`, n: 100, win: 50, lo: 45, first: 50, tries: 2 })),
+  stops: [10, 11].map(brockStop),
   cores: [
     ...[10, 11].map(f => ({ stop: `${f}:brock`, core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 })),
     { stop: '10:brock', core: ['abra', 'onix', 'rattata'], n, win: 50 + rattata, lo: 10 },
@@ -637,14 +633,6 @@ test('vendre : unité du banc hors compo et sans paire, banc presque plein', () 
   assert.deepEqual([brief(sold), sold.why], ['no Vends', 'il manque de l’or pour un achat conseillé']);
 });
 
-// Combats aux étages 10 à 27 : la compo cible se joue sur 10–18, la compo suivante sur 19–27.
-const twoWindows = later => {
-  const stops = Array.from({ length: 18 }, (_, i) => ({ stop: `${10 + i}:brock`, n: 100, win: 50, lo: 45, first: 50, tries: 2 }));
-  const cores = stops.flatMap((s, i) => (i < 9
-    ? [{ stop: s.stop, core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 }]
-    : later.map(([core, lo]) => ({ stop: s.stop, core, n: 50, win: 90, lo }))));
-  return { ...torre, stops, cores };
-};
 const EMPTY10 = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
 
 test('compo suivante : trio des combats 10 à 18, absent s’il est déjà la compo cible', () => {
