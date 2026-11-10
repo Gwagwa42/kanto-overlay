@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.3.0
+// @version      2.4.0
 // @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -819,12 +819,10 @@ const KT = (() => {
   }
 
   const BEST = 'meilleur objet de sa lignée en Tour';
-  const ROLE_WHY = {
-    carry: 'objet offensif pour ton porteur', tank: 'objet défensif pour un tank', atk: 'objet offensif pour un attaquant',
-  };
 
-  // Tout objet complet ou composant va tout de suite sur un Pokémon de la compo à qui il convient : un composant posé seul donne
-  // déjà son effet et fusionne avec le prochain composant posé sur ce Pokémon. Chaque objet du sac est conseillé une fois ;
+  // Un Pokémon de la compo ne reçoit que ses objets idéaux (idealItems) : l'objet complet, ou un composant de l'un d'eux, va
+  // tout de suite sur lui. Un composant posé seul donne déjà son effet et fusionne avec le prochain composant posé sur ce
+  // Pokémon. Ce qui n'entre dans aucun objet idéal reste au sac. Chaque objet du sac est conseillé une fois ;
   // l'état de chaque porteur (objets, places, composant seul) suit les conseils, et une seule paire par Pokémon et par passage
   // (l'ordre de pose ne serait plus clair). future : lignées à venir (futureLines), pour qui un composant reste au sac.
   // Renvoie aussi cet état final, pour le choix de la récompense.
@@ -836,12 +834,12 @@ const KT = (() => {
       const on = [...(h.unit.items ?? [])];
       const lone = on.find(id => kind(id) === 'part') ?? null;
       // loneAt : case du sac du composant seul conseillé dans ce passage ; after : paire à poser avant.
-      // held : objets du sac gardés pour lui après l'Aimant.
-      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, after: null, held: [] };
+      // held : objets du sac gardés pour lui après l'Aimant ; emptied : vidé par un Aimant de ce passage.
+      return { ...h, on, who: names.line(h.unit.line), slots: MAX_ITEMS - on.length, lone, loneAt: null, after: null, held: [], emptied: false };
     });
     // Cases du sac gardées pour un Pokémon précis (après l'Aimant) ou pour une lignée à venir.
     const reserved = new Set();
-    // Un composant convient s'il entre dans un objet complet qui convient.
+    // Un composant porté convient s'il entre dans un objet complet qui convient (pour l'Aimant).
     const fits = (h, id) => (kind(id) === 'part'
       ? [...book.parts].some(([f, ab]) => ab.includes(id) && suits(data, h.profile, f))
       : kind(id) === 'full' && suits(data, h.profile, id));
@@ -869,20 +867,26 @@ const KT = (() => {
       h.on.push(id);
       Object.assign(h, { lone: id, loneAt: i });
     };
-    // Fusion avec le composant seul du Pokémon : s'il a été conseillé dans ce passage, les deux bulles annoncent la paire.
+    // Fusion avec le composant seul du Pokémon : s'il a été conseillé dans ce passage, les deux bulles annoncent la paire. Sinon
+    // ce composant se pose avant tout autre conseillé ensuite au Pokémon, qui fusionnerait à sa place avec le composant porté.
     const fuse = (i, h, id, why) => {
       const made = fused(h, id);
       if (h.loneAt !== null) pair(h.loneAt, i, h, h.lone, id, why);
-      else put(i, h, `${names.item(id)} → ${h.who}`, `fusionne avec ${names.item(h.lone)} : ${why}`);
+      else {
+        put(i, h, `${names.item(id)} → ${h.who}`, `fusionne avec ${names.item(h.lone)} : ${why}`);
+        h.after = names.item(id);
+      }
       h.on[h.on.indexOf(h.lone)] = made;
       Object.assign(h, { lone: null, loneAt: null });
     };
 
+    // Recettes idéales encore à faire du Pokémon qui contiennent ce composant.
+    const recipesWith = (h, id) => h.ideal.filter(f => ideal(h, f) && book.parts.get(f)?.includes(id));
     // Paire idéale du sac : recette idéale d'un Pokémon libre, sans paire dans ce passage, dont l'autre composant attend dans le sac.
     const idealPair = (free, id, i) => {
       const waiting = pending('part');
       for (const h of free.filter(x => !x.after)) {
-        for (const f of h.ideal.filter(x => ideal(h, x) && book.parts.get(x)?.includes(id))) {
+        for (const f of recipesWith(h, id)) {
           const ab = book.parts.get(f);
           const j = waiting.find(p => p.i !== i && p.id === (ab[0] === id ? ab[1] : ab[0]))?.i;
           if (j !== undefined) return { h, f, ab, j };
@@ -890,14 +894,15 @@ const KT = (() => {
       }
       return null;
     };
-    // Un composant seul qui entre dans une recette idéale encore à faire (porté ou conseillé) n'est détourné que faute de
-    // place utile au rôle : le conseil reste le même une fois le composant posé.
-    const kept = h => h.ideal.some(f => ideal(h, f) && book.parts.get(f)?.includes(h.lone));
     // Composants encore à réunir pour chaque recette idéale des lignées à venir : une copie gardée par composant demandé.
     const needs = future.flatMap(x => x.ideal.map(f => ({ x, f, left: [...(book.parts.get(f) ?? [])] })));
+    // Pokémon de la compo qui attend cet objet, ou un objet idéal dont c'est un composant.
+    const wantedBy = id => hs.find(h => ideal(h, id) || recipesWith(h, id).length);
+    // Composant seul porté qui entre dans une recette idéale encore à faire ; sinon il bloque le Pokémon (Aimant).
+    const kept = h => recipesWith(h, h.lone).length > 0;
     // Composant, première règle qui s'applique : complète une recette idéale, paire idéale du sac, entame une recette idéale,
-    // reste au sac pour la recette idéale d'une lignée à venir, fusion utile au rôle, recette doublée utile au rôle, fusion
-    // utile au rôle d'un composant réservé, place sur un Pokémon à qui il convient.
+    // attend un Pokémon de la compo qui ne peut pas le recevoir (motif dans la boucle finale), reste au sac pour la recette
+    // idéale d'une lignée à venir.
     const placePart = (id, i) => {
       const done = hs.find(h => h.lone && ideal(h, fused(h, id)));
       if (done) return fuse(i, done, id, `${names.item(fused(done, id))}, ${BEST}`);
@@ -912,35 +917,25 @@ const KT = (() => {
       // L'effet du composant seul n'est pas annoncé quand c'est la stat d'attaque contraire (Protéine seule sur un spécial).
       const contrary = h => h.profile !== null && id === (h.profile.special ? 'protein' : 'calcium');
       const now = h => (contrary(h) ? '' : `${names.effect(id) ?? 'son effet'} tout de suite ; `);
-      const begun = free.map(h => ({ h, f: h.ideal.find(f => ideal(h, f) && book.parts.get(f)?.includes(id)) })).find(x => x.f);
+      const begun = free.map(h => ({ h, f: recipesWith(h, id)[0] })).find(x => x.f);
       if (begun) {
         const [a, b] = book.parts.get(begun.f);
         return alone(i, begun.h, id, `${now(begun.h)}plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
       }
+      if (wantedBy(id)) return;
       const later = needs.find(n => n.left.includes(id));
       if (later) {
         later.left.splice(later.left.indexOf(id), 1);
         reserved.add(i);
         marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, `${names.item(later.f)} pour ${later.x.who}, à venir`);
-        return;
       }
-      const useful = list => list.find(h => fits(h, fused(h, id)) && !h.on.includes(fused(h, id)));
-      const roleFuse = h => fuse(i, h, id, `${names.item(fused(h, id))}, ${ROLE_WHY[h.role]}`);
-      const open = useful(hs.filter(h => h.lone && !kept(h)));
-      if (open) return roleFuse(open);
-      const twin = book.make.get(`${id}+${id}`);
-      const double = free.find(h => fits(h, twin) && !h.on.includes(twin));
-      if (double) return alone(i, double, id, `${now(double)}plus tard avec ${names.item(id)} : ${names.item(twin)}, ${ROLE_WHY[double.role]}`);
-      const diverted = useful(hs.filter(h => h.lone && kept(h)));
-      if (diverted) return roleFuse(diverted);
-      const any = free.find(h => fits(h, id) && !contrary(h));
-      if (any) alone(i, any, id, now(any).replace(/ ; $/, ''));
     };
 
     // Aimant : sur un Pokémon de la compo qui porte un objet contraire à son profil, puis sur un Pokémon plein dont un objet
-    // idéal attend au sac (complet, ou ses deux composants), enfin sur un Pokémon posé hors des deux compos qui porte des objets
-    // (au banc, la vente les rend : sellMarks). Il rend tous ses objets au sac : le Pokémon ne reçoit plus rien dans ce passage,
-    // les conseils suivent au passage d'après.
+    // idéal attend au sac (complet, ou ses deux composants), ou sur un Pokémon bloqué par un composant seul hors de ses recettes
+    // idéales dont les deux composants d'une recette idéale attendent au sac (un objet complet se pose sans fusionner), enfin
+    // sur un Pokémon posé hors des deux compos qui porte des objets (au banc, la vente les rend : sellMarks). Il rend tous ses
+    // objets au sac : le Pokémon ne reçoit plus rien dans ce passage, les conseils suivent au passage d'après.
     const count = id => pending(kind(id)).filter(x => x.id === id).length;
     const inBag = f => {
       const [a, b] = book.parts.get(f) ?? [];
@@ -955,8 +950,10 @@ const KT = (() => {
         const ab = h.lone ? book.parts.get(x) ?? [] : [];
         return ab.includes(h.lone) && count(ab[0] === h.lone ? ab[1] : ab[0]) > 0;
       };
-      const f = h.slots === 0 && h.ideal.find(x => !h.on.includes(x) && !fusable(x) && inBag(x));
-      const out = f && h.on.find(x => ['part', 'full'].includes(kind(x)) && !h.ideal.includes(x));
+      const blocked = h.lone && !kept(h);
+      const ready = x => !h.on.includes(x) && !fusable(x) && inBag(x) && (h.slots === 0 || count(x) === 0);
+      const f = (h.slots === 0 || blocked) && h.ideal.find(ready);
+      const out = f && (blocked ? h.lone : h.on.find(x => ['part', 'full'].includes(kind(x)) && !h.ideal.includes(x)));
       return out ? { why: `retire ${names.item(out)} ; ${names.item(f)} prêt au sac`, ready: f } : null;
     };
     const wanted = [...targetBases(target), ...future.map(x => x.base)];
@@ -972,7 +969,7 @@ const KT = (() => {
       }
       targets.splice(targets.indexOf(s.h), 1);
       marks[i] = mark('do', `Retire de ${s.h.who}`, `Aimant sur ${s.h.who}`, s.why);
-      Object.assign(s.h, { slots: 0, lone: null });
+      Object.assign(s.h, { slots: 0, lone: null, emptied: true });
       // L'objet prêt attend l'Aimant au sac : le complet s'il y est, sinon ses deux composants.
       if (!s.ready) continue;
       const keep = id => {
@@ -984,28 +981,40 @@ const KT = (() => {
       if (count(s.ready) > 0) keep(s.ready);
       else book.parts.get(s.ready).forEach(keep);
     }
-    // Objets complets : recettes idéales d'abord (rang le plus haut), puis par rôle, en évitant un doublon sur un Pokémon.
+    // Objets complets : au Pokémon qui le classe le plus haut dans ses objets idéaux.
     for (const { id, i } of pending('full')) {
       const h = hs.filter(x => x.slots > 0 && ideal(x, id)).sort((a, b) => a.ideal.indexOf(id) - b.ideal.indexOf(id))[0];
       if (h) full(i, h, id, BEST);
     }
-    for (const { id, i } of pending('full')) {
-      const free = hs.filter(x => x.slots > 0 && fits(x, id));
-      const h = free.find(x => !x.on.includes(id)) ?? free[0];
-      if (h) full(i, h, id, ROLE_WHY[h.role]);
-    }
-    for (const { id, i } of pending('part')) if (marks[i] === null) placePart(id, i);
+    // Jusqu'à ce qu'un tour ne pose plus rien : une fusion libère le composant seul d'un Pokémon qu'un composant vu plus tôt
+    // dans le sac attendait.
+    let left;
+    do {
+      left = pending('part').length;
+      for (const { id, i } of pending('part')) if (marks[i] === null) placePart(id, i);
+    } while (pending('part').length < left);
+    // Ce qui empêche un Pokémon qui attend un objet de le recevoir. Avec des places libres et sans composant seul, la pose
+    // aurait eu lieu au dernier tour.
+    const obstacle = h => {
+      if (h.emptied) return 'après l’Aimant';
+      if (h.slots === 0) return 'sans place libre';
+      return kept(h) ? `une fois ${names.item(h.lone)} fusionné` : `bloqué par ${names.item(h.lone)} seul`;
+    };
     for (const { id, i } of [...pending('full'), ...pending('part')]) {
+      const stuck = wantedBy(id);
       const later = future.find(x => x.ideal.includes(id));
+      const worn = hs.find(h => h.ideal.includes(id) && h.on.includes(id));
       let why = 'aucun Pokémon de la compo possédé';
-      if (later) why = `pour ${later.who}, à venir`;
-      else if (hs.length) why = hs.some(h => h.slots > 0) ? 'aucun Pokémon de la compo n’en profite' : 'toute la compo a 3 objets';
+      if (stuck) why = `pour ${stuck.who}, ${obstacle(stuck)}`;
+      else if (later) why = `pour ${later.who}, à venir`;
+      else if (worn) why = `déjà sur ${worn.who}`;
+      else if (hs.length) why = 'hors des meilleurs objets de la compo';
       marks[i] = mark('opt', 'Garde', `Garde ${names.item(id)}`, why);
     }
     return { marks, holders: hs, reserved };
   }
 
-  // Objets visés par Pokémon de la compo : ceux qu'il porte et qui conviennent, puis ses objets idéaux, 3 au plus. Lu sur l'état
+  // Objets visés par Pokémon de la compo : ses objets idéaux, 3 au plus. Lu sur l'état
   // final des porteurs (itemMarks) : porté (worn), prêt (ready) ou composants manquants (missing). Prêt : posé ou fusionné par
   // les conseils de ce passage, gardé pour lui après l'Aimant, ou réunissable avec ses composants seuls et le sac libre (ni posé
   // ni réservé), partagé dans l'ordre des porteurs.
@@ -1019,8 +1028,7 @@ const KT = (() => {
     return items.holders.map(h => {
       const on = h.unit.items ?? [];
       const own = [...h.held, ...h.on.filter(id => data.items[id]?.k === 'part')];
-      const worn = on.filter(id => data.items[id]?.k === 'full' && suits(data, h.profile, id));
-      const aims = [...new Set([...worn, ...h.ideal])].slice(0, MAX_ITEMS).map(id => {
+      const aims = h.ideal.map(id => {
         if (on.includes(id)) return { id, state: 'worn', missing: [] };
         if (h.on.includes(id) || take(own, id) || take(pool, id)) return { id, state: 'ready', missing: [] };
         // Composants pris seulement si l'objet est réunissable : un objet incomplet ne prive pas le Pokémon suivant.
