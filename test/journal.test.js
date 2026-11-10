@@ -11,7 +11,7 @@ const kanto = require('./fixtures/save-kanto.json');
 const T = KT.TOWER_MODE;
 // Combat de test : Pierre à l'étage 10, 50 % de victoires ; un trio noté contre lui.
 const stats = { ...modes.torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }], cores: [{ stop: '10:brock', core: ['squirtle', 'oddish', 'horsea'], n: 50, win: 90, lo: 80 }] };
-const S10 = { ...tower, round: 1009, runSeed: 7, streak: 2 };
+const S10 = { ...tower, round: 1009, attempts: 0, runSeed: 7, streak: 2 };
 const advice = adviseOn(S10, { mode: T, stats });
 const after = change => JSON.stringify({ ...S10, ...change });
 // n combats à 50 % attendus, dont wins gagnés, en Tour.
@@ -20,8 +20,13 @@ const fights = (n, wins, extra = {}) => Array.from({ length: n }, (_, i) => ({ r
 test('résultat d’un combat : lu sur la série, nul sans combat fini ou sur une autre partie', () => {
   assert.equal(KT.fightWon(S10, after({ round: 1010, streak: 3 }), null, T), true);
   assert.equal(KT.fightWon(S10, after({ attempts: 1, streak: -1 }), null, T), false);
-  assert.equal(KT.fightWon({ ...S10, streak: -2 }, after({ streak: 1 }), null, T), true);
-  assert.equal(KT.fightWon({ ...S10, streak: -2 }, after({ streak: -3 }), null, T), false);
+  assert.equal(KT.fightWon({ ...S10, streak: -2 }, after({ round: 1010, streak: 1 }), null, T), true);
+  assert.equal(KT.fightWon({ ...S10, streak: -2 }, after({ attempts: 2, streak: -3 }), null, T), false);
+  // Défaite permise en campagne : la partie avance quand même.
+  assert.equal(KT.fightWon(S10, after({ round: 1010, attempts: 0, streak: -1 }), null, T), false);
+  // Sauvegarde restaurée aux bords de la série (1 → −1 → 1, −1 → 1 → −1) : ni manche ni essai de plus, pas un combat.
+  assert.equal(KT.fightWon({ ...S10, round: 1009, attempts: 1, streak: -1 }, after({ round: 1009, attempts: 0, streak: 1 }), null, T), null);
+  assert.equal(KT.fightWon({ ...S10, round: 1010, attempts: 0, streak: 1 }, after({ round: 1009, attempts: 0, streak: -1 }), null, T), null);
   assert.equal(KT.fightWon(S10, after({ gold: 3 }), null, T), null);
   // Série revenue en arrière (sauvegarde restaurée) : pas un combat.
   assert.equal(KT.fightWon(S10, after({ streak: 1 }), null, T), null);
@@ -30,13 +35,15 @@ test('résultat d’un combat : lu sur la série, nul sans combat fini ou sur un
   assert.equal(KT.fightWon(null, after({ streak: 3 }), null, T), null);
 });
 
-test('défaite finale : confirmée en Tour par la liste des parties finies, jamais en campagne', () => {
+test('défaite finale : confirmée en Tour par la liste des parties finies, jamais en campagne', t => {
+  const warn = t.mock.method(console, 'warn', () => {});
   const runs = JSON.stringify([{ seed: 7, reached: 10, floor: 9 }, { seed: 3, reached: 44 }]);
   assert.equal(KT.fightWon(S10, null, runs, T), false);
   // Partie abandonnée ou relancée : pas de ligne à cet étage pour cette partie.
   assert.equal(KT.fightWon(S10, null, JSON.stringify([{ seed: 7, reached: 4 }]), T), null);
   assert.equal(KT.fightWon(S10, null, null, T), null);
   assert.equal(KT.fightWon(S10, null, '{', T), null);
+  assert.equal(warn.mock.callCount(), 1);
   const camp = KT.modeContext(KT.CAMPAIGN, kanto, 'kanto');
   assert.equal(KT.fightWon(kanto, null, runs, camp), null);
 });
@@ -57,9 +64,9 @@ test('journal : une ligne par combat fini, même tableau sinon, 400 lignes au pl
   const state = { save: S10, advice, stats, runsRaw: null };
   const none = [];
   assert.equal(KT.learn(none, { ...state, afterRaw: after({ gold: 1 }) }), none);
-  assert.equal(KT.learn(none, { ...state, advice: null, afterRaw: after({ streak: 3 }) }), none);
-  assert.deepEqual(KT.learn(none, { ...state, afterRaw: after({ streak: 3 }) }), [{ r: 7, k: 'tower', f: 10, p: 50, w: 1, c: 1 }]);
-  const full = KT.learn(fights(400, 0), { ...state, afterRaw: after({ streak: 3 }) });
+  assert.equal(KT.learn(none, { ...state, advice: null, afterRaw: after({ round: 1010, streak: 3 }) }), none);
+  assert.deepEqual(KT.learn(none, { ...state, afterRaw: after({ round: 1010, streak: 3 }) }), [{ r: 7, k: 'tower', f: 10, p: 50, w: 1, c: 1 }]);
+  const full = KT.learn(fights(400, 0), { ...state, afterRaw: after({ round: 1010, streak: 3 }) });
   assert.deepEqual([full.length, full.at(-1).w], [400, 1]);
 });
 
@@ -70,7 +77,10 @@ test('journal relu : illisible ou d’un autre format, repris à vide ou sans la
   assert.deepEqual(KT.readJournal('{'), []);
   assert.deepEqual(KT.readJournal('{"v":1}'), []);
   assert.equal(warn.mock.callCount(), 2);
+  assert.deepEqual(KT.readJournal('[]'), []);
+  assert.equal(warn.mock.callCount(), 2);
   assert.deepEqual(KT.readJournal(JSON.stringify([{ k: 'tower', p: 50, w: 1 }, { k: 'tower', p: 'x', w: 1 }, null])), [{ k: 'tower', p: 50, w: 1 }]);
+  assert.equal(warn.mock.callCount(), 3);
 });
 
 test('écart appris : nul dans la marge d’erreur, rétréci au-delà, par mode et difficulté', () => {
@@ -99,7 +109,7 @@ test('écart appris : il déplace le seuil de « tout jouer » et s’ajoute à 
   assert.deepEqual([weak.penalty, weak.ownPenalty], [16, 16]);
   // Pierre à 50 % : pas un mur au seuil de 45 %, un mur une fois le taux compté 16 points plus bas.
   assert.equal(adviseOn(S10, { mode: poll([]), stats }).eco.allIn, false);
-  assert.equal(adviseOn({ ...S10, attempts: 0 }, { mode: weak, stats }).eco.allIn, true);
+  assert.equal(adviseOn(S10, { mode: weak, stats }).eco.allIn, true);
   assert.ok(KT.goldRules(weak).includes('Tout jouer sur un combat sous 61 % de victoires (plus 16 points d’après tes résultats), sous 40 PV, ou sur un étage rejoué à partir de l’étage 50.'));
   assert.ok(KT.goldRules(poll(fights(100, 70))).some(r => r.includes('sous 29 % de victoires (moins 16 points d’après tes résultats)')));
   const camp = KT.withResults(KT.modeContext(KT.CAMPAIGN, kanto, 'kanto'), fights(100, 30, { k: 'kanto:3' }));

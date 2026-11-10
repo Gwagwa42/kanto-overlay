@@ -359,7 +359,7 @@ const KT = (() => {
   // à l'écran, choice : stratégie choisie (objet ui), appliquée au mode, fights : journal des combats, dont l'écart appris rejoint
   // la pénalité du mode (withResults). Sans sauvegarde du mode à l'écran, son mode quand même (libellés, règles), et le Nuzlocke dit non pris en
   // charge. L'étage saisi à la main tient jusqu'à ce que la sauvegarde change d'étage, et tombe avec un changement de partie.
-  function pollState(prev, found, shown, choice, fights = []) {
+  function pollState(prev, found, shown, choice, fights) {
     let { mode } = prev;
     if (found?.mode) mode = found.mode;
     else if (!found && shown === TOWER.id) mode = TOWER_MODE;
@@ -394,9 +394,12 @@ const KT = (() => {
     { to: 160, shinies: ['Ptéra', 'Leveinard', 'Minidraco'], advice: 'Un shiny hors composition ne mérite plus d’investissement.' },
     { to: Infinity, shinies: [], advice: 'Aucun farming de shinies : victoire et survie avant la collection.' },
   ];
-  // En-tête de campagne : aventure, difficulté et seuil de « tout jouer » durci (raison dans l'onglet Règles).
+  const leagueLabel = mode => `${mode.adv?.name ?? mode.adventure} · ${LEAGUES[mode.league]}`;
+
+  // En-tête de campagne : aventure, difficulté et seuil de « tout jouer » déplacé par la pénalité du mode (raison dans
+  // l'onglet Règles).
   function leagueNote(mode) {
-    const where = `${mode.adv?.name ?? mode.adventure} · ${LEAGUES[mode.league]}`;
+    const where = leagueLabel(mode);
     return mode.penalty ? `${where} · tout jouer sous ${mode.hardWin + mode.penalty} %` : where;
   }
 
@@ -624,7 +627,7 @@ const KT = (() => {
     return 10 * (mode.interest + (pathCount(boons, 'fortune') >= PATH_SIZE ? FORTUNE_INTEREST : 0));
   }
 
-  // « Tout jouer » : le combat courant est un mur (taux de la manche sous hardWin plus la pénalité de difficulté), les PV
+  // « Tout jouer » : le combat courant est un mur (taux de la manche sous hardWin plus la pénalité du mode : difficulté et résultats du joueur), les PV
   // sont sous lowHp, ou le combat est rejoué (retryFrom du mode).
   function economy(game, stops) {
     const { mode } = game;
@@ -640,7 +643,7 @@ const KT = (() => {
 
   // Journal des combats joués avec le panneau ouvert : { r: partie (runSeed), k: mode et difficulté (cellOf), f: étage ou
   // combat, p: taux attendu en % (taux public moins la pénalité de difficulté), w: 1 gagné, c: 1 si le trio de la compo
-  // cible était posé, absent sans trio }. Les plus anciens sortent au-delà de JOURNAL_MAX : l'écart suit le niveau du joueur
+  // cible était posé à la dernière lecture avant le combat (2 s au plus), absent sans trio }. Les plus anciens sortent au-delà de JOURNAL_MAX : l'écart suit le niveau du joueur
   // et les rééquilibrages du jeu.
   const JOURNAL_KEY = 'kt-overlay:journal';
   const JOURNAL_MAX = 400;
@@ -664,28 +667,35 @@ const KT = (() => {
     }
   }
 
-  // Un journal illisible repart à vide, signalé en console ; une ligne d'un autre format est écartée.
+  // Un journal illisible repart à vide, une ligne d'un autre format est écartée ; les deux sont signalés en console.
   function readJournal(raw) {
-    const fights = parseList(raw);
-    if (raw != null && !fights) console.warn('kanto-overlay : journal des combats illisible, repris à vide');
-    return (fights ?? []).filter(f => typeof f?.k === 'string' && Number.isFinite(f.p) && (f.w === 0 || f.w === 1));
+    const list = parseList(raw);
+    if (raw != null && !list) console.warn('kanto-overlay : journal des combats illisible, repris à vide');
+    const fights = (list ?? []).filter(f => typeof f?.k === 'string' && Number.isFinite(f.p) && (f.w === 0 || f.w === 1));
+    if (list && fights.length < list.length) console.warn('kanto-overlay : lignes du journal d’un autre format écartées', list.length - fights.length);
+    return fights;
   }
 
   const cellOf = mode => (mode.id === TOWER.id ? TOWER.id : `${mode.adventure}:${mode.league}`);
 
   // Résultat du combat joué depuis la sauvegarde before : true gagné, false perdu, null sans combat fini. Le jeu change
-  // streak à chaque combat (un de plus ou 1 après une victoire, un de moins ou −1 après une défaite ; tout autre saut, une
-  // sauvegarde restaurée par exemple, n'est pas un combat) ; il supprime la sauvegarde à la défaite finale, que seule la Tour
+  // streak à chaque combat (un de plus ou 1 après une victoire, un de moins ou −1 après une défaite), avance d'une manche après
+  // une victoire ou une défaite permise, et compte un essai de plus sinon : une série qui change sans cela, sauvegarde
+  // restaurée par exemple, n'est pas un combat. Pendant le combat et son résultat, le jeu réécrit la série d'avant
+  // (store-*.js) : la défaite finale n'est donc pas vue avant la suppression. Il supprime la sauvegarde à la défaite finale, que seule la Tour
   // confirme, par sa liste de parties finies. afterRaw : la même sauvegarde relue, runsRaw : TOWER_RUNS_KEY.
   function fightWon(before, afterRaw, runsRaw, mode) {
     if (!Number.isFinite(before?.runSeed) || !Number.isFinite(before.streak)) return null;
     const after = parseRound(afterRaw);
     if (after?.runSeed === before.runSeed) {
-      if (after.streak === Math.max(1, before.streak + 1)) return true;
-      return after.streak === Math.min(-1, before.streak - 1) ? false : null;
+      const advanced = after.round > before.round;
+      if (advanced && after.streak === Math.max(1, before.streak + 1)) return true;
+      return (advanced || after.attempts > before.attempts) && after.streak === Math.min(-1, before.streak - 1) ? false : null;
     }
     if (mode.id !== TOWER.id) return null;
-    const ended = (parseList(runsRaw) ?? []).some(r => r?.seed === before.runSeed && r.reached === mode.floorOf(before.round));
+    const runs = parseList(runsRaw);
+    if (runsRaw != null && !runs) console.warn('kanto-overlay : parties de Tour finies illisibles, défaite finale non notée');
+    const ended = (runs ?? []).some(r => r?.seed === before.runSeed && r.reached === mode.floorOf(before.round));
     return ended ? false : null;
   }
 
@@ -1936,7 +1946,7 @@ const KT = (() => {
   const shortDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
   return {
-    SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, LEAGUES, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, STRATEGY_DEFAULTS, latestSave, shownMode, pollState,
+    SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, leagueLabel, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, STRATEGY_DEFAULTS, latestSave, shownMode, pollState,
     JOURNAL_KEY, TOWER_RUNS_KEY, readJournal, fightWon, fightEntry, learn, ownResults, withResults, resultsNote,
     parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss,
     baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
@@ -2292,7 +2302,7 @@ function bossTabHtml(state) {
 
 // Le guide des shinies par tranche d'étages ne vaut que pour la Tour.
 function rulesHtml(state) {
-  const where = state.mode.hasLeague ? `${state.mode.adv?.name ?? state.mode.adventure} · ${KT.LEAGUES[state.mode.league]}` : state.mode.name;
+  const where = state.mode.hasLeague ? KT.leagueLabel(state.mode) : state.mode.name;
   const rules = `<ul class="kt-rules">${KT.goldRules(state.mode).map(r => `<li>${esc(r)}</li>`).join('')}</ul>
 <p class="kt-label"><span>Tes résultats</span><span>${esc(where)}</span></p>
 <ul class="kt-rules">${KT.resultsNote(state.mode, state.fights).map(r => `<li>${esc(r)}</li>`).join('')}</ul>`;

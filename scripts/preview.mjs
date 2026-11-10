@@ -48,6 +48,8 @@ const STATES = {
   // Onglets, menu ⚙ et panneau replié (maquette 2026-11-09-refonte).
   'onglet-boss': { save: S57, api: 'ok', ui: { tab: 'boss' } },
   'onglet-regles': { save: S57, api: 'ok', ui: { tab: 'rules' } },
+  // Journal de 100 combats à 50 % attendus, 30 gagnés, dont 60 avec le trio posé : bilan complet et écart compté (16 points).
+  'regles-bilan': { save: S57, api: 'ok', ui: { tab: 'rules' }, fights: Array.from({ length: 100 }, (_, i) => ({ r: i < 60 ? 1 : 2, k: 'tower', f: 57, p: 50, w: Number(i < 20 || (i >= 60 && i < 70)), c: Number(i < 60) })) },
   'a-eviter-ouvert': { save: S57, api: 'ok', ui: { avoid: true } },
   options: { save: S57, api: 'ok', menu: true, ui: { pins: { no: false } } },
   replie: { save: S57, api: 'ok', tip: true, ui: { collapsed: true } },
@@ -137,10 +139,11 @@ function panelPage(name, s) {
   const start = { mode: KT.TOWER_MODE, saveKey: undefined, lastAuto: undefined, floor: null, source: 'manuel' };
   const failed = FAILED[s.api] ?? [];
   const loaded = k => s.api !== 'pending' && !failed.includes(k);
+  const fights = s.fights ?? [];
   const state = {
-    ...KT.pollState(start, found, null, ui), lastRaw: raw, stats: loaded('stats') ? { torre: modes.torre, camp: modes.camp } : null,
+    ...KT.pollState(start, found, null, ui, fights), fights, lastRaw: raw, stats: loaded('stats') ? { torre: modes.torre, camp: modes.camp } : null,
     campBroken: false, data: loaded('data') ? data : null, lang: loaded('lang') ? lang : null, failed, stale: null, uncached: false,
-    error: failed.length ? failed.map(k => `${FILES[k]} : HTTP 429`).join(' ; ') : null, copied: null, fights: s.fights ?? [],
+    error: failed.length ? failed.map(k => `${FILES[k]} : HTTP 429`).join(' ; ') : null, copied: null,
   };
   const stats = KT.modeStats(state);
   // Même condition que compute dans mount.
@@ -168,7 +171,7 @@ for (const [name, s] of Object.entries(STATES)) {
   const api = slim(s.save ?? S57, s.key);
   const payload = { [KT.SOURCES.stats]: { v: 1, modes: api.modes }, [KT.SOURCES.data]: api.data, [KT.SOURCES.lang]: api.lang };
   const stub = `
-const store = new Map(${JSON.stringify([...(s.save ? [[s.key ?? 'kanto-tactics-save-tower', JSON.stringify(s.save)]] : []), ...(s.ui ? [[KT.UI_KEY, JSON.stringify(s.ui)]] : [])])});
+const store = new Map(${JSON.stringify([...(s.save ? [[s.key ?? 'kanto-tactics-save-tower', JSON.stringify(s.save)]] : []), ...(s.ui ? [[KT.UI_KEY, JSON.stringify(s.ui)]] : []), ...(s.fights ? [[KT.JOURNAL_KEY, JSON.stringify(s.fights)]] : [])])});
 Object.defineProperty(window, 'localStorage', { configurable: true, value: {
   getItem: k => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)),
   get length() { return store.size; }, key: i => [...store.keys()][i] ?? null } });
