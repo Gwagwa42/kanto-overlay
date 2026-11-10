@@ -695,6 +695,14 @@ test('objets : paire idéale, composant seul vers sa recette, composant gardé p
   assert.deepEqual(advise(withItems(['emblem-fire'])).bag, [null]);
 });
 
+test('objets : une 2ᵉ copie du composant seul posé n’attend pas sa fusion', () => {
+  // Le premier Fer entame Cuiller Tordue sur Goupix ; la recette n'attend plus que le Calcium : le deuxième Fer va à Lokhlass,
+  // à venir, le troisième n'a plus de recette.
+  const said = titles(advise(withItems(['iron', 'iron', 'iron'])));
+  assert.match(said[0], /^Fer → Goupix — /);
+  assert.deepEqual(said.slice(1), ['Garde Fer — Cuiller Tordue pour Lokhlass, à venir', 'Garde Fer — hors des meilleurs objets de la compo']);
+});
+
 test('objets : un complément possédé est porteur, même faible', () => {
   // S57 au niveau 8 : Rattata ★ entre dans la compo faute de mieux, et Poudre Métal (Fer + Zinc) est un de ses objets idéaux.
   const a = advise({ ...S57, units: withItems([], SPOON).units });
@@ -1067,6 +1075,12 @@ test('formation : rangée = portée, 4 et plus au fond, sans colonne commune der
   // Portée nulle dans les données : mêlée, à l'avant.
   const lines = { ...data.lines, vulpix: { ...data.lines.vulpix, range: 0 } };
   assert.equal(cellsOf(trioAdvice(['abra', 'hitmonlee', 'vulpix'], { vulpix: 1 }, { lines }).code).vulpix, 3);
+});
+
+test('formation : portée v41 de la définition propre, Smogo à l’avant, Chétiflor en 2ᵉ rangée', () => {
+  const cells = cellsOf(trioAdvice(['koffing', 'bellsprout', 'zubat'], { koffing: 1, bellsprout: 1, zubat: 2 }).code);
+  assert.ok(cells.koffing < 7, `Smogo case ${cells.koffing}`);
+  assert.ok(cells.bellsprout >= 7 && cells.bellsprout < 14, `Chétiflor case ${cells.bellsprout}`);
 });
 
 test('formation : rangée pleine, débordement derrière, puis devant', () => {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour et campagne
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.5.1
+// @version      2.5.2
 // @description  Tour de combat et campagne (aventures, trois difficultés) de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -232,9 +232,10 @@ const KT = (() => {
   // (route-*.js, roster) : utilisées seulement quand data.json ne connaît pas la lignée. hit : stats d'attaque qui la servent
   // (attackKit). 'atk' : ses attaques de base comptent (tout rôle sauf mage, soutien et spécial) ; aucune de ces lignées n'a
   // de capacité physique sans cela, d'où basic lu sur 'atk'. 'spa' : une capacité suit l'Atq. Spé. Absent pour Chétiflor et
-  // Mimitoss, à deux formes.
+  // Mimitoss, à deux formes. range : celle de la définition propre de la lignée (_s), qui l'emporte sur sa ligne de base
+  // (Smogo, tank de mêlée ; Chétiflor, portée 2).
   const LINES_V41 = {
-    bellsprout: { c: 2, t: ['grass', 'poison'], s: [69, 70, 71], range: 1 },
+    bellsprout: { c: 2, t: ['grass', 'poison'], s: [69, 70, 71], range: 2 },
     clefairy: { c: 2, t: ['normal'], s: [35, 36], range: 3, hit: ['spa'] },
     doduo: { c: 2, t: ['normal', 'flying'], s: [84, 85], range: 1, hit: ['atk'] },
     drowzee: { c: 3, t: ['psychic'], s: [96, 97], range: 3, hit: ['spa'] },
@@ -244,7 +245,7 @@ const KT = (() => {
     horsea: { c: 2, t: ['water'], s: [116, 117], range: 3, hit: ['atk', 'spa'] },
     kabuto: { c: 4, t: ['rock', 'water'], s: [140, 141], range: 1, hit: ['atk', 'spa'] },
     kangaskhan: { c: 4, t: ['normal'], s: [115], range: 1, hit: ['atk'] },
-    koffing: { c: 2, t: ['poison'], s: [109, 110], range: 3, hit: ['atk', 'spa'] },
+    koffing: { c: 2, t: ['poison'], s: [109, 110], range: 1, hit: ['atk', 'spa'] },
     krabby: { c: 1, t: ['water'], s: [98, 99], range: 1, hit: ['atk'] },
     lickitung: { c: 3, t: ['normal'], s: [108], range: 1, hit: ['atk'] },
     mankey: { c: 1, t: ['fighting'], s: [56, 57], range: 1, hit: ['atk'] },
@@ -1168,8 +1169,12 @@ const KT = (() => {
     };
     // Composants encore à réunir pour chaque recette idéale des lignées à venir : une copie gardée par composant demandé.
     const needs = future.flatMap(x => x.ideal.map(f => ({ x, f, left: [...(book.parts.get(f) ?? [])] })));
-    // Pokémon de la compo qui attendent cet objet, ou un objet idéal dont c'est un composant.
-    const takers = id => hs.filter(h => ideal(h, id) || recipesWith(h, id).length);
+    // Recettes idéales où ce composant manque encore : celle qu'entame le composant seul du Pokémon n'attend que l'autre (une
+    // deuxième copie du même composant n'y entre pas).
+    const missingIn = (h, id) => recipesWith(h, id)
+      .filter(f => !h.lone || !book.parts.get(f).includes(h.lone) || otherPart(book, f, h.lone) === id);
+    // Pokémon de la compo qui attendent cet objet, ou un objet idéal où ce composant manque.
+    const takers = id => hs.filter(h => ideal(h, id) || missingIn(h, id).length);
     // Composant seul porté qui entre dans une recette idéale encore à faire ; sinon il bloque le Pokémon (Aimant).
     const kept = h => recipesWith(h, h.lone).length > 0;
     // Composant, première règle qui s'applique : complète une recette idéale, paire idéale du sac, entame une recette idéale
