@@ -11,7 +11,9 @@ aventures) de [Kanto Tactics](https://einoow.com/playables/kanto-tactics/) :
   ses ombres s'affichent sur le plateau. Le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos », avant, colonne 4) ;
 - un bouton **Copier la formation** : le même code `KT1;…`, pour le partager ou le coller à la main (Planificateur → Coller un code)
   si l'écriture automatique échoue ;
-- les règles d'or (intérêts, actualisation, tout jouer, shinies en Tour) du mode et de la difficulté en cours.
+- les règles d'or (intérêts, actualisation, tout jouer, shinies en Tour) du mode et de la difficulté en cours ;
+- le **bilan de tes combats** : tes victoires comparées aux taux publics, qui corrige ces taux pour toi quand l'écart est établi
+  (voir [Tes résultats](#tes-résultats)).
 
 Les conseils apparaissent aussi en **pastilles** sur le jeu : ★ fais-le, ◆ si l'or le permet, ✕ évite. Survoler une pastille (ou la
 sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rien.
@@ -19,7 +21,7 @@ sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rie
 En tête du panneau, toujours visibles : l'or à dépenser au-dessus du palier, l'alerte « tout jouer » et le prochain boss avec son
 taux de victoire. Dessous, quatre onglets : **Tour** (les conseils ★ et ◆, les ✕ regroupés sous « N à éviter »), **Compo** (compo
 cible, compo suivante, objets visés, copie de la formation), **Boss** (taux, premier essai, essais moyens, meilleurs trios) et
-**Règles** (règles d'or de la tranche). Replié, le panneau garde l'étage, l'or à dépenser et le premier conseil ★.
+**Règles** (règles d'or de la tranche, bilan de tes combats). Replié, le panneau garde l'étage, l'or à dépenser et le premier conseil ★.
 
 Le menu ⚙ règle le thème (auto, clair, sombre), les pastilles affichées par niveau, la largeur (320 ou 380 px), la taille du texte,
 l'opacité du fond (100, 90 ou 85 % : en deçà, le texte secondaire passe sous un contraste de 4,5:1 sur les zones claires du jeu en
@@ -167,6 +169,32 @@ Changer un préréglage recalcule tout de suite les conseils et les règles d'or
 | Compo cible | Réactive, Normale, Stable | Combats vus d'avance (6, 9 ou 12, la compo suivante sur autant d'après) et gain minimal pour changer de trio (15, 30 ou 45 points). |
 | Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver introuvable à ton niveau (autant). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
 
+### Tes résultats
+
+Le panneau note le résultat de chaque combat joué avec lui et apprend de l'écart entre tes victoires et les taux publics.
+
+- **Journal** : à chaque combat fini, une ligne dans le navigateur (`localStorage`, clé `kt-overlay:journal`) : la partie, le
+  mode et la difficulté, l'étage ou le combat, le taux attendu (taux public, moins 10 ou 20 points en Vétéran et en Légende), le
+  résultat, et si le trio de la compo cible était posé. Le résultat se lit dans la sauvegarde du jeu, relue toutes les 2 s : la
+  série de victoires (`streak`) change à chaque combat. Le journal garde les 400 derniers combats, pour suivre ton niveau et les
+  rééquilibrages du jeu ; rien ne quitte le navigateur.
+- **Bilan** (onglet Règles) : pour le mode et la difficulté en cours, tes victoires, les victoires attendues (somme des taux) et la
+  marge à 95 % sur cette somme, puis les mêmes chiffres avec et sans le trio de la compo cible posé. Ces deux lignes décrivent,
+  sans départager : on s'écarte du conseil surtout quand la partie va déjà mal.
+- **Écart appris** : la moyenne de (résultat − taux attendu), rétrécie par 25 combats fictifs sans écart. Il n'est compté
+  qu'à partir de 50 combats dans ce mode et cette difficulté, et s'il dépasse deux erreurs types (à 100 combats autour de 50 %,
+  10 victoires de plus ou de moins qu'attendu). Il s'ajoute alors à la pénalité de difficulté : seuil de « tout jouer », couleur
+  des taux et poids des combats dans la compo cible. Avec 30 victoires pour 50 attendues sur 100 combats, les taux comptent
+  16 points de moins : tout jouer sous 61 % au lieu de 45 %. Les taux affichés restent les taux publics.
+- **Ce que le panneau n'apprend pas** : les préréglages de stratégie, le choix du trio et les objets restent fixés par les
+  statistiques publiques. À quelques parties par semaine, les résultats d'un joueur ne départagent pas ces choix avant le
+  rééquilibrage suivant du jeu.
+- **Limites** : les combats d'une même partie se ressemblent (même équipe), la marge affichée est donc trop étroite, d'où le
+  minimum de 50 combats. La défaite qui termine une partie n'est notée qu'en Tour, où le jeu garde la liste des parties finies
+  (`kanto-tactics:tower-runs`) ; en campagne, la sauvegarde disparaît à la défaite finale comme à l'abandon, et ce combat manque
+  au bilan. Un combat joué panneau fermé, à un étage saisi à la main ou sans taux public (aventure sans statistiques) n'est pas
+  noté. Pour repartir de zéro : supprimer la clé `kt-overlay:journal` dans le stockage du site.
+
 ### Campagne
 
 Mêmes conseils qu'en Tour, sur les combats de l'aventure en cours, avec les règles de la campagne relevées dans le code du jeu :
@@ -210,7 +238,8 @@ types). Conformément à ses conditions, chaque source est gardée **une heure**
 L'API publique s'arrête aux règles 40 alors que la Tour tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
 le script (seuils d'XP, 1 XP gratuite par étage, chances de chaque coût en boutique par niveau, plafond d'intérêts, intérêts perdus
 sur une deuxième défaite au même étage, voies et noms des bénédictions, coût, types, portée et stats d'attaque utiles de 24 lignées, effet d'un shiny :
-+10 % de PV, dégâts et défenses, transmis par la fusion). La puissance d'une unité et le seuil de 15 % sont ceux des robots du jeu.
++10 % de PV, dégâts et défenses, transmis par la fusion, série de victoires changée à chaque combat, sauvegarde supprimée à la
+défaite finale). La puissance d'une unité et le seuil de 15 % sont ceux des robots du jeu.
 L'écart de victoire `d` corrige la difficulté du combat, pas le niveau du joueur : une lignée que choisissent surtout les bons
 joueurs paraît plus forte qu'elle n'est, d'où le décalage borné à un cran et les 400 combats fictifs. L'API ne publie
 ni le rôle d'une lignée (mage, tireur, tank…) ni les capacités qui peuvent être critiques. Que ses attaques de base comptent se
@@ -228,7 +257,7 @@ Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pok
 ## Développement
 
 ```sh
-node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur, campagne, événements du panneau
+node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur, campagne, événements du panneau, journal des combats
 node scripts/preview.mjs   # deux pages par état dans build/, puis les commandes de rendu des pages panneau
 ```
 
