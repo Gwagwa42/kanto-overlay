@@ -175,25 +175,28 @@ Le panneau note le résultat de chaque combat joué avec lui et apprend de l'éc
 
 - **Journal** : à chaque combat fini, une ligne dans le navigateur (`localStorage`, clé `kt-overlay:journal`) : la partie, le
   mode et la difficulté, l'étage ou le combat, le taux attendu (taux public, moins 10 ou 20 points en Vétéran et en Légende), le
-  résultat, et si le trio de la compo cible était posé à la dernière lecture avant le combat. Le résultat se lit dans la sauvegarde du jeu, relue toutes les 2 s : la
-  série de victoires (`streak`) change à chaque combat. Le journal garde les 400 derniers combats, pour suivre ton niveau et les
-  rééquilibrages du jeu ; rien ne quitte le navigateur.
+  résultat, et si le trio de la compo cible était posé à la dernière lecture avant le combat. Le résultat se lit dans la
+  sauvegarde du jeu, relue toutes les 2 s : la série de victoires (`streak`) change à chaque combat, et la partie avance d'une
+  manche ou compte un essai de plus. Le journal garde les 300 derniers combats de chaque mode et difficulté, pour suivre ton
+  niveau et les rééquilibrages du jeu ; rien ne quitte le navigateur.
 - **Bilan** (onglet Règles) : pour le mode et la difficulté en cours, tes victoires, les victoires attendues (somme des taux) et la
   marge à 95 % sur cette somme, puis les mêmes chiffres avec et sans le trio de la compo cible posé. Ces deux lignes décrivent,
   sans départager : on s'écarte du conseil surtout quand la partie va déjà mal.
-- **Écart appris** : la moyenne de (résultat − taux attendu), rétrécie par 25 combats fictifs sans écart. Il n'est compté
-  qu'à partir de 50 combats dans ce mode et cette difficulté, et s'il dépasse deux erreurs types (à 100 combats autour de 50 %,
-  10 victoires de plus ou de moins qu'attendu). Il s'ajoute alors à la pénalité de difficulté : seuil de « tout jouer », couleur
-  des taux et poids des combats dans la compo cible. Avec 30 victoires pour 50 attendues sur 100 combats, les taux comptent
-  16 points de moins : tout jouer sous 61 % au lieu de 45 %. Les taux affichés restent les taux publics.
+- **Écart appris** : la moyenne de (résultat − taux attendu), rétrécie par 50 combats fictifs sans écart et bornée à 20 points.
+  Il s'ajoute à la pénalité de difficulté : seuil de « tout jouer », couleur des taux et poids des combats dans la compo cible.
+  Avec 30 victoires pour 50 attendues sur 100 combats, les taux comptent 13 points de moins : tout jouer sous 58 % au lieu de
+  45 %, ce que l'en-tête rappelle (« Tour · tout jouer sous 58 % »). Les taux affichés restent les taux publics. Il n'y a pas de
+  seuil en deçà duquel l'écart serait ignoré : il ferait sauter les conseils d'une dizaine de points sur un seul combat. Un
+  combat de plus déplace l'écart de 2 points au plus, et la chance seule en laisse environ 3 après 100 combats, 2 après 300.
 - **Ce que le panneau n'apprend pas** : les préréglages de stratégie, le choix du trio et les objets restent fixés par les
   statistiques publiques. À quelques parties par semaine, les résultats d'un joueur ne départagent pas ces choix avant le
   rééquilibrage suivant du jeu.
-- **Limites** : les combats d'une même partie se ressemblent (même équipe), la marge affichée est donc trop étroite, d'où le
-  minimum de 50 combats. La défaite qui termine une partie n'est notée qu'en Tour, où le jeu garde la liste des parties finies
-  (`kanto-tactics:tower-runs`) ; en campagne, la sauvegarde disparaît à la défaite finale comme à l'abandon, et ce combat manque
-  au bilan : le bilan de campagne penche donc vers « tu gagnes plus », d'une défaite par partie perdue. Un combat joué panneau fermé, à un étage saisi à la main ou sans taux public (aventure sans statistiques) n'est pas
-  noté. Pour repartir de zéro : supprimer la clé `kt-overlay:journal` dans le stockage du site, puis recharger la page.
+- **Limites** : les combats d'une même partie se ressemblent (même équipe), la marge affichée est donc trop étroite. Le dernier
+  combat d'une partie n'est noté qu'en Tour, où le jeu garde la liste des parties finies (`kanto-tactics:tower-runs`) ; en
+  campagne, la sauvegarde disparaît à la défaite finale, à la victoire finale et à l'abandon, et ce combat manque au bilan : une
+  défaite par partie perdue, une victoire par aventure finie. Un combat joué panneau fermé, à un étage saisi à la main ou sans
+  taux public d'au moins 20 combats n'est pas noté. Pour repartir de zéro : supprimer la clé `kt-overlay:journal` dans le
+  stockage du site, puis recharger la page.
 
 ### Campagne
 
