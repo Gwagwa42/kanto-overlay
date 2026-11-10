@@ -24,6 +24,23 @@ const T = KT.TOWER_MODE;
 const floorAt = raw => KT.floorFromSave(raw, T);
 const readGame = s => KT.readGame(s, T);
 
+// Combat de test : Pierre à l'étage 10, 50 % de victoires ; trio noté contre lui (50 combats, 90 %), de borne basse lo.
+const BROCK = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+const brockCore = (core, lo = 80) => ({ stop: BROCK[0].stop, core, n: 50, win: 90, lo });
+// Statistiques de la Tour réduites au combat contre Pierre et à ces trios.
+const brockStats = (cores, extra = {}) => ({ ...torre, stops: BROCK, cores, ...extra });
+// Conseils à l'étage 10 pour une compo réduite à ce trio : niveau 3, boutique, plateau et sac vides, sauf ce que game précise.
+const brockAdvice = (core, game, extra = {}) => advise({ ...save, round: 1009, level: 3, shop: [], board: {}, items: [], ...game },
+  { stats: brockStats([brockCore(core)]), ...extra });
+// Trio et unités possédées, boutique vide : le porteur est l'attaquant possédé du trio le plus étoilé. stars : lignée → étoile de
+// l'unité possédée, qui prend la lignée pour identifiant ; hors du plateau, elle est au banc.
+const trioAdvice = (core, stars, { board = {}, level = 3, side = 'left', lines = data.lines } = {}) => brockAdvice(core, {
+  level, board, bench: Object.keys(stars).filter(id => !Object.values(board).includes(id)),
+  units: Object.fromEntries(Object.entries(stars).map(([line, star]) => [line, { id: line, line, star }])),
+}, { side, data: { ...data, lines } });
+// Code KT1 → cellule de chaque lignée.
+const cellsOf = code => Object.fromEntries(code.split(';').slice(4).map(u => u.split(':')).map(([line, , cell]) => [line, Number(cell)]));
+
 test('étage lu dans la sauvegarde Tour (round − 1000 + 1)', () => {
   assert.equal(floorAt(JSON.stringify({ round: 1000 })), 1);
   assert.equal(floorAt(JSON.stringify({ round: 1057 })), 58);
@@ -160,30 +177,29 @@ test('compo cible : meilleur trio pondéré, remplissage par puissance', () => {
 });
 
 test('compo cible : inertie de 30 points', () => {
-  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
   const cores = lo => [
-    { stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 },
-    { stop: '10:brock', core: ['pidgey', 'rattata', 'spearow'], n: 50, win: 90, lo },
+    brockCore(['abra', 'onix', 'zubat']),
+    brockCore(['pidgey', 'rattata', 'spearow'], lo),
   ];
   // Niveau 6 : les coûts 1 à 3 des deux trios sont trouvables.
   const game = readGame({ ...save, round: 1009, level: 6, units: {}, board: {}, bench: [], shop: [] });
-  const t = lo => ({ ...torre, stops, cores: cores(lo) });
+  const t = lo => brockStats(cores(lo));
   assert.equal(KT.targetComp(t(51), data, game, null).key, 'abra+onix+zubat');
   assert.equal(KT.targetComp(t(51), data, game, 'pidgey+rattata+spearow').key, 'pidgey+rattata+spearow');
   assert.equal(KT.targetComp(t(49), data, game, 'pidgey+rattata+spearow').key, 'abra+onix+zubat');
 });
 
 test('compo cible : −10 points par lignée du trio à trouver dont le coût ne sort pas à ce niveau', () => {
-  const stops = KT.nextStops([{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }], 10, 3, T);
+  const stops = KT.nextStops(BROCK, 10, 3, T);
   const cores = [
-    { stop: '10:brock', core: ['giovanni', 'koga', 'samurai'], n: 50, win: 90, lo: 80 },
-    { stop: '10:brock', core: ['onix', 'rhyhorn', 'kabuto'], n: 50, win: 90, lo: 55 },
+    brockCore(['giovanni', 'koga', 'samurai']),
+    brockCore(['onix', 'rhyhorn', 'kabuto'], 55),
   ];
   const game = (level, units = {}) => readGame({ ...save, round: 1009, level, units, board: {}, bench: Object.keys(units), shop: [] });
   const score = g => KT.coreScore(cores[0].core, stops, new Map(), g, data);
   // Coût 5 : 6 % au niveau 8, 17 % au niveau 9 ; une lignée possédée garde son bonus.
   assert.deepEqual([score(game(8)), score(game(9)), score(game(8, { g: { id: 'g', line: 'giovanni', star: 1 } }))], [-30, 0, -10]);
-  const key = g => KT.targetComp({ ...torre, stops, cores }, data, g, null).key;
+  const key = g => KT.targetComp(brockStats(cores), data, g, null).key;
   // Niveau 8 : 80 − 30 contre 55 (coûts 3 et 4 trouvables) ; niveau 9 : 80 contre 55.
   assert.equal(key(game(8)), 'kabuto+onix+rhyhorn');
   assert.equal(key(game(9)), 'giovanni+koga+samurai');
@@ -195,28 +211,26 @@ test('compo cible : 9 prochains combats, élites comprises', () => {
 });
 
 test('compo cible : inertie seulement dans la même partie (runSeed)', () => {
-  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
   const cores = [
-    { stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 },
-    { stop: '10:brock', core: ['pidgey', 'rattata', 'spearow'], n: 50, win: 90, lo: 60 },
+    brockCore(['abra', 'onix', 'zubat']),
+    brockCore(['pidgey', 'rattata', 'spearow'], 60),
   ];
   const s = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
-  const at = previous => KT.advise({ mode: T, stats: { ...torre, stops, cores }, data, lang, save: s, previous, side: 'left' }).target.key;
+  const at = previous => advise(s, { stats: brockStats(cores), previous }).target.key;
   assert.equal(at({ key: 'pidgey+rattata+spearow', run: 7 }), 'pidgey+rattata+spearow');
   assert.equal(at({ key: 'pidgey+rattata+spearow', run: 8 }), 'abra+onix+zubat');
   // Valeur des versions précédentes (clé seule) : rattachée à aucune partie.
   assert.equal(at('pidgey+rattata+spearow'), 'abra+onix+zubat');
-  assert.equal(KT.advise({ mode: T, stats: torre, data, lang, save: s, previous: null, side: 'left' }).run, 7);
+  assert.equal(advise(s).run, 7);
 });
 
 test('compléments : possédés par puissance (coût, étoiles) et types, boutique pour les places libres, carte plus forte à part', () => {
   // Trio Roucool + Piafabec + Abra.
-  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
-  const trio = { stop: '10:brock', core: ['pidgey', 'spearow', 'abra'], n: 50, win: 90, lo: 80 };
+  const trio = brockCore(['pidgey', 'spearow', 'abra']);
   const units = (...list) => Object.fromEntries(list.map(([line, star]) => [line, { id: line, line, star }]));
   // Sans statistiques de lignée, aucun coût n'est décalé : la note est la puissance seule.
   const comp = (level, own, shop, cores = [trio]) => {
-    const t = KT.targetComp({ ...torre, stops, cores, lines: [] }, data,
+    const t = KT.targetComp(brockStats(cores, { lines: [] }), data,
       readGame({ ...save, round: 1009, level, units: own, board: Object.fromEntries(Object.keys(own).map((id, i) => [28 + i, id])), bench: [], shop }), null);
     return [t.fillers, t.upgrades, t.replaced];
   };
@@ -236,11 +250,10 @@ test('compléments : possédés par puissance (coût, étoiles) et types, boutiq
 });
 
 test('compléments : l’écart de victoire rétréci (400 combats fictifs) décale le coût d’un cran, dès 2,5 points', () => {
-  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
-  const cores = [{ stop: '10:brock', core: ['pidgey', 'spearow', 'abra'], n: 50, win: 90, lo: 80 }];
+  const cores = [brockCore(['pidgey', 'spearow', 'abra'])];
   const stat = (line, d, ne) => ({ line, n: ne, ne, win: 80, lo: 79, d });
   const comp = (lines, own, shop = []) => {
-    const t = KT.targetComp({ ...torre, stops, cores, lines }, data, readGame({
+    const t = KT.targetComp(brockStats(cores, { lines }), data, readGame({
       ...save, round: 1009, level: 4, units: own, board: Object.fromEntries(Object.keys(own).map((id, i) => [28 + i, id])), bench: [], shop,
     }), null);
     return [t.fillers, t.upgrades];
@@ -299,15 +312,14 @@ test('compléments : à l’étage 72, les unités fortes possédées passent av
 });
 
 test('compo cible : un trio monté en ★★ l’emporte sur l’inertie d’un trio non possédé', () => {
-  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
   const cores = [
     // Inertie : abra 70 + 30 = 100 ; possession : pidgey 50 + 60 = 110 (80 avec l'ancien bonus de 5).
-    { stop: '10:brock', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 70 },
-    { stop: '10:brock', core: ['pidgey', 'rattata', 'spearow'], n: 50, win: 90, lo: 50 },
+    brockCore(['abra', 'onix', 'zubat'], 70),
+    brockCore(['pidgey', 'rattata', 'spearow'], 50),
   ];
   const units = Object.fromEntries(['pidgey', 'rattata', 'spearow'].map(line => [line, { id: line, line, star: 2 }]));
   const game = readGame({ ...save, round: 1009, level: 3, units, board: { 0: 'pidgey', 1: 'rattata', 2: 'spearow' }, bench: [], shop: [] });
-  assert.equal(KT.targetComp({ ...torre, stops, cores }, data, game, 'abra+onix+zubat').key, 'pidgey+rattata+spearow');
+  assert.equal(KT.targetComp(brockStats(cores), data, game, 'abra+onix+zubat').key, 'pidgey+rattata+spearow');
 });
 
 test('achat d’une carte ★ : les autres pastilles de la boutique ne changent pas', () => {
@@ -459,8 +471,7 @@ test('niveau maximal : pas de ★★★ cherchée pour une lignée du trio qu’
 test('actualiser : lignée introuvable à ce niveau → XP ; fusion à une copie cherchée', () => {
   // Étage 5, sans niveau visé. Trio Onix + Kabuto + Rhinocorne à trouver, niveau 3 : les coûts 3 et 4 ne sortent pas. Sans
   // statistiques d'étoile, la ★★★ du trio se cherche au niveau maximal.
-  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
-  const t = { ...torre, stops, stars: [], cores: [{ stop: '10:brock', core: ['onix', 'kabuto', 'rhyhorn'], n: 50, win: 90, lo: 80 }] };
+  const t = brockStats([brockCore(['onix', 'kabuto', 'rhyhorn'])], { stars: [] });
   const empty = { ...save, round: 1004, level: 3, xp: 0, gold: 40, units: {}, board: {}, bench: [], shop: [], attempts: 0 };
   const lost = advise(empty, { stats: t });
   assert.equal(why(lost.reroll), 'no Garde l’or : Onix (coût 3 : 0 %) au niveau 3 : à chercher au niveau 6');
@@ -475,25 +486,25 @@ test('actualiser : lignée introuvable à ce niveau → XP ; fusion à une copie
   assert.equal(why(rolled.xp), 'no Attends : l’or va d’abord à l’actualisation');
   // Étage 62, niveau 9 : Rattata (coût 1) sort à 6 %, et à 4 % au niveau 10. Monter ne le rend pas trouvable : aucun conseil
   // d'actualisation, l'or va à l'XP. Au niveau 10, le maximum, tout ce qui sort en boutique se cherche.
-  const high = level => advise({ ...pair, round: 1061, level, gold: 60 }, { stats: { ...t, stops: [{ ...stops[0], stop: '64:brock' }], cores: [{ ...t.cores[0], stop: '64:brock' }] } });
+  const high = level => advise({ ...pair, round: 1061, level, gold: 60 }, { stats: { ...t, stops: [{ ...BROCK[0], stop: '64:brock' }], cores: [{ ...t.cores[0], stop: '64:brock' }] } });
   assert.deepEqual([high(9).reroll, brief(high(9).xp)], [null, 'do Monte']);
   assert.equal(why(high(10).reroll), 'do Actualise : cherche Onix (coût 3 : 24 %), Kabuto (coût 4 : 42 %), Rhinocorne (coût 4 : 42 %), Rattata (coût 1 : 4 %) au niveau 10');
 });
 
 test('lignée du trio inconnue des données : ni malus, ni actualisation pour elle, pas d’erreur', () => {
-  const stops = KT.nextStops([{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }], 5, 3, T);
+  const stops = KT.nextStops(BROCK, 5, 3, T);
   const core = ['newmon', 'pidgey', 'spearow'];
   const game = readGame({ ...save, round: 1004, level: 9, units: {}, board: {}, bench: [], shop: [] });
   // Roucool et Piafabec (coût 1 : 6 % au niveau 9) coûtent 10 points chacun ; la lignée sans coût connu, rien.
   assert.equal(KT.coreScore(core, stops, new Map(), game, data), -20);
   const a = advise({ ...save, round: 1004, level: 9, xp: 0, gold: 60, attempts: 0, units: {}, board: {}, bench: [], shop: [] },
-    { stats: { ...torre, stops, cores: [{ stop: '10:brock', core, n: 50, win: 90, lo: 80 }] } });
+    { stats: brockStats([brockCore(core)]) });
   assert.equal(a.target.key, 'newmon+pidgey+spearow');
   assert.equal(why(a.reroll), 'do Actualise : cherche Roucool (coût 1 : 6 %), Piafabec (coût 1 : 6 %) au niveau 9');
   // Tout jouer : aucune chance n'est lue, la lignée inconnue se cherche comme les autres.
   const own = Object.fromEntries(['pidgey', 'spearow'].map(line => [line, { id: line, line, star: 3 }]));
   const allIn = advise({ ...save, round: 1004, level: 9, xp: 0, gold: 10, hp: 30, attempts: 0, units: own, board: {}, bench: ['pidgey', 'spearow'], shop: [] },
-    { stats: { ...torre, stops, cores: [{ stop: '10:brock', core, n: 50, win: 90, lo: 80 }] } });
+    { stats: brockStats([brockCore(core)]) });
   assert.equal(why(allIn.reroll), 'do Actualise : tout jouer : chercher les copies de la compo');
 });
 
@@ -698,9 +709,9 @@ test('objets : paire idéale, composant seul vers sa recette, composant gardé p
 test('objets : une 2ᵉ copie du composant seul posé n’attend pas sa fusion', () => {
   // Le premier Fer entame Cuiller Tordue sur Goupix ; la recette n'attend plus que le Calcium : le deuxième Fer va à Lokhlass,
   // à venir, le troisième n'a plus de recette.
-  const said = titles(advise(withItems(['iron', 'iron', 'iron'])));
-  assert.match(said[0], /^Fer → Goupix — /);
-  assert.deepEqual(said.slice(1), ['Garde Fer — Cuiller Tordue pour Lokhlass, à venir', 'Garde Fer — hors des meilleurs objets de la compo']);
+  const bag = titles(advise(withItems(['iron', 'iron', 'iron'])));
+  assert.match(bag[0], /^Fer → Goupix — /);
+  assert.deepEqual(bag.slice(1), ['Garde Fer — Cuiller Tordue pour Lokhlass, à venir', 'Garde Fer — hors des meilleurs objets de la compo']);
 });
 
 test('objets : un complément possédé est porteur, même faible', () => {
@@ -823,12 +834,10 @@ test('Aimant : deux Aimants, emblème porté, Pokémon vidé qui ne reçoit rien
 });
 
 test('Aimant : un tank qui porte un objet de la stat contraire est dit « spécial sur un physique »', () => {
-  const t = { ...torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }],
-    cores: [{ stop: '10:brock', core: ['geodude', 'bulbasaur', 'abra'], n: 50, win: 90, lo: 80 }] };
-  const a = KT.advise({ mode: T, stats: t, data, lang, side: 'left', previous: null, save: {
-    ...save, round: 1009, level: 3, shop: [], bench: ['g'], board: {}, items: ['magnet'],
+  const a = brockAdvice(['geodude', 'bulbasaur', 'abra'], {
+    bench: ['g'], items: ['magnet'],
     units: { g: { id: 'g', line: 'geodude', star: 1, items: ['twisted-spoon'] } },
-  } });
+  });
   assert.equal(a.bag[0].why, 'retire Cuiller Tordue (spécial sur un physique)');
 });
 
@@ -838,12 +847,10 @@ test('récompense d’objet : sans Pokémon de la compo, prépare une lignée à
 });
 
 test('formation : un tank à distance (Onix) passe au premier rang avant la mêlée', () => {
-  const t = { ...torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }],
-    cores: [{ stop: '10:brock', core: ['onix', 'machop', 'abra'], n: 50, win: 90, lo: 80 }] };
-  const code = KT.advise({ mode: T, stats: t, data, lang, side: 'left', previous: null, save: {
-    ...save, round: 1009, level: 2, shop: [], bench: ['o', 'z'], board: {}, items: [],
+  const code = brockAdvice(['onix', 'machop', 'abra'], {
+    level: 2, bench: ['o', 'z'],
     units: { o: { id: 'o', line: 'onix', star: 2 }, z: { id: 'z', line: 'zubat', star: 1 } },
-  } }).code;
+  }).code;
   assert.match(code, /;onix:2:3/);
 });
 
@@ -876,12 +883,10 @@ test('objets visés et Aimant : objet gardé après l’Aimant prêt pour lui se
 });
 
 test('Aimant : un objet offensif mixte sur un tank est dit « offensif sur un tank »', () => {
-  const t = { ...torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }],
-    cores: [{ stop: '10:brock', core: ['geodude', 'bulbasaur', 'abra'], n: 50, win: 90, lo: 80 }] };
-  const a = KT.advise({ mode: T, stats: t, data, lang, side: 'left', previous: null, save: {
-    ...save, round: 1009, level: 3, shop: [], bench: ['g'], board: {}, items: ['magnet'],
+  const a = brockAdvice(['geodude', 'bulbasaur', 'abra'], {
+    bench: ['g'], items: ['magnet'],
     units: { g: { id: 'g', line: 'geodude', star: 1, items: ['life-orb'] } },
-  } });
+  });
   assert.equal(a.bag[0].why, 'retire Orbe Vie (offensif sur un tank)');
 });
 
@@ -1001,7 +1006,6 @@ test('formation : dans la limite du niveau, cœur possédé d’abord', () => {
 });
 
 // Cellule de chaque lignée d'un code KT1.
-const cellsOf = code => Object.fromEntries(code.split(';').slice(4).map(u => u.split(':')).map(([line, , cell]) => [line, Number(cell)]));
 
 test('formation : une seule unité par cellule, niveaux 3 à 10, pour chaque zone du porteur', () => {
   for (const side of ['left', 'center', 'right']) {
@@ -1039,12 +1043,10 @@ test('déplacements : remplacer l’occupant hors formation, ranger au banc faut
 
 test('déplacements rejoués comme le jeu : échange, occupant déplacé, Pokémon rangé hors des cases visées', () => {
   // Nosferapti (mêlée, fond colonne 1) et Abra (distance, avant colonne 4) échangent leurs cases : une seule consigne.
-  const t = { ...torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }],
-    cores: [{ stop: '10:brock', core: ['zubat', 'abra', 'pidgey'], n: 50, win: 90, lo: 80 }] };
-  const swap = KT.advise({ mode: T, stats: t, data, lang, side: 'left', previous: null, save: {
-    ...save, round: 1009, level: 2, shop: [], bench: [], board: { 49: 'z', 31: 'x' },
+  const swap = brockAdvice(['zubat', 'abra', 'pidgey'], {
+    level: 2, bench: [], board: { 49: 'z', 31: 'x' },
     units: { z: { id: 'z', line: 'zubat', star: 1 }, x: { id: 'x', line: 'abra', star: 1 } },
-  } });
+  });
   assert.deepEqual(swap.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Nosferapti — fond, colonne 1 → avant, colonne 4 (échange avec Abra)']);
   // Goupix va sur la case de Rattata (42 → 3ᵉ rangée, colonne 1), qui passe sur l'ancienne case de Goupix : Caninos y est posé à
   // la place de Rattata.
@@ -1056,16 +1058,6 @@ test('déplacements rejoués comme le jeu : échange, occupant déplacé, Pokém
     ['Pose Goupix — 3ᵉ rangée, colonne 1, à la place de Rattata', 'Pose Caninos — avant, colonne 3 ; range Abo au banc']);
 });
 
-const BROCK = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
-// Conseils pour une compo réduite à un trio et aux unités possédées, boutique vide : le porteur est l'attaquant possédé du trio le
-// plus étoilé. stars : lignée → étoile de l'unité possédée, qui prend la lignée pour identifiant ; hors du plateau, elle est au banc.
-const trioAdvice = (core, stars, { board = {}, level = 3, side = 'left', lines = data.lines } = {}) => KT.advise({
-  mode: T, stats: { ...torre, stops: BROCK, cores: [{ stop: '10:brock', core, n: 50, win: 90, lo: 80 }] }, data: { ...data, lines }, lang, side, previous: null,
-  save: {
-    ...save, round: 1009, level, shop: [], board, bench: Object.keys(stars).filter(id => !Object.values(board).includes(id)),
-    units: Object.fromEntries(Object.entries(stars).map(([line, star]) => [line, { id: line, line, star }])),
-  },
-});
 const sortedCells = code => Object.values(cellsOf(code)).sort((a, b) => a - b);
 
 test('formation : rangée = portée, 4 et plus au fond, sans colonne commune derrière l’avant', () => {
@@ -1096,19 +1088,26 @@ test('formation : rangée pleine, débordement derrière, puis devant', () => {
   assert.deepEqual(sortedCells(trioAdvice(ranged.slice(0, 3), all(ranged), { level: 8, lines }).code), [14, 21, 22, 23, 24, 25, 26, 27]);
 });
 
-test('formation : porteur à distance sur la rangée de sa portée, dans la zone choisie, gardé s’il y est déjà', () => {
-  // Abra, portée 4 : au fond.
-  const at = (cell, side) => trioAdvice(['abra', 'onix', 'zubat'], { abra: 2 }, { board: { [cell]: 'abra' }, side });
-  assert.deepEqual(at(29, 'left').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 1']);
-  assert.deepEqual(at(29, 'right').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 7']);
-  // Fond, colonne 3 : dans le coin gauche (gardé), hors du coin droit.
-  assert.deepEqual(at(51, 'left').moves, []);
-  assert.match(at(51, 'left').code, /abra:2:23/);
-  assert.deepEqual(at(51, 'right').moves.map(m => m.why), ['fond, colonne 3 → fond, colonne 7']);
-  // Centre : colonnes 3 à 5 du fond, colonne 4 d'abord ; fond colonne 3 est dans la zone, gardé.
-  assert.deepEqual(at(29, 'center').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 4']);
-  assert.deepEqual(at(51, 'center').moves, []);
-  const said = a => a.moves.map(m => `${m.title} — ${m.why}`);
+// Abra, portée 4 : au fond ; seul sur le plateau, à la case cell.
+const abraAt = (cell, side) => trioAdvice(['abra', 'onix', 'zubat'], { abra: 2 }, { board: { [cell]: 'abra' }, side });
+const said = a => a.moves.map(m => `${m.title} — ${m.why}`);
+
+test('formation : porteur à distance au fond, dans les colonnes de la zone choisie', () => {
+  assert.deepEqual(abraAt(29, 'left').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 1']);
+  assert.deepEqual(abraAt(29, 'right').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 7']);
+  // Centre : colonnes 3 à 5 du fond, colonne 4 d'abord.
+  assert.deepEqual(abraAt(29, 'center').moves.map(m => m.why), ['avant, colonne 2 → fond, colonne 4']);
+});
+
+test('formation : porteur déjà sur une case de sa zone, gardé', () => {
+  // Fond, colonne 3 : dans le coin gauche et au centre (gardé), hors du coin droit.
+  assert.deepEqual(abraAt(51, 'left').moves, []);
+  assert.match(abraAt(51, 'left').code, /abra:2:23/);
+  assert.deepEqual(abraAt(51, 'center').moves, []);
+  assert.deepEqual(abraAt(51, 'right').moves.map(m => m.why), ['fond, colonne 3 → fond, colonne 7']);
+});
+
+test('formation : colonnes déjà prises par une unité à distance évitées', () => {
   // Pikachu et Voltali (portée 4) déjà au fond en colonnes 1 et 3 : le porteur reste dans le coin (colonne 2), pas en colonne 5.
   const corner = trioAdvice(['abra', 'pikachu', 'jolteon'], { abra: 2, pikachu: 1, jolteon: 1 }, { board: { 49: 'pikachu', 51: 'jolteon' } });
   assert.deepEqual(said(corner), ['Pose Abra — fond, colonne 2']);
@@ -1116,7 +1115,10 @@ test('formation : porteur à distance sur la rangée de sa portée, dans la zone
   const center = trioAdvice(['abra', 'psyduck', 'vulpix'], { abra: 2, vulpix: 1 }, { side: 'center' });
   assert.deepEqual(cellsOf(center.code), { psyduck: 15, vulpix: 19, abra: 24 });
   assert.deepEqual(said(center), ['Pose Goupix — 3ᵉ rangée, colonne 6', 'Pose Abra — fond, colonne 4']);
-  // Porteur de portée 3 (Goupix ★★) : 3ᵉ rangée, colonnes de sa zone ; déjà en 3ᵉ rangée colonne 3 (case 44), il la garde à gauche.
+});
+
+test('formation : porteur de portée 3 en 3ᵉ rangée, dans sa zone', () => {
+  // Goupix ★★ ; déjà en 3ᵉ rangée colonne 3 (case 44), il la garde à gauche.
   const carry3 = (board, side) => trioAdvice(['vulpix', 'onix', 'zubat'], { vulpix: 2 }, { board, side });
   assert.deepEqual(said(carry3({}, 'right')), ['Pose Goupix — 3ᵉ rangée, colonne 7']);
   assert.deepEqual(said(carry3({ 44: 'vulpix' }, 'left')), []);
@@ -1153,12 +1155,10 @@ test('shiny : départage le porteur, le tank et le remplissage', () => {
   assert.equal(carry(withUnits(g2, lay)), 'a');
   assert.equal(carry(withUnits({ b: { ...g2.b, shiny: true } }, lay)), 'b');
   // Deux tanks : Racaillou 1★ shiny (1056 × 1,1 PV) passe devant Bulbizarre 1★ (1084 PV).
-  const t = { ...torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }],
-    cores: [{ stop: '10:brock', core: ['geodude', 'bulbasaur', 'abra'], n: 50, win: 90, lo: 80 }] };
-  const tanks = shiny => KT.advise({ mode: T, stats: t, data, lang, side: 'left', previous: null, save: {
-    ...save, round: 1009, level: 3, shop: [], bench: ['g', 'b'], board: {}, items: [],
+  const tanks = shiny => brockAdvice(['geodude', 'bulbasaur', 'abra'], {
+    bench: ['g', 'b'],
     units: { g: { id: 'g', line: 'geodude', star: 1, shiny }, b: { id: 'b', line: 'bulbasaur', star: 1 } },
-  } }).aims.map(x => x.unit.id);
+  }).aims.map(x => x.unit.id);
   assert.deepEqual(tanks(false), ['b', 'g']);
   assert.deepEqual(tanks(true), ['g', 'b']);
   // Remplissage : Goupix et Pyroli 1★ ont le même coût et le même type ; le shiny passe devant.
