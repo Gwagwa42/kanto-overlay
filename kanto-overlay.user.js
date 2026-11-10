@@ -106,6 +106,9 @@ const KT = (() => {
   const DEFENSE = ['hp-up', 'iron', 'zinc'];
   // Composant d'attaque → stat du profil (attackKit) qu'il augmente.
   const ATTACK = { protein: 'atk', calcium: 'spa' };
+  // Attaque rapportée à l'Atq. Spé. à partir de laquelle les attaques de base d'une lignée comptent (attackKit) : mages,
+  // soutiens et Voltorbe vont de 0,31 à 0,76, les autres rôles de 0,90 à 2,35 (data.json, novembre 2026).
+  const BASIC_RATIO = 0.83;
   // Part de composants défensifs dans les objets qu'une lignée porte en Tour à partir de laquelle elle est un tank : Ronflex 0,94,
   // Machop 0,56, Caninos 0,48, Minidraco 0,40 (campana.json, novembre 2026).
   const TANK_SHARE = 0.5;
@@ -227,8 +230,9 @@ const KT = (() => {
 
   // Lignées de la Tour v41 absentes de data.json (l'API publique s'arrête aux règles 40), relevées dans le code du jeu
   // (route-*.js, roster) : utilisées seulement quand data.json ne connaît pas la lignée. hit : stats d'attaque qui la servent
-  // (attackKit), d'après son rôle (mage, soutien et spécial : attaques de base négligées) et l'échelle de ses capacités ;
-  // absent pour Chétiflor et Mimitoss, à deux formes.
+  // (attackKit). 'atk' : ses attaques de base comptent (tout rôle sauf mage, soutien et spécial) ; aucune de ces lignées n'a
+  // de capacité physique sans cela, d'où basic lu sur 'atk'. 'spa' : une capacité suit l'Atq. Spé. Absent pour Chétiflor et
+  // Mimitoss, à deux formes.
   const LINES_V41 = {
     bellsprout: { c: 2, t: ['grass', 'poison'], s: [69, 70, 71], range: 1 },
     clefairy: { c: 2, t: ['normal'], s: [35, 36], range: 3, hit: ['spa'] },
@@ -431,15 +435,9 @@ const KT = (() => {
       && t.holders.every(h => typeof h?.line === 'string' && typeof h.id === 'string' && [h.n, h.lo].every(Number.isFinite));
   }
 
-  // Stade d'une lignée : PV, Attaque, Atq. Spé. et échelle de sa capacité, et de ses deux formes s'il en a (attackKit).
-  const isScaled = m => [m?.scale?.atk, m?.scale?.spa].every(Number.isFinite);
-  const isStage = s => [s?.stats?.hp, s?.stats?.atk, s?.stats?.spa].every(Number.isFinite) && isScaled(s.move)
-    && (s.flex === undefined || (Array.isArray(s.flex?.axes) && isScaled(s.flex.phys) && isScaled(s.flex.spec)));
-
   function isGameData(d) {
     return isObject(d?.lines) && isObject(d.items) && Array.isArray(d.recipes) && isObject(d.traits) && isObject(d.seals)
-      && Object.values(d.lines).every(l => Number.isFinite(l?.c) && Array.isArray(l.t) && Array.isArray(l.s) && Number.isFinite(l.range)
-        && Array.isArray(l.stars) && l.stars.every(isStage))
+      && Object.values(d.lines).every(l => Number.isFinite(l?.c) && Array.isArray(l.t) && Array.isArray(l.s) && Number.isFinite(l.range))
       && Object.values(d.traits).every(t => Array.isArray(t?.th))
       && d.recipes.every(r => Array.isArray(r) && r.length === 3);
   }
@@ -957,6 +955,12 @@ const KT = (() => {
     return { make, parts };
   }
 
+  // Autre composant de la recette d'un objet complet.
+  const otherPart = (book, full, id) => {
+    const [a, b] = book.parts.get(full);
+    return a === id ? b : a;
+  };
+
   // Composants qui donnent ses stats à un objet : inherits de l'API, qui diffère parfois de la recette (Casque Brut : PV Plus +
   // Fer, recette PV Plus + Protéine) ; vide pour les objets Choix, dont la recette porte la stat.
   function itemParts(data, id) {
@@ -967,29 +971,31 @@ const KT = (() => {
   }
 
   // Stats d'attaque qui servent une lignée de base, d'après les règles du jeu (roster-*.js) : l'Attaque porte les attaques de
-  // base de tous et les capacités physiques, l'Atq. Spé. les capacités spéciales, soins et boucliers ; l'échelle de chaque
-  // capacité (scale) dit laquelle elle suit. basic : ses attaques de base comptent, quand l'Attaque d'un stade au moins
-  // n'est pas sous son Atq. Spé. (Magicarpe ne l'atteint qu'en Léviator) ; l'API ne publie pas le rôle, et ce rapport sépare
-  // les lanceurs (mages, soutiens, Voltorbe : 0,31 à 0,76) des autres rôles (0,90 et plus, novembre 2026). flex : lignée à
-  // deux formes, qui prend la capacité physique ou spéciale selon la stat que ses objets donnent le plus ; une lignée
-  // inconnue de data.json et de LINES_V41 est traitée de même, faute de capacité connue.
+  // base de tous et les capacités physiques, l'Atq. Spé. les capacités spéciales, soins et boucliers. L'échelle de la capacité
+  // du dernier stade (scale), celui que la lignée vise, dit laquelle elle suit : la plus forte des deux, les deux à égalité.
+  // basic : ses attaques de base comptent, quand l'Attaque d'un stade au moins atteint BASIC_RATIO fois son Atq. Spé.
+  // (Magicarpe n'y arrive qu'en Léviator) ; l'API ne publie pas le rôle. flex : lignée à deux formes, qui prend la capacité
+  // physique ou spéciale selon la stat que ses objets donnent le plus. Une lignée inconnue de data.json et de LINES_V41, ou
+  // dont un stade n'a pas ces champs, est traitée de même, faute de capacité connue. Deux formes sur d'autres axes (Ramoloss :
+  // Défense contre Déf. Spé.) : les stats des deux capacités comptent, la forme jouée ne se lit pas sur les objets d'attaque.
   function attackKit(data, base) {
     const info = lineInfo(data, base);
     if (info?.hit) return { basic: info.hit.includes('atk'), atk: info.hit.includes('atk'), spa: info.hit.includes('spa'), flex: false };
     const stars = info?.stars ?? [];
-    const moves = stars.flatMap(s => [s.move, s.flex?.phys, s.flex?.spec]).filter(Boolean);
-    if (!moves.length) return { basic: true, flex: true };
-    const basic = stars.some(s => s.stats.atk >= s.stats.spa);
-    return {
-      basic, atk: basic || moves.some(m => m.scale.atk > 0), spa: moves.some(m => m.scale.spa > 0),
-      flex: stars.some(s => ['atk', 'spa'].every(x => s.flex?.axes.includes(x))),
-    };
+    const last = stars[stars.length - 1];
+    const moves = [last?.move, last?.flex?.phys, last?.flex?.spec].filter(Boolean);
+    const known = moves.length > 0 && moves.every(m => [m.scale?.atk, m.scale?.spa].every(Number.isFinite))
+      && stars.every(s => [s.stats?.atk, s.stats?.spa].every(Number.isFinite));
+    if (!known) return { basic: true, flex: true };
+    const basic = stars.some(s => s.stats.atk >= BASIC_RATIO * s.stats.spa);
+    const leads = (own, other) => moves.some(m => m.scale[own] > 0 && m.scale[own] >= m.scale[other]);
+    return { basic, atk: basic || leads('atk', 'spa'), spa: leads('spa', 'atk'), flex: ['atk', 'spa'].every(x => last.flex?.axes?.includes(x)) };
   }
 
   // Profil de chaque lignée de base. tank : lu sur les objets qu'elle porte dans le mode (pondérés par le nombre de combats),
   // quand la part de composants défensifs atteint TANK_SHARE ; data.json ne sépare pas tanks et attaquants. basic, atk, spa :
   // attackKit. Une lignée à deux formes n'est servie que par une stat, celle que ces objets portés lui donnent le plus
-  // (Calcium contre Protéine) : des objets des deux stats la feraient changer de capacité.
+  // (Calcium contre Protéine, l'Attaque à égalité) : des objets des deux stats la feraient changer de capacité.
   function lineProfiles(stats, data) {
     const sums = new Map();
     for (const h of stats.holders) {
@@ -1011,20 +1017,20 @@ const KT = (() => {
     }));
   }
 
-  // Composant d'attaque dont la stat ne sert pas la lignée : seul, il ne lui apporte rien.
+  // Composant d'attaque dont la stat ne sert pas la lignée : seul, il ne lui apporte rien, et il ferait changer de capacité
+  // une lignée à deux formes.
   const idlePart = (profile, id) => profile !== null && ATTACK[id] !== undefined && !profile[ATTACK[id]];
 
-  // Ce qu'un objet complet a de vain pour la lignée, null sinon : aucune des stats d'attaque qu'il donne ne la sert (Orbe Vie
-  // donne les deux, il sert toujours), ou il donne du critique (Lentilscope) à un lanceur, dont les attaques de base ne
-  // comptent pas. Le critique ne touche une capacité que si elle le dit, ce que l'API ne publie pas.
+  // Ce qu'un objet complet a de contraire à la lignée, null sinon : aucune des stats d'attaque qu'il donne ne la sert (Orbe
+  // Vie donne les deux, il sert toujours).
   function wasted(data, profile, id) {
     const given = itemParts(data, id).filter(p => ATTACK[p]);
-    if (given.length && given.every(p => idlePart(profile, p))) return given.includes('protein') ? 'physique sur un spécial' : 'spécial sur un physique';
-    return data.items[id].stat === 'crit' && !profile.basic ? 'critique sur un lanceur' : null;
+    if (!given.length || !given.every(p => idlePart(profile, p))) return null;
+    return given.includes('protein') ? 'physique sur un spécial' : 'spécial sur un physique';
   }
 
-  // Objet complet qui convient au profil : rien de vain (wasted), au moins la moitié de composants défensifs pour un tank,
-  // offensifs pour un attaquant. Sans profil, tout convient.
+  // Objet complet qui convient au profil : rien de contraire (wasted), au moins la moitié de composants défensifs pour un
+  // tank, offensifs pour un attaquant. Sans profil, tout convient.
   function suits(data, profile, id) {
     if (!profile) return true;
     const parts = itemParts(data, id);
@@ -1036,10 +1042,16 @@ const KT = (() => {
   // Ce qu'un objet porté contraire au profil a de faux, pour le conseil d'Aimant.
   const misfit = (data, profile, id) => wasted(data, profile, id) ?? (profile.tank ? 'offensif sur un tank' : 'défensif sur un attaquant');
 
-  // Meilleurs objets complets portés dans le mode par cette lignée exacte et qui conviennent à son profil : une forme ancrée (-aN)
-  // ne compte que pour elle-même ; le repli sur la lignée de base est dans idealItems.
+  // Critique (Lentilscope) pour un lanceur, dont les attaques de base ne comptent pas : il ne touche une capacité que si elle
+  // le dit, ce que l'API ne publie pas. L'objet n'est pas visé, sans être contraire : il donne aussi de l'Atq. Spé. et de la
+  // vitesse, et porté il n'appelle pas l'Aimant.
+  const idleCrit = (data, profile, id) => profile !== null && !profile.basic && data.items[id].stat === 'crit';
+
+  // Meilleurs objets complets portés dans le mode par cette lignée exacte et qui conviennent à son profil, critique d'un lanceur
+  // écarté : une forme ancrée (-aN) ne compte que pour elle-même ; le repli sur la lignée de base est dans idealItems.
   function topHolders(stats, data, line, profile) {
-    return stats.holders.filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full' && suits(data, profile, h.id))
+    return stats.holders
+      .filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full' && suits(data, profile, h.id) && !idleCrit(data, profile, h.id))
       .sort((a, b) => b.lo - a.lo).slice(0, MAX_ITEMS);
   }
 
@@ -1156,7 +1168,7 @@ const KT = (() => {
     // Composants encore à réunir pour chaque recette idéale des lignées à venir : une copie gardée par composant demandé.
     const needs = future.flatMap(x => x.ideal.map(f => ({ x, f, left: [...(book.parts.get(f) ?? [])] })));
     // Pokémon de la compo qui attendent cet objet, ou un objet idéal dont c'est un composant.
-    const waiting = id => hs.filter(h => ideal(h, id) || recipesWith(h, id).length);
+    const takers = id => hs.filter(h => ideal(h, id) || recipesWith(h, id).length);
     // Composant seul porté qui entre dans une recette idéale encore à faire ; sinon il bloque le Pokémon (Aimant).
     const kept = h => recipesWith(h, h.lone).length > 0;
     // Composant, première règle qui s'applique : complète une recette idéale, paire idéale du sac, entame une recette idéale
@@ -1178,7 +1190,7 @@ const KT = (() => {
         const [a, b] = book.parts.get(begun.f);
         return alone(i, begun.h, id, `${names.effect(id) ?? 'son effet'} tout de suite ; plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
       }
-      if (waiting(id).length) return;
+      if (takers(id).length) return;
       const later = needs.find(n => n.left.includes(id));
       if (later) {
         later.left.splice(later.left.indexOf(id), 1);
@@ -1256,13 +1268,12 @@ const KT = (() => {
       if (h.slots === 0) return 'sans place libre';
       if (h.lone) return kept(h) ? `une fois ${names.item(h.lone)} fusionné` : `bloqué par ${names.item(h.lone)} seul`;
       const f = recipesWith(h, id)[0];
-      const [a, b] = book.parts.get(f);
-      return `avec ${names.item(a === id ? b : a)} : ${names.item(f)}`;
+      return `avec ${names.item(otherPart(book, f, id))} : ${names.item(f)}`;
     };
     for (const { id, i } of [...pending('full'), ...pending('part')]) {
       // Le motif cite d'abord le Pokémon qui peut encore le recevoir, avec l'autre composant de la recette.
-      const wanting = waiting(id);
-      const stuck = wanting.find(h => h.slots > 0 && !h.lone) ?? wanting[0];
+      const all = takers(id);
+      const stuck = all.find(h => h.slots > 0 && !h.lone) ?? all[0];
       const later = future.find(x => x.ideal.includes(id));
       const worn = hs.find(h => h.ideal.includes(id) && h.on.includes(id));
       let why = 'aucun Pokémon de la compo possédé';
@@ -1313,8 +1324,12 @@ const KT = (() => {
       const ab = book.parts.get(f) ?? [];
       if (f === id) return h.slots > 0 && { s: 3, why: `${BEST} pour ${h.who}` };
       if (!ab.includes(id)) return null;
-      if (h.lone === (ab[0] === id ? ab[1] : ab[0])) return { s: 2, why: `complète ${names.item(f)} sur ${h.who}` };
-      return h.slots > 0 && !h.lone && { s: 1, why: `entame ${names.item(f)} pour ${h.who}` };
+      const other = otherPart(book, f, id);
+      if (h.lone === other) return { s: 2, why: `complète ${names.item(f)} sur ${h.who}` };
+      if (h.slots === 0 || h.lone) return null;
+      // Un composant dont la stat ne sert pas le Pokémon attendra l'autre au sac (idlePart) : il passe après celui qui se pose.
+      return idlePart(h.profile, id) ? { s: 0.75, why: `${names.item(f)} pour ${h.who}, avec ${names.item(other)}` }
+        : { s: 1, why: `entame ${names.item(f)} pour ${h.who}` };
     })), ...future.flatMap(x => x.ideal.filter(f => f === id || book.parts.get(f)?.includes(id))
       .map(f => ({ s: 0.5, why: `${names.item(f)} pour ${x.who}, à venir` })))]
       .filter(Boolean).sort((a, b) => b.s - a.s)[0] ?? { s: 0 };

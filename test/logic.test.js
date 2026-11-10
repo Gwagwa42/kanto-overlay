@@ -81,12 +81,6 @@ test('forme des données : Tour, données de jeu, langue', () => {
   assert.equal(KT.isGameData(data), true);
   assert.equal(KT.isGameData({ ...data, recipes: [['a', 'b']] }), false);
   assert.equal(KT.isGameData({ ...data, lines: { abra: { c: 1 } } }), false);
-  // Stades : échelle de la capacité et axes des deux formes, lus par le profil d'attaque.
-  const stage = (line, patch) => ({ ...data, lines: { [line]: { ...data.lines[line], stars: [{ ...data.lines[line].stars[0], ...patch }] } } });
-  assert.equal(KT.isGameData(stage('abra', {})), true);
-  assert.equal(KT.isGameData(stage('abra', { move: {} })), false);
-  assert.equal(KT.isGameData(stage('abra', { stats: { hp: 1, atk: 1 } })), false);
-  assert.equal(KT.isGameData(stage('charmander', { flex: { phys: { scale: { atk: 1, spa: 0 } }, spec: { scale: { atk: 0, spa: 1 } } } })), false);
   assert.equal(KT.isLang(lang), true);
   assert.equal(KT.isLang({ ...lang, seals: null }), false);
 });
@@ -608,8 +602,8 @@ test('profil de lignée : tank lu sur les objets portés en Tour, stats d’atta
   assert.deepEqual(p.get('oddish'), { tank: false, basic: false, atk: false, spa: true });
   // Carapuce : capacité spéciale, mais ses attaques de base comptent.
   assert.deepEqual(p.get('squirtle'), { tank: false, basic: true, atk: true, spa: true });
-  // Magicarpe n'a plus d'Attaque que d'Atq. Spé. qu'en Léviator, dont la capacité suit les deux stats.
-  assert.deepEqual(p.get('magikarp'), { tank: false, basic: true, atk: true, spa: true });
+  // Magicarpe n'a plus d'Attaque que d'Atq. Spé. qu'en Léviator, dernier stade, dont la capacité suit surtout l'Attaque (0,7 / 0,3).
+  assert.deepEqual(p.get('magikarp'), { tank: false, basic: true, atk: true, spa: false });
   // Lignées v41 absentes de data.json : table LINES_V41.
   assert.deepEqual(p.get('drowzee'), { tank: false, basic: false, atk: false, spa: true });
   assert.deepEqual(p.get('goldeen'), { tank: false, basic: true, atk: true, spa: false });
@@ -627,17 +621,27 @@ test('profil de lignée : une lignée à deux formes ou inconnue suit la stat qu
   assert.deepEqual(p.get('nouveau'), { tank: false, basic: true, atk: false, spa: true });
   // Une seule forme : les objets portés n'y changent rien (Mystherbe avec Bandeau Choix reste un lanceur).
   assert.deepEqual(p.get('oddish'), { tank: false, basic: false, atk: false, spa: true });
+  // Deux formes sans objet d'attaque porté : l'Attaque. Deux formes sur d'autres axes (Ronflex : PV contre Défense) : sa capacité.
+  const q = worn([['charmander', 'leftovers', 30], ['snorlax', 'choice-specs', 30], ['tangela4', 'leftovers', 30], ['jigglypuff', 'leftovers', 30]]);
+  assert.deepEqual([q.get('charmander').atk, q.get('charmander').spa], [true, false]);
+  assert.deepEqual([q.get('snorlax').atk, q.get('snorlax').spa], [true, false]);
+  // Seuil des attaques de base : Saquedeneu (0,90) les compte, Rondoudou (0,76) non.
+  assert.deepEqual([q.get('tangela4').basic, q.get('jigglypuff').basic], [true, false]);
+  // Stade sans échelle de capacité : la lignée est lue comme inconnue, sur ses objets portés.
+  const bare = { ...data, lines: { ...data.lines, oddish: { ...data.lines.oddish, stars: data.lines.oddish.stars.map(s => ({ stats: s.stats })) } } };
+  const r = KT.lineProfiles({ holders: [{ line: 'oddish', id: 'choice-band', n: 30, lo: 50 }] }, bare);
+  assert.deepEqual(r.get('oddish'), { tank: false, basic: true, atk: true, spa: false });
 });
 
-test('objet qui convient au profil : stat d’attaque qui sert, critique hors lanceur, défensif au tank, offensif à l’attaquant', () => {
+test('objet qui convient au profil : stat d’attaque qui sert, défensif au tank, offensif à l’attaquant', () => {
   const ok = (profile, ids) => ids.map(id => KT.suits(data, profile, id));
   const phys = { tank: false, basic: true, atk: true, spa: false };
   assert.deepEqual(ok(phys, ['choice-band', 'life-orb', 'scope-lens', 'razor-fang', 'choice-specs', 'twisted-spoon', 'leftovers']),
     [true, true, true, true, false, false, false]);
-  // Lanceur : ni Attaque seule, ni critique (Lentilscope donne pourtant de l'Atq. Spé.) ; Orbe Vie donne les deux stats.
+  // Lanceur : pas d'Attaque seule ; Orbe Vie et Lentilscope donnent les deux stats (le critique se juge dans topHolders).
   const caster = { tank: false, basic: false, atk: false, spa: true };
-  assert.deepEqual(ok(caster, ['choice-specs', 'quick-claw', 'twisted-spoon', 'life-orb', 'choice-band', 'razor-fang', 'scope-lens', 'protector']),
-    [true, true, true, true, false, false, false, false]);
+  assert.deepEqual(ok(caster, ['choice-specs', 'quick-claw', 'twisted-spoon', 'life-orb', 'scope-lens', 'choice-band', 'razor-fang', 'protector']),
+    [true, true, true, true, true, false, false, false]);
   // Capacité spéciale et attaques de base qui comptent (Carapuce) : les deux stats et le critique.
   const both = { tank: false, basic: true, atk: true, spa: true };
   assert.deepEqual(ok(both, ['choice-band', 'choice-specs', 'scope-lens']), [true, true, true]);
@@ -657,8 +661,8 @@ test('objets idéaux d’un lanceur : pas de Lentilscope, même bien classé che
   assert.deepEqual(top('vulpix', p.get('vulpix')), ['choice-specs', 'quick-claw', 'twisted-spoon']);
   // Pikachu, tireur : ses attaques de base comptent, Lentilscope reste.
   assert.ok(top('pikachu', p.get('pikachu')).includes('scope-lens'));
-  const worn = advise(withItems(['magnet'], { d: ['scope-lens'] })).bag[0];
-  assert.deepEqual([worn.title, worn.why], ['Aimant sur Goupix', 'retire Lentilscope (critique sur un lanceur)']);
+  // Déjà porté, Lentilscope n'est pas contraire (Atq. Spé. et vitesse) : pas d'Aimant pour lui seul.
+  assert.deepEqual(advise(withItems(['magnet'], { d: ['scope-lens'] })).bag, [null]);
 });
 
 test('objets : un composant dont la stat ne sert pas le Pokémon attend au sac l’autre composant de la recette', () => {
@@ -673,6 +677,10 @@ test('objets : un composant dont la stat ne sert pas le Pokémon attend au sac l
   assert.match(bag(['calcium'])[0], /^Calcium → Goupix — .* tout de suite ; plus tard avec Protéine : Orbe Vie, meilleur objet de sa lignée en Tour$/);
   // Minidraco, physique : la Protéine seule lui sert, elle se pose.
   assert.equal(advise(withItems(['protein'])).bag[0].title, 'Protéine → Minidraco');
+  // Récompense : le Calcium, qui se pose seul, passe avant la Protéine, qui attendrait au sac ; seule offerte, elle se prend.
+  const reward = offer => advise({ ...withItems([], { a: FULL3, b: FULL3 }), itemReward: offer }, { stats: orb }).reward.map(m => m && `${m.title} — ${m.why}`);
+  assert.deepEqual(reward(['protein', 'calcium']), [null, 'Prends Calcium — entame Orbe Vie pour Goupix']);
+  assert.deepEqual(reward(['protein', 'zinc']), ['Prends Protéine — Orbe Vie pour Goupix, avec Calcium', null]);
 });
 
 test('objets : paire idéale, composant seul vers sa recette, composant gardé pour une lignée à venir', () => {
