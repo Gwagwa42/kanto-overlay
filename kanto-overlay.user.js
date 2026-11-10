@@ -612,10 +612,6 @@ const KT = (() => {
 
   const findLine = (stats, id) => stats.lines.find(l => l.line === id);
 
-  function lineLo(stats, id) {
-    return findLine(stats, id)?.lo ?? findLine(stats, baseLine(id))?.lo ?? 0;
-  }
-
   // Écart de victoire rétréci d'une forme : vers 0 pour la lignée de base, vers celui de sa lignée de base pour une forme
   // ancrée, souvent peu jouée ; 0 sans statistiques.
   function shrunkGap(stats, id) {
@@ -724,7 +720,8 @@ const KT = (() => {
   // carte de boutique vaut une ★), au coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et
   // types apportés à la compo ; l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte
   // sur ces combats. upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ;
-  // replaced : ces compléments ; flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★ (flatThirdStar).
+  // replaced : ces compléments ; flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★ (flatThirdStar) ;
+  // strength : lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
   function targetComp(stats, data, game, previousKey) {
     const stops = nextStops(stats.stops, game.floor, HORIZON, game.mode);
     const coresByStop = coresAt(stats, stops);
@@ -765,7 +762,7 @@ const KT = (() => {
     const replaced = upgrades.length ? fillers.filter(b => owned(b) && !mixed.includes(b)).slice(-upgrades.length) : [];
     if (!core.length && !fillers.length) return null;
     const flat = best.core.filter(id => flatThirdStar(stats, id)).map(baseLine);
-    return { ...best, fillers, upgrades: upgrades.slice(0, replaced.length), replaced, flat };
+    return { ...best, fillers, upgrades: upgrades.slice(0, replaced.length), replaced, flat, strength };
   }
 
   // Trio des 9 combats suivants (10 à 18), à préparer avec le surplus ; null s'il est déjà la compo cible.
@@ -1119,13 +1116,14 @@ const KT = (() => {
   const rangeOf = (data, base) => Math.max(1, lineInfo(data, base)?.range ?? 1);
 
   // Porteurs : un Pokémon possédé par lignée de la compo cible (fieldOrder). Rôles lus sur le profil de la lignée : porteur
-  // (attaquant du cœur le mieux classé), tanks (aux PV max d'abord), puis les autres attaquants (★, puis lineLo).
+  // (attaquant du cœur le mieux classé), tanks (aux PV max d'abord), puis les autres attaquants (★, shiny, puis force sur les combats de la compo cible, lineStrength).
   function holdersOf(stats, data, game, target, profiles) {
     const own = targetBases(target)
       .map(b => unitsOf(game, b).sort(fieldOrder)[0])
       .filter(Boolean);
     const profile = u => profiles.get(baseLine(u.line)) ?? null;
-    const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || lineLo(stats, b.line) - lineLo(stats, a.line);
+    const strength = u => target.strength.get(baseLine(u.line)) ?? 0;
+    const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || strength(b) - strength(a);
     const hp = u => (lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0) * (u.shiny ? SHINY_HP : 1);
     const tanks = own.filter(u => profile(u)?.tank).sort((a, b) => hp(b) - hp(a));
     const attackers = own.filter(u => !tanks.includes(u)).sort(rank);

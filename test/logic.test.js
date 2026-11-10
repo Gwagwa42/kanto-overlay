@@ -1156,11 +1156,11 @@ test('shiny : « s » après l’étoile dans le code KT1', () => {
 });
 
 test('shiny : départage le porteur, le tank et le remplissage', () => {
-  // Minidraco et Caninos à 2★ : le shiny devient porteur.
+  // Minidraco et Caninos à 2★ : Caninos, plus fort sur les combats de la compo cible, porte ; Minidraco shiny passe devant.
   const lay = { board: { ...S57.board, 30: 'b' }, bench: [null, 'c', 'e', null, null, null, null, null, null] };
   const g2 = { b: { ...S57.units.b, star: 2 } };
-  assert.equal(carry(withUnits(g2, lay)), 'a');
-  assert.equal(carry(withUnits({ b: { ...g2.b, shiny: true } }, lay)), 'b');
+  assert.equal(carry(withUnits(g2, lay)), 'b');
+  assert.equal(carry(withUnits({ ...g2, a: { ...S57.units.a, shiny: true } }, lay)), 'a');
   // Deux tanks : Racaillou 1★ shiny (1056 × 1,1 PV) passe devant Bulbizarre 1★ (1084 PV).
   const tanks = shiny => brockAdvice(['geodude', 'bulbasaur', 'abra'], {
     bench: ['g', 'b'],
