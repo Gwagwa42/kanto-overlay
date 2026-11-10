@@ -124,6 +124,19 @@ test('compo de campagne : trio des 9 prochains combats de l’aventure, code KT1
   assert.match(a.bag[0].why, /Ceinture Force, meilleur objet de sa lignée en campagne$/);
 });
 
+test('objets de campagne : Mystherbe, lanceur, ne vise pas Lentilscope et ne reçoit pas la Protéine', () => {
+  const top = profile => KT.topHolders(camp, data, 'oddish', profile).map(h => h.id);
+  assert.deepEqual(top(null), ['quick-claw', 'choice-specs', 'scope-lens']);
+  assert.deepEqual(top(KT.lineProfiles(camp, data).get('oddish')), ['quick-claw', 'choice-specs', 'choice-scarf']);
+  // Mystherbe dans le trio des prochains combats, Protéine et Carbone au sac : seul le Carbone va sur lui.
+  const cores = advise(CAMP).target.stops.map(s => ({ stop: s.stop, core: ['oddish', 'geodude', 'abra'], n: 500, win: 90, lo: 85 }));
+  const a = advise({ ...CAMP, units: { o: { id: 'o', line: 'oddish', star: 2 } }, board: {}, bench: ['o'], shop: [], items: ['protein', 'carbos'] },
+    'kanto', { stats: { ...camp, cores } });
+  assert.deepEqual(a.target.core, ['oddish', 'geodude', 'abra']);
+  assert.deepEqual(a.bag.map(m => m.title), ['Garde Protéine', 'Carbone → Mystherbe']);
+  assert.match(a.bag[1].why, /plus tard avec Calcium : Vive Griffe, meilleur objet de sa lignée en campagne$/);
+});
+
 test('shiny : pas de « Vends » en campagne (38 combats, sous le seuil de la Tour comme sous shinyKeepTo)', () => {
   const units = { ...S57.units, f: { id: 'f', line: 'ekans', star: 1 }, g: { id: 'g', line: 'zubat', star: 1 },
     h: { id: 'h', line: 'zubat', star: 1 }, i: { id: 'i', line: 'pidgey', star: 1 }, j: { id: 'j', line: 'pidgey', star: 1 } };

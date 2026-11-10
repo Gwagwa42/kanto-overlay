@@ -81,6 +81,12 @@ test('forme des données : Tour, données de jeu, langue', () => {
   assert.equal(KT.isGameData(data), true);
   assert.equal(KT.isGameData({ ...data, recipes: [['a', 'b']] }), false);
   assert.equal(KT.isGameData({ ...data, lines: { abra: { c: 1 } } }), false);
+  // Stades : échelle de la capacité et axes des deux formes, lus par le profil d'attaque.
+  const stage = (line, patch) => ({ ...data, lines: { [line]: { ...data.lines[line], stars: [{ ...data.lines[line].stars[0], ...patch }] } } });
+  assert.equal(KT.isGameData(stage('abra', {})), true);
+  assert.equal(KT.isGameData(stage('abra', { move: {} })), false);
+  assert.equal(KT.isGameData(stage('abra', { stats: { hp: 1, atk: 1 } })), false);
+  assert.equal(KT.isGameData(stage('charmander', { flex: { phys: { scale: { atk: 1, spa: 0 } }, spec: { scale: { atk: 0, spa: 1 } } } })), false);
   assert.equal(KT.isLang(lang), true);
   assert.equal(KT.isLang({ ...lang, seals: null }), false);
 });
@@ -586,46 +592,104 @@ test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamai
 const withItems = (items, held = {}) => ({
   ...S57_4, items, units: Object.fromEntries(Object.entries(S57.units).map(([k, u]) => [k, held[k] ? { ...u, items: held[k] } : u])),
 });
-// Trois objets mixtes, qui conviennent à tous les attaquants.
+// Trois objets qui conviennent aux attaquants physiques de la compo (Minidraco, Caninos).
 const FULL3 = ['life-orb', 'scope-lens', 'shell-bell'];
+// Goupix porte déjà Cuiller Tordue (Calcium + Fer), un de ses objets idéaux : le Fer ne lui sert plus.
+const SPOON = { d: ['twisted-spoon'] };
 const titles = a => a.bag.map(m => m && `${m.title} — ${m.why}`);
 
-test('profil de lignée lu sur les objets portés en Tour', () => {
+test('profil de lignée : tank lu sur les objets portés en Tour, stats d’attaque lues sur la capacité', () => {
   const p = KT.lineProfiles(torre, data);
   assert.deepEqual(p.get('snorlax').tank, true);
-  assert.deepEqual(p.get('machop'), { tank: true, special: false });
-  assert.deepEqual(p.get('abra'), { tank: false, special: true });
-  assert.deepEqual(p.get('dratini'), { tank: false, special: false });
-  assert.deepEqual(p.get('growlithe'), { tank: false, special: false });
+  assert.deepEqual(p.get('machop'), { tank: true, basic: true, atk: true, spa: false });
+  assert.deepEqual(p.get('dratini'), { tank: false, basic: true, atk: true, spa: false });
+  // Lanceurs : capacité spéciale, Attaque sous l'Atq. Spé. à tous les stades.
+  assert.deepEqual(p.get('abra'), { tank: false, basic: false, atk: false, spa: true });
+  assert.deepEqual(p.get('oddish'), { tank: false, basic: false, atk: false, spa: true });
+  // Carapuce : capacité spéciale, mais ses attaques de base comptent.
+  assert.deepEqual(p.get('squirtle'), { tank: false, basic: true, atk: true, spa: true });
+  // Magicarpe n'a plus d'Attaque que d'Atq. Spé. qu'en Léviator, dont la capacité suit les deux stats.
+  assert.deepEqual(p.get('magikarp'), { tank: false, basic: true, atk: true, spa: true });
+  // Lignées v41 absentes de data.json : table LINES_V41.
+  assert.deepEqual(p.get('drowzee'), { tank: false, basic: false, atk: false, spa: true });
+  assert.deepEqual(p.get('goldeen'), { tank: false, basic: true, atk: true, spa: false });
   assert.equal(p.get('inconnu'), undefined);
 });
 
-test('objet qui convient au profil : stat d’attaque, défensif au tank, offensif à l’attaquant', () => {
+test('profil de lignée : une lignée à deux formes ou inconnue suit la stat que ses objets portés lui donnent le plus', () => {
+  const worn = rows => KT.lineProfiles({ holders: rows.map(([line, id, n]) => ({ line, id, n, lo: 50 })) }, data);
+  const p = worn([['charmander', 'choice-specs', 30], ['charmander', 'choice-band', 20], ['growlithe', 'choice-band', 30],
+    ['venonat', 'choice-specs', 30], ['nouveau', 'choice-specs', 30], ['oddish', 'choice-band', 30]]);
+  assert.deepEqual(p.get('charmander'), { tank: false, basic: true, atk: false, spa: true });
+  assert.deepEqual(p.get('growlithe'), { tank: false, basic: true, atk: true, spa: false });
+  // Mimitoss (v41, deux formes) et une lignée inconnue : lues comme une lignée à deux formes.
+  assert.deepEqual(p.get('venonat'), { tank: false, basic: true, atk: false, spa: true });
+  assert.deepEqual(p.get('nouveau'), { tank: false, basic: true, atk: false, spa: true });
+  // Une seule forme : les objets portés n'y changent rien (Mystherbe avec Bandeau Choix reste un lanceur).
+  assert.deepEqual(p.get('oddish'), { tank: false, basic: false, atk: false, spa: true });
+});
+
+test('objet qui convient au profil : stat d’attaque qui sert, critique hors lanceur, défensif au tank, offensif à l’attaquant', () => {
   const ok = (profile, ids) => ids.map(id => KT.suits(data, profile, id));
-  const phys = { tank: false, special: false };
+  const phys = { tank: false, basic: true, atk: true, spa: false };
   assert.deepEqual(ok(phys, ['choice-band', 'life-orb', 'scope-lens', 'razor-fang', 'choice-specs', 'twisted-spoon', 'leftovers']),
     [true, true, true, true, false, false, false]);
-  const spec = { tank: false, special: true };
-  assert.deepEqual(ok(spec, ['choice-specs', 'quick-claw', 'twisted-spoon', 'choice-band', 'razor-fang', 'protector']),
-    [true, true, true, false, false, false]);
+  // Lanceur : ni Attaque seule, ni critique (Lentilscope donne pourtant de l'Atq. Spé.) ; Orbe Vie donne les deux stats.
+  const caster = { tank: false, basic: false, atk: false, spa: true };
+  assert.deepEqual(ok(caster, ['choice-specs', 'quick-claw', 'twisted-spoon', 'life-orb', 'choice-band', 'razor-fang', 'scope-lens', 'protector']),
+    [true, true, true, true, false, false, false, false]);
+  // Capacité spéciale et attaques de base qui comptent (Carapuce) : les deux stats et le critique.
+  const both = { tank: false, basic: true, atk: true, spa: true };
+  assert.deepEqual(ok(both, ['choice-band', 'choice-specs', 'scope-lens']), [true, true, true]);
+  // Lignée à deux formes jouée en spécial (Salamèche) : pas d'Attaque seule, le critique reste.
+  const flexSpec = { tank: false, basic: true, atk: false, spa: true };
+  assert.deepEqual(ok(flexSpec, ['choice-band', 'choice-specs', 'scope-lens']), [false, true, true]);
   // Casque Brut : recette PV Plus + Protéine, mais stats PV Plus + Fer (inherits).
-  const tank = { tank: true, special: false };
+  const tank = { tank: true, basic: true, atk: true, spa: false };
   assert.deepEqual(ok(tank, ['leftovers', 'rocky-helmet', 'razor-fang', 'choice-band', 'twisted-spoon']), [true, true, true, false, false]);
   assert.equal(KT.suits(data, null, 'choice-band'), true);
 });
 
+test('objets idéaux d’un lanceur : pas de Lentilscope, même bien classé chez les joueurs', () => {
+  const p = KT.lineProfiles(torre, data);
+  const top = (line, profile) => KT.topHolders(torre, data, line, profile).map(h => h.id);
+  assert.deepEqual(top('vulpix', null), ['choice-specs', 'scope-lens', 'quick-claw']);
+  assert.deepEqual(top('vulpix', p.get('vulpix')), ['choice-specs', 'quick-claw', 'twisted-spoon']);
+  // Pikachu, tireur : ses attaques de base comptent, Lentilscope reste.
+  assert.ok(top('pikachu', p.get('pikachu')).includes('scope-lens'));
+  const worn = advise(withItems(['magnet'], { d: ['scope-lens'] })).bag[0];
+  assert.deepEqual([worn.title, worn.why], ['Aimant sur Goupix', 'retire Lentilscope (critique sur un lanceur)']);
+});
+
+test('objets : un composant dont la stat ne sert pas le Pokémon attend au sac l’autre composant de la recette', () => {
+  // Orbe Vie (Protéine + Calcium) en tête des objets de Goupix, lanceur : la Protéine seule ne lui apporte rien.
+  const orb = { ...torre, holders: [...torre.holders, { line: 'vulpix', id: 'life-orb', n: 500, lo: 99 }] };
+  const bag = (items, held = {}) => titles(advise(withItems(items, { a: FULL3, b: FULL3, ...held }), { stats: orb }));
+  assert.deepEqual(bag(['protein']), ['Garde Protéine — pour Goupix, avec Calcium : Orbe Vie']);
+  const pair = 'Protéine + Calcium → Goupix — Orbe Vie, meilleur objet de sa lignée en Tour';
+  assert.deepEqual(bag(['protein', 'calcium']), [pair, pair]);
+  assert.deepEqual(bag(['protein'], { d: ['calcium'] }), ['Protéine → Goupix — fusionne avec Calcium : Orbe Vie, meilleur objet de sa lignée en Tour']);
+  // Le Calcium, qui le sert, se pose seul.
+  assert.match(bag(['calcium'])[0], /^Calcium → Goupix — .* tout de suite ; plus tard avec Protéine : Orbe Vie, meilleur objet de sa lignée en Tour$/);
+  // Minidraco, physique : la Protéine seule lui sert, elle se pose.
+  assert.equal(advise(withItems(['protein'])).bag[0].title, 'Protéine → Minidraco');
+});
+
 test('objets : paire idéale, composant seul vers sa recette, composant gardé pour une lignée à venir', () => {
   const a = advise(S57_4);
-  assert.deepEqual(a.bag.map(m => m.title), ['PV Plus → Minidraco', 'Garde Fer', 'Calcium → Goupix']);
+  assert.deepEqual(a.bag.map(m => m.title), ['PV Plus → Minidraco', 'Calcium + Fer → Goupix', 'Calcium + Fer → Goupix']);
   assert.match(a.bag[0].why, /PV tout de suite ; plus tard avec Carbone : Ceinture Force, meilleur objet de sa lignée en Tour$/);
-  assert.equal(a.bag[1].why, 'Cuiller Tordue pour Lokhlass, à venir');
-  assert.match(a.bag[2].why, /tout de suite ; plus tard avec Calcium : Lunettes Choix, meilleur objet de sa lignée en Tour$/);
+  assert.equal(a.bag[1].why, 'Cuiller Tordue, meilleur objet de sa lignée en Tour');
+  const b = advise(withItems(S57.items, SPOON));
+  assert.deepEqual(b.bag.map(m => m.title), ['PV Plus → Minidraco', 'Garde Fer', 'Calcium → Goupix']);
+  assert.equal(b.bag[1].why, 'Cuiller Tordue pour Lokhlass, à venir');
+  assert.match(b.bag[2].why, /tout de suite ; plus tard avec Calcium : Lunettes Choix, meilleur objet de sa lignée en Tour$/);
   assert.deepEqual(advise(withItems(['emblem-fire'])).bag, [null]);
 });
 
 test('objets : un complément possédé est porteur, même faible', () => {
   // S57 au niveau 8 : Rattata ★ entre dans la compo faute de mieux, et Poudre Métal (Fer + Zinc) est un de ses objets idéaux.
-  const a = advise(S57);
+  const a = advise({ ...S57, units: withItems([], SPOON).units });
   assert.deepEqual(a.bag.map(m => m.title), ['PV Plus → Minidraco', 'Fer → Rattata', 'Calcium → Goupix']);
   assert.match(a.bag[1].why, /plus tard avec Zinc : Poudre Métal, meilleur objet de sa lignée en Tour$/);
 });
@@ -635,7 +699,7 @@ test('objets : seuls les objets idéaux sont posés, le reste attend au sac', ()
   assert.deepEqual(titles(advise(withItems(['eviolite', 'life-orb']))), [
     'Garde Poudre Métal — hors des meilleurs objets de la compo', 'Garde Orbe Vie — hors des meilleurs objets de la compo',
   ]);
-  assert.deepEqual(titles(advise(withItems(['choice-specs', 'razor-fang', 'twisted-spoon']))), [
+  assert.deepEqual(titles(advise(withItems(['choice-specs', 'razor-fang', 'twisted-spoon'], SPOON))), [
     'Lunettes Choix → Goupix — meilleur objet de sa lignée en Tour', 'Garde Croc Rasoir — hors des meilleurs objets de la compo',
     'Garde Cuiller Tordue — pour Lokhlass, à venir',
   ]);
@@ -767,16 +831,15 @@ test('formation : un tank à distance (Onix) passe au premier rang avant la mêl
   assert.match(code, /;onix:2:3/);
 });
 
-test('objets : une copie gardée par composant à venir, pas d’Aimant si la fusion suffit, effet contraire tu', () => {
+test('objets : une copie gardée par composant à venir, pas d’Aimant si la fusion suffit', () => {
   // Cuiller Tordue de Lokhlass demande un Fer : un seul est gardé pour elle.
-  assert.deepEqual(advise(withItems(['iron', 'iron', 'iron'])).bag.map(m => m.why), [
+  assert.deepEqual(advise(withItems(['iron', 'iron', 'iron'], SPOON)).bag.map(m => m.why), [
     'Cuiller Tordue pour Lokhlass, à venir', 'hors des meilleurs objets de la compo', 'hors des meilleurs objets de la compo',
   ]);
   // Minidraco plein porte une Protéine seule : la Protéine du sac fusionne en Bandeau Choix, l'Aimant ne sert pas.
   const lone = advise(withItems(['magnet', 'protein', 'protein'], { a: ['life-orb', 'shell-bell', 'protein'] }));
-  assert.deepEqual(lone.bag.map(m => m && m.title), [null, 'Protéine → Minidraco', 'Protéine → Goupix']);
-  // Protéine seule sur Goupix (spécial) : son effet n'est pas annoncé, seule la recette compte.
-  assert.equal(lone.bag[2].why, 'plus tard avec Carbone : Lentilscope, meilleur objet de sa lignée en Tour');
+  assert.deepEqual(lone.bag.map(m => m && m.title), [null, 'Protéine → Minidraco', 'Protéine → Caninos']);
+  assert.match(lone.bag[2].why, /Attaque tout de suite ; plus tard avec Carbone : Lentilscope, meilleur objet de sa lignée en Tour$/);
 });
 
 test('objets visés et Aimant : objet gardé après l’Aimant prêt pour lui seul, emblème jamais retiré, motifs exacts', () => {
@@ -822,7 +885,7 @@ test('objets visés : les objets idéaux, lus sur l’état final des conseils d
   // Goupix (Lunettes Choix) ; ce qui est posé ailleurs manque.
   assert.deepEqual(aimsOf(withItems(['hp-up', 'calcium', 'protein'], { a: ['choice-band'] })), {
     dratini: ['choice-band:worn:', 'focus-sash:missing:carbos', 'scope-lens:missing:protein+carbos'],
-    vulpix: ['choice-specs:missing:calcium', 'scope-lens:missing:protein+carbos', 'quick-claw:missing:carbos'],
+    vulpix: ['choice-specs:missing:calcium', 'quick-claw:missing:carbos', 'twisted-spoon:missing:iron'],
     growlithe: ['scope-lens:missing:carbos', 'choice-band:missing:protein', 'focus-sash:missing:hp-up+carbos'],
   });
   // Lentilscope au sac : posée sur Caninos (rang 1 de ses idéaux), la section le dit prête pour lui seul.
@@ -834,11 +897,11 @@ test('objets visés : les objets idéaux, lus sur l’état final des conseils d
   // Protéine + Carbone : Lentilscope prête pour Minidraco (porteur, servi d'abord), plus pour les suivants.
   const ready = aimsOf(withItems(['protein', 'carbos']));
   assert.equal(ready.dratini[2], 'scope-lens:ready:');
-  assert.equal(ready.vulpix[1], 'scope-lens:missing:protein+carbos');
+  assert.equal(ready.growlithe[0], 'scope-lens:missing:protein+carbos');
 });
 
 test('objets idéaux : 3 objets complets de la lignée exacte, ≥ 20 combats, par borne basse, qui conviennent', () => {
-  const phys = { tank: false, special: false };
+  const phys = { tank: false, basic: true, atk: true, spa: false };
   assert.deepEqual(KT.topHolders(torre, data, 'dratini', phys).map(h => h.id), ['choice-band', 'focus-sash', 'scope-lens']);
   assert.deepEqual(KT.topHolders(torre, data, 'inconnu', phys), []);
   // Composant, moins de 20 combats, forme ancrée, objet contraire : écartés même avec la meilleure borne basse.
@@ -908,8 +971,8 @@ test('formation : code KT1 trié par cellule, Pokémon bien placé gardé, porte
   assert.equal(advise(S57).code,
     'KT1;r41;xm=tower;xn=Plan%20kanto-overlay;dratini:2:1:choice-band.focus-sash.scope-lens;aerodactyl:1:2;'
     + 'rattata:1:3:eviolite.rocky-helmet.leftovers;growlithe:1:4:scope-lens.choice-band.focus-sash;ekans:1:5;'
-    + 'vulpix:2:14:choice-specs.scope-lens.quick-claw;magmar:1:16');
-  assert.match(advise(S57, { side: 'right' }).code, /magmar:1:18;vulpix:2:20:choice-specs.scope-lens.quick-claw$/);
+    + 'vulpix:2:14:choice-specs.quick-claw.twisted-spoon;magmar:1:16');
+  assert.match(advise(S57, { side: 'right' }).code, /magmar:1:18;vulpix:2:20:choice-specs.quick-claw.twisted-spoon$/);
 });
 
 test('formation : case de la sauvegarde → cellule KT1 (côté joueur = cases 28 à 55)', () => {
