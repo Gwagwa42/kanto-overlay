@@ -35,6 +35,19 @@ test('sauvegarde lue : la plus récente parmi Tour, Kanto, autres aventures et N
   assert.equal(KT.latestSave(storage({ 'kanto-tactics-save': kanto, 'kanto-tactics-save-nuzlocke': { ...CAMP, savedAt: 400 } })).mode, null);
   assert.equal(KT.latestSave(storage({ 'kanto-tactics-save-pvp': kanto, 'kanto-tactics-save-adv-x-prev': kanto })), null);
   assert.equal(KT.latestSave(storage({ 'kanto-tactics-save': '{pas du json' })), null);
+  // Mode à l'écran : une Tour reprise, pas encore réécrite, passe avant la campagne plus récente ; le Nuzlocke, sous la barre de
+  // campagne, ne reçoit pas la partie Kanto.
+  const both = storage({ 'kanto-tactics-save-tower': tower, 'kanto-tactics-save': kanto, 'kanto-tactics-save-nuzlocke': { ...CAMP, savedAt: 10 } });
+  assert.equal(KT.latestSave(both, 'tower').key, 'kanto-tactics-save-tower');
+  assert.equal(KT.latestSave(both, 'campaign').key, 'kanto-tactics-save');
+  assert.deepEqual([KT.latestSave(both, 'nuzlocke').key, KT.latestSave(both, 'nuzlocke').mode], ['kanto-tactics-save-nuzlocke', null]);
+  assert.equal(KT.latestSave(storage({ 'kanto-tactics-save': kanto }), 'tower'), null);
+  // Sauvegarde relue seulement si sa chaîne change.
+  const memo = new Map();
+  KT.latestSave(both, null, memo);
+  const kept = memo.get('kanto-tactics-save');
+  KT.latestSave(both, null, memo);
+  assert.equal(memo.get('kanto-tactics-save'), kept);
   // Difficulté hors de 1 à 3, ou Tour : Normal.
   assert.equal(mode({ league: 7 }).league, 1);
   assert.equal(KT.modeContext(KT.TOWER, { league: 3 }).penalty, 0);
@@ -52,7 +65,8 @@ test('arrêts Kanto : ceux de l’aventure, variantes pondérées par leurs comb
   assert.deepEqual(s.map(x => x.stop), ['15:Recluta', '16:Erika', '16:Koga', '16:Sabrina', '17:Médium', '17:Recluta']);
   const gym = s.filter(x => x.floor === 16);
   assert.ok(Math.abs(gym.reduce((t, x) => t + x.share, 0) - 1) < 1e-9);
-  assert.equal(gym[0].fightWin, gym.reduce((t, x) => t + x.share * x.win, 0));
+  // Erika 54,4 % (100 424 combats), Koga 70,5 % (25 755), Morgane 27,7 % (56 018).
+  assert.equal(gym[0].fightWin.toFixed(2), '48.47');
   // Canela a aussi un combat 2 (Motard) : absent de Kanto.
   assert.deepEqual(KT.nextStops(camp.stops, 2, 1, mode({})).map(x => x.stop), ['2:Bosque Verde', '2:Pikachu salvaje']);
   assert.deepEqual(KT.nextStops(camp.stops, 1, 3, mode({}, 'canela')).map(x => x.stop), ['1:Bajada', '2:Motero', '4:Pokémon salvajes']);
@@ -110,6 +124,14 @@ test('compo de campagne : trio des 9 prochains combats de l’aventure, code KT1
   assert.match(a.bag[0].why, /Ceinture Force, meilleur objet de sa lignée en campagne$/);
 });
 
+test('shiny : jamais proposé à la vente en campagne', () => {
+  const units = { ...S57.units, f: { id: 'f', line: 'ekans', star: 1 }, g: { id: 'g', line: 'zubat', star: 1 },
+    h: { id: 'h', line: 'zubat', star: 1 }, i: { id: 'i', line: 'pidgey', star: 1 }, j: { id: 'j', line: 'pidgey', star: 1 } };
+  const full = { ...CAMP, level: 4, units, bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null] };
+  assert.equal(advise(full).bench[3].title, 'Vends Abo');
+  assert.equal(advise({ ...full, units: { ...units, f: { ...units.f, shiny: true } } }).bench[3], null);
+});
+
 test('aventure sans statistiques (Safari) : compo sans trio, tes meilleures unités', () => {
   const a = advise(CAMP, 'safari');
   assert.deepEqual([a.target.key, a.target.core, a.next], [null, [], null]);
@@ -124,7 +146,7 @@ test('règles et en-tête de campagne : difficulté, seuils, combats', () => {
   assert.ok(rules.some(r => r.includes('+4 au plus en campagne → garder 40 pièces')));
   assert.ok(rules.some(r => r.includes('4 dès le combat 2') && r.includes('9 dès le combat 28') && r.includes('2 XP par combat')));
   assert.ok(rules.some(r => r.startsWith('Tout jouer sur un combat sous 65 % de victoires (Légende')));
-  assert.equal(KT.leagueNote(mode(CAMP)), 'Kanto · Légende : taux publics des trois difficultés, tout jouer sous 65 %');
+  assert.equal(KT.leagueNote(mode(CAMP)), 'Kanto · Légende · tout jouer sous 65 %');
   assert.equal(KT.leagueNote(mode({}, 'canela')), 'Cap sur Cramois’Île · Normal');
   const state = save => ({ advice: advise(save), stats: { torre: modes.torre, camp }, mode: mode(save), floor: save.round + 1 });
   const head = KT.headHtml(state({ ...CAMP, round: 13 }));
@@ -133,6 +155,13 @@ test('règles et en-tête de campagne : difficulté, seuils, combats', () => {
   assert.match(KT.headHtml(state({ ...CAMP, round: 15 })), /Tout jouer : combat difficile\./);
   assert.match(KT.headHtml(state({ ...CAMP, round: 3, attempts: 1 })), /Tout jouer : combat rejoué\./);
   assert.match(KT.headHtml({ ...state(CAMP), mode: mode(CAMP, 'safari') }), /Pas de statistiques publiques pour cette aventure/);
+  // Champion à choisir : la manche entière, taux moyen ; couleur au taux moins la pénalité (48,5 − 20 : ▼ en Légende).
+  const open = league => KT.headHtml({ ...state({ ...CAMP, round: 12, gymOrder: [], league }), mode: mode({ league, gymOrder: [] }) });
+  assert.match(open(1), /Erika ou Koga ou Morgane<\/span><span class="kt-rate mid">● 48,5 %/);
+  assert.match(open(3), /kt-rate bad">▼ 48,5 %/);
+  // Table d'arrêts sans arrêt reconnu (libellés de l'API changés) : dit comme tel, pas « aventure sans statistiques ».
+  const renamed = { ...camp, stops: camp.stops.map(x => ({ ...x, stop: x.stop.replace(':', ':X ') })) };
+  assert.match(KT.headHtml({ ...state(CAMP), stats: { torre: modes.torre, camp: renamed } }), /Aucun combat de Kanto dans les statistiques publiques/);
 });
 
 test('panneau : Nuzlocke sans conseils, invite neutre sans partie', () => {
