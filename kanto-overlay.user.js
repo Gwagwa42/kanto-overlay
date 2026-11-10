@@ -78,13 +78,13 @@ const KT = (() => {
   const COST_POWER = 0.35;
   const STAR_POWER = [1, 1.9, 3.6];
   const TRAIT_WEIGHT = 0.25;
-  // Écart de victoire d'une forme (lines.d = win − exp, corrigé de la difficulté des combats, pas du niveau des joueurs) rétréci
-  // par LINE_PRIOR combats fictifs, le seuil minFlag de l'API, compté comme elle sur ne (combats qui ont un taux attendu).
-  // D_PER_COST points valent un coût, arrondi (un cran dès 2,5 points) et borné à un cran : c'est la demi-étendue de d entre
-  // les lignées d'un même coût (−5,3 à +5,1, novembre 2026), dont les extrêmes gagnent ou perdent ainsi un coût. Au-delà
-  // d'un cran, un biais de sélection (qui joue la lignée) pèserait autant que le coût.
+  // Écart de victoire d'une forme (lines.d : taux de victoire moins taux attendu sur les ne combats qui en ont un ; corrigé de
+  // la difficulté des combats, pas du niveau des joueurs), rétréci par LINE_PRIOR combats fictifs, le seuil minFlag de l'API.
+  // À partir de SHIFT_GAP points, la forme gagne ou perd un coût, un seul : SHIFT_GAP vaut environ le quart de l'étendue de d
+  // entre les lignées d'un même coût (−5,3 à +5,1, novembre 2026). Au-delà d'un cran, un biais de sélection (qui joue la
+  // lignée) pèserait autant que le coût.
   const LINE_PRIOR = 400;
-  const D_PER_COST = 5;
+  const SHIFT_GAP = 2.5;
   const MAX_ITEMS = 3;
   // Composants défensifs ; Protéine (Attaque), Calcium (Atq. Spé.) et Carbone (vitesse d'attaque) sont offensifs.
   const DEFENSE = ['hp-up', 'iron', 'zinc'];
@@ -352,6 +352,10 @@ const KT = (() => {
   }
 
   const unitsOf = (game, base) => game.units.filter(u => baseLine(u.line) === base);
+  // Copie posée en premier d'une lignée : meilleure étoile, shiny, la plus équipée, déjà posée, puis la forme, pour un ordre
+  // qui ne dépend pas de la place des copies dans la sauvegarde.
+  const fieldOrder = (x, y) => y.star - x.star || Number(!!y.shiny) - Number(!!x.shiny) || (y.items?.length ?? 0) - (x.items?.length ?? 0)
+    || Number(y.cell !== undefined) - Number(x.cell !== undefined) || x.line.localeCompare(y.line);
   const bestStar = (game, base) => Math.max(0, ...unitsOf(game, base).map(u => u.star));
   // Lignée shiny : sa copie de meilleure étoile l'est (celle que décrivent la progression et le code KT1).
   const shinyLine = (game, base) => unitsOf(game, base).some(u => u.shiny && u.star === bestStar(game, base));
@@ -374,25 +378,26 @@ const KT = (() => {
     return { gold: game.gold, floor, spend: allIn ? game.gold : Math.max(0, game.gold - floor), allIn, lowHp, retry, nextWall };
   }
 
+  const findLine = (torre, id) => torre.lines.find(l => l.line === id);
+
   function lineLo(torre, id) {
-    return torre.lines.find(l => l.line === id)?.lo ?? torre.lines.find(l => l.line === baseLine(id))?.lo ?? 0;
+    return findLine(torre, id)?.lo ?? findLine(torre, baseLine(id))?.lo ?? 0;
   }
 
   // Écart de victoire rétréci d'une forme : vers 0 pour la lignée de base, vers celui de sa lignée de base pour une forme
   // ancrée, souvent peu jouée ; 0 sans statistiques.
   function shrunkGap(torre, id) {
     const shrink = (s, prior) => (s.d * s.ne + prior * LINE_PRIOR) / (s.ne + LINE_PRIOR);
-    const find = line => torre.lines.find(l => l.line === line);
-    const base = find(baseLine(id));
+    const base = findLine(torre, baseLine(id));
     const prior = base ? shrink(base, 0) : 0;
-    const own = id === baseLine(id) ? undefined : find(id);
+    const own = id === baseLine(id) ? undefined : findLine(torre, id);
     return own ? shrink(own, prior) : prior;
   }
 
-  // Coût gagné ou perdu (un cran au plus, arrondi symétrique) par une forme selon son écart de victoire rétréci.
+  // Coût gagné (+1) ou perdu (−1) par une forme selon son écart de victoire rétréci, 0 sous SHIFT_GAP points.
   function costShift(torre, id) {
     const gap = shrunkGap(torre, id);
-    return Math.sign(gap) * Math.min(1, Math.round(Math.abs(gap) / D_PER_COST));
+    return Math.abs(gap) >= SHIFT_GAP ? Math.sign(gap) : 0;
   }
 
   // ★★★ nettement moins forte que ★★ pour cette forme exacte (identifiant du trio) : intervalles à 95 % de l'API disjoints,
@@ -488,8 +493,8 @@ const KT = (() => {
     const cards = [...new Set(game.shop.filter(Boolean))].filter(b => known(b) && !mine.includes(b));
     const strength = lineStrength(coresByStop, stops);
     const owned = b => Number(bestStar(game, b) > 0);
-    // Forme de la meilleure copie ; à étoile égale, l'identifiant départage, pour que déplacer une copie ne change pas le plan.
-    const form = b => unitsOf(game, b).sort((x, y) => y.star - x.star || x.line.localeCompare(y.line))[0]?.line ?? b;
+    // Forme de la copie posée (fieldOrder, comme holdersOf) : la note décrit l'unité que la formation place.
+    const form = b => unitsOf(game, b).sort(fieldOrder)[0]?.line ?? b;
     const shift = new Map([...mine, ...cards].map(b => [b, costShift(torre, form(b))]));
     // Meilleures lignées de chaque liste, une liste après l'autre, jusqu'au niveau.
     const fill = pools => {
@@ -789,13 +794,11 @@ const KT = (() => {
   // Portée inconnue ou nulle : mêlée.
   const rangeOf = (data, base) => Math.max(1, lineInfo(data, base)?.range ?? 1);
 
-  // Porteurs : un Pokémon possédé par lignée de la compo cible (le plus étoilé, puis celui qui porte le plus d'objets, puis
-  // posé). Rôles lus sur le profil de la lignée : porteur (attaquant du cœur le mieux classé), tanks (aux PV max d'abord),
-  // puis les autres attaquants (★, puis lineLo).
+  // Porteurs : un Pokémon possédé par lignée de la compo cible (fieldOrder). Rôles lus sur le profil de la lignée : porteur
+  // (attaquant du cœur le mieux classé), tanks (aux PV max d'abord), puis les autres attaquants (★, puis lineLo).
   function holdersOf(torre, data, game, target, profiles) {
     const own = targetBases(target)
-      .map(b => unitsOf(game, b).sort((x, y) => y.star - x.star || Number(!!y.shiny) - Number(!!x.shiny) || (y.items?.length ?? 0) - (x.items?.length ?? 0)
-        || Number(y.cell !== undefined) - Number(x.cell !== undefined))[0])
+      .map(b => unitsOf(game, b).sort(fieldOrder)[0])
       .filter(Boolean);
     const profile = u => profiles.get(baseLine(u.line)) ?? null;
     const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || lineLo(torre, b.line) - lineLo(torre, a.line);
