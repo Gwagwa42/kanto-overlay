@@ -75,17 +75,18 @@ barre le remet en haut à droite.
 - **Objets** : un objet ne va qu'à un Pokémon à qui il convient. Jamais un objet d'Atq. Spé. à un physique ni d'Attaque à un spécial
   (les objets mixtes, comme Orbe Vie et Lentilscope, vont aux deux) ; au moins la moitié de défensif pour un tank, d'offensif pour
   un attaquant. Les composants pris en compte sont ceux qui donnent ses stats à l'objet (Casque Brut : PV et Défense).
-  - Pose : tout objet complet ou composant du sac va tout de suite sur un Pokémon de la compo. Un composant seul donne déjà son
-    effet et fusionne sur le Pokémon avec le suivant ; deux composants du sac pour le même Pokémon sont donnés en paire, avec
-    l'ordre de pose quand il compte. Priorité à la recette idéale de chaque lignée (meilleurs couples Pokémon/objet de la Tour qui
-    conviennent à son profil), sinon par rôle : offensif au porteur puis aux attaquants, défensif aux tanks. 3 objets au plus.
-  - Préparation : un composant qui n'entre dans aucune recette idéale d'un Pokémon possédé reste au sac, avant toute pose par rôle,
-    s'il entre dans celle d'un Pokémon du cœur cible pas encore acheté ou du cœur de la compo suivante (« Garde Fer — Cuiller Tordue pour Lokhlass, à venir »). La
+  - Pose : chaque Pokémon de la compo ne reçoit que ses objets idéaux, les 3 meilleurs couples Pokémon/objet de sa lignée en Tour
+    qui conviennent à son profil. L'objet complet, ou un composant de l'une de ces recettes, va tout de suite sur lui. Un
+    composant seul donne déjà son effet et fusionne sur le Pokémon avec le suivant ; deux composants du sac pour le même Pokémon
+    sont donnés en paire, avec l'ordre de pose quand il compte. Un objet idéal de plusieurs Pokémon va à celui qui le classe le
+    plus haut. Le reste attend au sac (« Garde Orbe Vie — hors des meilleurs objets de la compo »). 3 objets au plus.
+  - Préparation : un composant qui n'entre dans aucune recette idéale d'un Pokémon possédé reste au sac pour un Pokémon du cœur
+    cible pas encore acheté ou du cœur de la compo suivante (« Garde Fer — Cuiller Tordue pour Lokhlass, à venir »). La
     récompense d'objet vise ce qui reste à compléter, puis ces recettes à venir.
   - Retrait : l'Aimant du sac va sur un Pokémon de la compo qui porte un objet contraire à son profil, sinon sur un Pokémon plein
     dont un objet idéal attend au sac (l'objet, ou ses composants, est alors gardé pour lui), enfin sur un Pokémon posé hors des
     deux compos qui porte des objets. Au banc, un tel Pokémon est à vendre : il rend ses objets au sac.
-  - « Objets visés », dans l'onglet Compo : pour chaque Pokémon de la compo, ses 3 objets visés, portés (✓), prêts au sac (●) ou
+  - « Objets visés », dans l'onglet Compo : pour chaque Pokémon de la compo, ses 3 objets idéaux, portés (✓), prêts au sac (●) ou
     avec les composants qui manquent (○).
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
 - **Formation** : la compo cible dans la limite du niveau, sur les 4 rangées. La rangée d'un Pokémon est sa portée : portée 1 à
