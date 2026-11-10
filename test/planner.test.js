@@ -130,7 +130,7 @@ test('planificateur : statut du panneau', () => {
 test('planificateur : 10 plans du joueur → rien collé, aucun plan perdu', async () => {
   const mine = playerPlans(10);
   install({ plans: mine, active: 'mine0' });
-  await assert.rejects(KT.pastePlan(CODE), e => e instanceof KT.PlannerError && /10 plans Tour/.test(e.message));
+  await assert.rejects(KT.pastePlan(CODE), e => e instanceof KT.PlannerError && /10 plans déjà enregistrés dans ce mode/.test(e.message));
   assert.deepEqual(game.plans, mine);
   assert.equal(game.open, false);
 });

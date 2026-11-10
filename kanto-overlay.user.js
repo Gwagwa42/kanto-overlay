@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanto Tactics — panneau Tour
+// @name         Kanto Tactics — panneau Tour et campagne
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
 // @version      2.4.0
-// @description  Tour de combat de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
+// @description  Tour de combat et campagne (aventures, trois difficultés) de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
 // @match        https://einoow.com/
@@ -29,11 +29,17 @@
 
 const KT = (() => {
   const API = 'https://einoow.com/api/meta/kanto/';
-  const SOURCES = { torre: `${API}campana.json`, data: `${API}data.json`, lang: `${API}lang.json?lang=fr` };
+  const SOURCES = { stats: `${API}campana.json`, data: `${API}data.json`, lang: `${API}lang.json?lang=fr` };
   const CACHE_NAME = 'kt-overlay';
   // Conditions de l'API : au plus une requête par heure, avec un cache côté client.
   const CACHE_MAX_AGE = 3600 * 1000;
-  const SAVE_KEY = 'kanto-tactics-save-tower';
+  // Sauvegardes du jeu (store-*.js) : seule celle de la partie affichée est réécrite, d'où le savedAt le plus récent pour
+  // savoir laquelle lire. Le Nuzlocke, non pris en charge, en fait partie : sinon ses écrans recevraient les conseils de la
+  // dernière partie Kanto, sous la même barre de campagne.
+  const SAVE_TOWER = 'kanto-tactics-save-tower';
+  const SAVE_KANTO = 'kanto-tactics-save';
+  const SAVE_ADV = 'kanto-tactics-save-adv-';
+  const SAVE_NUZLOCKE = 'kanto-tactics-save-nuzlocke';
   const UI_KEY = 'kt-overlay:ui';
   // Nom du plan dans le Planificateur du jeu : il distingue le plan du panneau des plans du joueur.
   const PLAN_NAME = 'Plan kanto-overlay';
@@ -41,6 +47,11 @@ const KT = (() => {
   const ROUND_BASE = 1000;
   const MIN_FIGHTS = 20;
   const HARD_WIN = 45;
+  // Difficulté de la campagne (league de la sauvegarde) : l'API mélange les trois (difficulty « todas »), ses taux surestiment
+  // Vétéran et Légende. Points retirés au taux de chaque combat par cran de difficulté (choix de jeu, aucune statistique par
+  // difficulté) : « tout jouer » sous 45, 55 puis 65 %. Les niveaux visés avancent d'un combat par cran.
+  const LEAGUES = { 1: 'Normal', 2: 'Vétéran', 3: 'Légende' };
+  const LEAGUE_PENALTY = 10;
   const LOW_HP = 40;
   // Compo cible : combats vus d'avance (≈ 20 étages, élites comprises) et gain minimal pour changer de trio.
   const HORIZON = 9;
@@ -71,6 +82,9 @@ const KT = (() => {
   // Niveau visé à partir d'un étage (choix de jeu) : la Tour ne donne que 1 XP par étage, le niveau s'achète. Les coûts 4
   // sortent au niveau 8, les coûts 5 au niveau 9, atteint avant Électhor (étage 60).
   const LEVEL_GOALS = [[6, 5], [12, 6], [20, 7], [30, 8], [45, 9], [65, 10]];
+  // Campagne Kanto (choix de jeu) : 2 XP gratuites par combat, niveau 9 au plus ; un niveau au moins égal à la taille de
+  // l'équipe du champion : Pierre 2, Ondine 3, Major Bob 4, 4ᵉ badge 5, 5ᵉ 6, 6ᵉ 8, Conseil 4 et Mewtwo 9 (route-*.js).
+  const CAMPAIGN_LEVEL_GOALS = [[4, 4], [8, 5], [12, 6], [16, 7], [24, 8], [30, 9]];
   // Un étage rejoué se joue à fond à partir de celui-ci : une défaite y coûte 12 PV et plus, et la suivante supprime les intérêts.
   const RETRY_ALL_IN_FROM = 50;
   // Puissance d'une unité selon son coût et son étoile (estimation des robots du jeu, engine-*.js) ; un point de traitGain
@@ -118,6 +132,63 @@ const KT = (() => {
     magneton: 'Magnéton', marowak: 'Ossatueur', mew: 'Mew', mewtwo2: 'Mewtwo', missingno: 'MissingNo.', misty: 'Ondine',
     onix: 'Onix', pescador: 'Pêcheur', recluta: 'Sbire Rocket', rhydon: 'Rhinoféros', rival: 'Rival', sabrina: 'Morgane',
     snorlax: 'Ronflex', surge: 'Major Bob', zapdos: 'Électhor',
+  };
+
+  // Campagne : modes.camp de l'API mélange les aventures, sous des arrêts « N:Libellé » (N = manche + 1, libellé = fin du nom
+  // espagnol de la manche jouée, après le dernier « · »). Arrêts possibles de chaque aventure, relevés dans les manches du jeu
+  // (route-*.js, ul) ; les événements n'ont pas de statistiques. Safari, Lavanda et Rocket chargent leurs manches par un module
+  // chiffré : absentes, elles reçoivent une compo sans trio (targetComp). bosses : manches de badge, de Ligue et Mewtwo ; sans
+  // liste, chaque combat compte comme boss. gyms : manches des champions dont l'ordre suit gymOrder de la sauvegarde.
+  const ADVENTURES = {
+    kanto: {
+      name: 'Kanto',
+      stops: {
+        1: ['Pokémon salvajes'], 2: ['Bosque Verde', 'Pikachu salvaje'], 4: ['Brock'], 5: ['Pokémon salvajes'],
+        6: ['Team Rocket', 'Montañero', 'Cazabichos'], 7: ['Rival Azul'], 8: ['Misty'], 9: ['Pokémon salvajes'],
+        11: ['Marinero', 'Caballero', 'Pescador'], 12: ['Teniente Surge'], 13: ['Montañero', 'Pokémaníaco', 'Entrenadora'],
+        15: ['Recluta'], 16: ['Erika', 'Koga', 'Sabrina'], 17: ['Médium', 'Recluta'], 18: ['Pescador', 'Ornitólogo', 'Calvo', 'Entrenadora'],
+        20: ['Erika', 'Koga', 'Sabrina'], 21: ['Nadador', 'Ornitólogo'], 23: ['Recluta', 'Científico', 'Malabarista'],
+        24: ['Erika', 'Koga', 'Sabrina'], 25: ['Ladrón', 'Científico'], 26: ['Blaine'], 27: ['Pescador', 'Nadador', 'Calvo'],
+        28: ['Giovanni'], 29: ['Rival Azul'], 30: ['Entrenador Guay', 'Ornitólogo'], 31: ['Karateka', 'Domador', 'Malabarista', 'Entrenador Guay'],
+        33: ['Lorelei'], 34: ['Bruno'], 35: ['Agatha'], 36: ['Lance'], 37: ['Azul'], 38: ['Mewtwo'],
+      },
+      bosses: [4, 8, 12, 16, 20, 24, 26, 28, 33, 34, 35, 36, 37, 38],
+      gyms: { 16: 0, 20: 1, 24: 2 },
+    },
+    canela: {
+      name: 'Cap sur Cramois’Île',
+      stops: {
+        1: ['Bajada'], 2: ['Motero'], 4: ['Pokémon salvajes'], 6: ['Macarra'], 8: ['Jefe de los moteros'], 9: ['Playa'],
+        10: ['Nadadora'], 12: ['Nadador'], 14: ['Pareja de nadadores'], 16: ['Entrada'], 17: ['Corrientes'], 19: ['Articuno'],
+        20: ['Atrapados en el hielo'], 21: ['Puerto'], 22: ['Científico'], 24: ['Ladrón'], 27: ['Rival Azul'], 29: ['Sótano'],
+        30: ['El fósil despierta'],
+      },
+    },
+    inicio: {
+      name: 'Je te choisis !',
+      stops: {
+        1: ['Pokémon salvajes'], 2: ['Hierba alta'], 3: ['Rival Azul'], 4: ['La bandada de Spearow'], 6: ['¡El Team Rocket!'],
+        9: ['Pokémon salvajes'], 10: ['El enjambre'], 11: ['Cazabichos'], 13: ['El Samurái'],
+      },
+    },
+    safari: { name: 'Parc Safari' },
+    lavanda: { name: 'Nuit à Lavanville' },
+    rocket: { name: 'Team Rocket' },
+  };
+  // Champions des manches gyms, dans l'ordre de gymOrder (noms de la sauvegarde → libellés des arrêts).
+  const GYM_LABELS = { erika: 'Erika', koga: 'Koga', sabrina: 'Sabrina' };
+  const CAMP_NAMES = {
+    'Pokémon salvajes': 'Pokémon sauvages', 'Bosque Verde': 'Forêt de Jade', 'Pikachu salvaje': 'Pikachu sauvage', Brock: 'Pierre',
+    Montañero: 'Montagnard', Cazabichos: 'Scout', 'Rival Azul': 'Rival', Misty: 'Ondine', Marinero: 'Marin', Caballero: 'Gentleman',
+    Pescador: 'Pêcheur', 'Teniente Surge': 'Major Bob', Pokémaníaco: 'Pokémaniac', Entrenadora: 'Dresseuse', Recluta: 'Sbire Rocket',
+    Sabrina: 'Morgane', Ornitólogo: 'Ornithologue', Calvo: 'Chauve', Nadador: 'Nageur', Científico: 'Scientifique',
+    Malabarista: 'Jongleur', Ladrón: 'Voleur', Blaine: 'Auguste', 'Entrenador Guay': 'Topdresseur', Karateka: 'Karatéka',
+    Domador: 'Dompteur', Lorelei: 'Olga', Bruno: 'Aldo', Lance: 'Peter', Azul: 'Maître de la Ligue',
+    Bajada: 'Descente', Motero: 'Motard', Macarra: 'Loubard', 'Jefe de los moteros': 'Chef des motards', Playa: 'Plage',
+    Nadadora: 'Nageuse', 'Pareja de nadadores': 'Couple de nageurs', Entrada: 'Entrée', Corrientes: 'Courants',
+    Articuno: 'Artikodin', 'Atrapados en el hielo': 'Pris dans la glace', Puerto: 'Port', Sótano: 'Sous-sol',
+    'El fósil despierta': 'Le fossile s’éveille', 'Hierba alta': 'Hautes herbes', 'La bandada de Spearow': 'La nuée de Piafabec',
+    '¡El Team Rocket!': 'La Team Rocket !', 'El enjambre': 'L’essaim', 'El Samurái': 'Le Samouraï',
   };
   // Lignes d'évolution par identifiant de l'API ; « -aN » = forme ancrée au stade N.
   const LINES = {
@@ -179,8 +250,59 @@ const KT = (() => {
     venonat: { c: 2, t: ['bug', 'poison'], s: [48, 49], range: 3 },
   };
   const lineInfo = (data, base) => data?.lines[base] ?? LINES_V41[base];
-  const levelGoal = floor => LEVEL_GOALS.reduce((goal, [from, level]) => (floor >= from ? level : goal), 0);
-  const maxLevel = floor => (floor >= LEVEL_10_FROM ? 10 : 9);
+  // Règles de chaque mode lues dans le code du jeu (route-*.js, règles 41). Campagne : base 5 et intérêts plafonnés à +4 (Ch),
+  // 2 XP gratuites par manche ($m), niveau 9 au plus (rh), pas de bénédiction ni de sceau. Sur un combat obligatoire (badge,
+  // Ligue, boss), la défaite qui suit un premier échec ne rapporte plus d'intérêts (Rm) : tout jouer dès le premier essai raté.
+  // hud : barre de progression du mode affiché, qui montre les pastilles ; xm : mode du code KT1 (teamCode-*.js : pvp, tower, adv).
+  const TOWER = {
+    id: 'tower', stats: 'torre', name: 'Tour', where: 'en Tour', label: 'Étage', unit: 'étage', units: 'étages', the: 'l’étage', at: 'à l’étage', xm: 'tower', hud: '.topbar .rtrack.tw',
+    interest: BASE_INTEREST, freeXp: 1, levelGoals: LEVEL_GOALS, levelCap: floor => (floor >= LEVEL_10_FROM ? 10 : 9),
+    retryFrom: RETRY_ALL_IN_FROM, shinyKeepTo: SHINY_KEEP_TO, floorOf: round => Math.max(1, Math.floor(round) - ROUND_BASE + 1),
+  };
+  const CAMPAIGN = {
+    id: 'campaign', stats: 'camp', name: 'Campagne', where: 'en campagne', label: 'Combat', unit: 'combat', units: 'combats', the: 'le combat', at: 'au combat', xm: 'adv',
+    hud: '.topbar .rtrack:not(.tw):not(.pt-track)', interest: 4, freeXp: 2, levelGoals: CAMPAIGN_LEVEL_GOALS, levelCap: () => 9,
+    retryFrom: 1, shinyKeepTo: Infinity, floorOf: round => Math.max(1, Math.floor(round) + 1),
+  };
+
+  // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null) et difficulté.
+  function modeContext(rules, save = {}, adventure = null) {
+    const league = rules === CAMPAIGN && [2, 3].includes(save.league) ? save.league : 1;
+    return {
+      ...rules, adventure, adv: adventure ? ADVENTURES[adventure] ?? null : null, league,
+      penalty: (league - 1) * LEAGUE_PENALTY, gymOrder: Array.isArray(save.gymOrder) ? save.gymOrder : [],
+    };
+  }
+  const TOWER_MODE = modeContext(TOWER);
+
+  // Clé de sauvegarde → mode ; null pour une clé hors des modes du panneau (Nuzlocke compris, rendu non pris en charge).
+  function saveMode(key) {
+    if (key === SAVE_TOWER) return { rules: TOWER, adventure: null };
+    if (key === SAVE_KANTO) return { rules: CAMPAIGN, adventure: 'kanto' };
+    if (key.startsWith(SAVE_ADV) && !key.endsWith('-prev')) return { rules: CAMPAIGN, adventure: key.slice(SAVE_ADV.length) };
+    return null;
+  }
+
+  // Sauvegarde de la partie jouée en dernier (savedAt le plus récent) parmi la Tour, Kanto, les autres aventures et le
+  // Nuzlocke : { key, raw, mode }, mode null pour le Nuzlocke ; null sans sauvegarde. storage : localStorage, injectable.
+  function latestSave(storage) {
+    let best = null;
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      const kind = key === SAVE_NUZLOCKE ? null : saveMode(key);
+      if (!kind && key !== SAVE_NUZLOCKE) continue;
+      const raw = storage.getItem(key);
+      const save = parseRound(raw);
+      const at = Number.isFinite(save?.savedAt) ? save.savedAt : 0;
+      if (save && (!best || at > best.at)) best = { key, raw, save, at, kind };
+    }
+    if (!best) return null;
+    return { key: best.key, raw: best.raw, mode: best.kind && modeContext(best.kind.rules, best.save, best.kind.adventure) };
+  }
+
+  const levelGoal = (floor, mode = TOWER_MODE) => mode.levelGoals
+    .reduce((goal, [from, level]) => (floor + mode.league - 1 >= from ? level : goal), 0);
+  const maxLevel = (floor, mode = TOWER_MODE) => mode.levelCap(floor);
   // Chance (%) de voir le coût de la lignée dans une case de boutique à ce niveau ; 0 pour un coût ou un niveau inconnu.
   const shopOdds = (data, level, base) => SHOP_ODDS[level]?.[lineInfo(data, base)?.c - 1] ?? 0;
   const findable = (data, level, base) => shopOdds(data, level, base) >= FINDABLE;
@@ -194,12 +316,25 @@ const KT = (() => {
     { to: 160, shinies: ['Ptéra', 'Leveinard', 'Minidraco'], advice: 'Un shiny hors composition ne mérite plus d’investissement.' },
     { to: Infinity, shinies: [], advice: 'Aucun farming de shinies : victoire et survie avant la collection.' },
   ];
-  const GOLD_RULES = [
-    'Intérêts : +1 pièce par tranche de 10, +3 au plus en Tour → garder 30 pièces (+2 avec la voie Fortune complète).',
-    `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${LEVEL_GOALS.map(([from, level]) => `${level} dès l’étage ${from}`).join(', ')}), puis actualisation pour les copies trouvables, puis XP.`,
-    'Actualisation à 2 pièces : ne pas en enchaîner pour un shiny.',
-    `Tout jouer sur un combat sous ${HARD_WIN} % de victoires, sous ${LOW_HP} PV, ou sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}.`,
-  ];
+  // En-tête de campagne : aventure, difficulté et seuil de « tout jouer ».
+  function leagueNote(mode) {
+    const where = `${mode.adv?.name ?? mode.adventure} · ${LEAGUES[mode.league]}`;
+    return mode.penalty ? `${where} : taux publics des trois difficultés, tout jouer sous ${HARD_WIN + mode.penalty} %` : where;
+  }
+
+  function goldRules(mode) {
+    const tower = mode.id === TOWER.id;
+    const goals = mode.levelGoals.map(([from, level]) => `${level} dès ${mode.the} ${Math.max(1, from - mode.league + 1)}`).join(', ');
+    const hard = HARD_WIN + mode.penalty;
+    return [
+      tower ? 'Intérêts : +1 pièce par tranche de 10, +3 au plus en Tour → garder 30 pièces (+2 avec la voie Fortune complète).'
+        : `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus en campagne → garder ${10 * mode.interest} pièces.`,
+      `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation pour les copies trouvables, puis XP.${tower ? '' : ` La campagne donne ${mode.freeXp} XP par combat.`}`,
+      'Actualisation à 2 pièces : ne pas en enchaîner pour un shiny.',
+      tower ? `Tout jouer sur un combat sous ${hard} % de victoires, sous ${LOW_HP} PV, ou sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}.`
+        : `Tout jouer sur un combat sous ${hard} % de victoires (${mode.penalty ? `${LEAGUES[mode.league]} : ${HARD_WIN} % plus ${mode.penalty} points, les taux publics mêlant les trois difficultés` : LEAGUES[mode.league]}), sous ${LOW_HP} PV, ou sur un combat rejoué.`,
+    ];
+  }
 
   const isObject = o => o !== null && typeof o === 'object' && !Array.isArray(o);
 
@@ -222,24 +357,25 @@ const KT = (() => {
     return save && isObject(save.units) && isObject(save.board ?? {}) && Array.isArray(save.bench ?? []) ? save : null;
   }
 
-  const floorOf = round => Math.max(1, Math.floor(round) - ROUND_BASE + 1);
   const coreKey = core => [...core].sort().join('+');
 
-  function floorFromSave(raw) {
+  // Étage (Tour) ou combat (campagne) de la sauvegarde.
+  function floorFromSave(raw, mode = TOWER_MODE) {
     const save = parseRound(raw);
-    return save && floorOf(save.round);
+    return save && mode.floorOf(save.round);
   }
 
+  // « 16:Erika », « 2:Pikachu salvaje » : le libellé d'un arrêt de campagne contient des espaces.
   function parseStop(stop) {
-    const [floor, boss] = stop.split(':');
-    return { floor: Number(floor), boss };
+    const at = stop.indexOf(':');
+    return { floor: Number(stop.slice(0, at)), boss: stop.slice(at + 1) };
   }
 
-  // Forme minimale de .modes.torre dont dépend le panneau ; sinon le format de l'API a changé.
-  function isTowerData(t) {
+  // Forme minimale d'un mode de campana.json (torre, camp) dont dépend le panneau ; sinon le format de l'API a changé.
+  function isStatsData(t) {
     return Array.isArray(t?.stops) && Array.isArray(t.cores) && Array.isArray(t.lines) && Array.isArray(t.holders)
       && typeof t.from === 'string' && typeof t.to === 'string' && Number.isFinite(t.rules)
-      && t.stops.every(s => typeof s?.stop === 'string' && /^\d+:\w+$/.test(s.stop) && [s.win, s.first, s.tries].every(Number.isFinite))
+      && t.stops.every(s => typeof s?.stop === 'string' && /^\d+:.+$/.test(s.stop) && [s.n, s.win, s.first, s.tries].every(Number.isFinite))
       && t.stops.some(s => !s.stop.endsWith(':elite'))
       && t.cores.every(c => typeof c?.stop === 'string' && Array.isArray(c.core) && [c.n, c.win, c.lo].every(Number.isFinite))
       && t.lines.every(l => typeof l?.line === 'string' && [l.lo, l.ne, l.d].every(Number.isFinite))
@@ -258,27 +394,54 @@ const KT = (() => {
 
   const isFresh = (at, now) => Number.isFinite(at) && now - at >= 0 && now - at < CACHE_MAX_AGE;
 
-  function lastBossFloor(stops) {
-    return Math.max(...stops.map(s => parseStop(s.stop)).filter(p => p.boss !== 'elite').map(p => p.floor));
+  // Arrêts de ce mode : tous en Tour ; en campagne, ceux de l'aventure (aucun sans table d'arrêts) et, à une manche de
+  // champion dont gymOrder fixe le choix, celui-là seul. share : part des combats de la manche (ses variantes sont tirées au
+  // sort) ; fightWin : taux de victoire de la manche, moyenne de ses variantes pondérée par share ; fight : libellés de ses
+  // variantes.
+  function modeStops(stops, mode) {
+    const parsed = stops.map(s => ({ ...s, ...parseStop(s.stop) }));
+    if (mode.id === TOWER.id) return parsed.map(s => ({ ...s, share: 1, fightWin: s.win, fight: [s.boss] }));
+    const table = mode.adv?.stops;
+    if (!table) return [];
+    // Champion d'une manche gyms : celui de gymOrder une fois choisi, sinon un de ceux qui restent (le dernier n'a pas le choix).
+    const order = mode.gymOrder.map(g => GYM_LABELS[g]);
+    const slot = s => mode.adv.gyms?.[s.floor];
+    const gymOk = s => slot(s) === undefined || (order[slot(s)] ? order[slot(s)] === s.boss : !order.includes(s.boss));
+    const kept = parsed.filter(s => table[s.floor]?.includes(s.boss) && gymOk(s));
+    const sum = (map, s, v) => map.set(s.floor, (map.get(s.floor) ?? 0) + v);
+    const fights = new Map();
+    for (const s of kept) sum(fights, s, s.n);
+    const shared = kept.map(s => ({ ...s, share: s.n / fights.get(s.floor) }));
+    const wins = new Map();
+    for (const s of shared) sum(wins, s, s.share * s.win);
+    return shared.map(s => ({ ...s, fightWin: wins.get(s.floor), fight: kept.filter(x => x.floor === s.floor).map(x => x.boss) }));
   }
 
-  function nextBossStop(stops, floor) {
+  // Tour : tout sauf les élites ; campagne : manches de badge, de Ligue et Mewtwo, ou chaque combat sans liste de boss.
+  const isBoss = (s, mode) => (mode.id === TOWER.id ? s.boss !== 'elite' : mode.adv?.bosses?.includes(s.floor) ?? true);
+
+  // -Infinity quand le mode n'a aucun arrêt (aventure sans table).
+  function lastBossFloor(stops, mode = TOWER_MODE) {
+    return Math.max(...modeStops(stops, mode).filter(s => isBoss(s, mode)).map(s => s.floor));
+  }
+
+  // Prochain boss ; à une manche aux variantes tirées au sort, la plus jouée.
+  function nextBossStop(stops, floor, mode = TOWER_MODE) {
     let best = null;
-    for (const s of stops) {
-      const p = parseStop(s.stop);
-      if (p.boss === 'elite' || p.floor < floor) continue;
-      if (!best || p.floor < best.floor) best = { ...s, ...p };
+    for (const s of modeStops(stops, mode)) {
+      if (!isBoss(s, mode) || s.floor < floor) continue;
+      if (!best || s.floor < best.floor || (s.floor === best.floor && s.n > best.n)) best = s;
     }
     return best;
   }
 
-  // Les n prochains combats notés (élites comprises), pondérés par leur difficulté.
-  function nextStops(stops, floor, n = 3) {
-    return stops.map(s => ({ ...s, ...parseStop(s.stop) }))
-      .filter(s => s.floor >= floor)
-      .sort((a, b) => a.floor - b.floor)
-      .slice(0, n)
-      .map(s => ({ ...s, weight: Math.max(1, 100 - s.win) }));
+  // Arrêts des n prochains combats notés (élites comprises, toutes les variantes d'une manche), pondérés par leur difficulté
+  // (taux moins la pénalité de difficulté) et par leur part des combats de la manche.
+  function nextStops(stops, floor, n = 3, mode = TOWER_MODE) {
+    const ahead = modeStops(stops, mode).filter(s => s.floor >= floor).sort((a, b) => a.floor - b.floor);
+    const floors = [...new Set(ahead.map(s => s.floor))].slice(0, n);
+    return ahead.filter(s => floors.includes(s.floor))
+      .map(s => ({ ...s, weight: s.share * Math.max(1, 100 - (s.win - mode.penalty)) }));
   }
 
   function topCores(cores, stop, limit = 3) {
@@ -312,7 +475,9 @@ const KT = (() => {
     };
   }
 
-  const bossName = id => BOSSES[id] ?? id;
+  const bossName = id => BOSSES[id] ?? CAMP_NAMES[id] ?? id;
+  // Nom d'une manche : ses variantes, quand le tirage au sort en laisse plusieurs.
+  const fightName = s => s.fight.map(bossName).join(' ou ');
 
   function guideFor(floor) {
     let from = 1;
@@ -329,13 +494,13 @@ const KT = (() => {
     return { cls: 'mid', sym: '●' };
   }
 
-  // État de partie normalisé à partir de la sauvegarde Tour (format v11).
-  function readGame(save) {
+  // État de partie normalisé à partir d'une sauvegarde Tour ou campagne (format v11) ; mode : modeContext de la partie.
+  function readGame(save, mode = TOWER_MODE) {
     const placed = [...Object.entries(save.board ?? {}).map(([cell, id]) => ({ id, cell: Number(cell) })),
       ...(save.bench ?? []).map((id, slot) => ({ id, slot })).filter(p => p.id)];
     const units = placed.map(p => ({ ...save.units[p.id], ...p })).filter(u => typeof u.line === 'string');
     return {
-      floor: floorOf(save.round),
+      mode, floor: mode.floorOf(save.round),
       gold: save.gold, level: save.level, xp: save.xp, hp: save.hp,
       // Défaites déjà subies à cet étage.
       attempts: save.attempts ?? 0,
@@ -363,47 +528,50 @@ const KT = (() => {
   const ones = (game, base) => copies(game, base, 1);
   const pathCount = (boons, path) => boons.filter(b => boonPath(b) === path).length;
 
-  function goldFloor(boons) {
-    return 10 * (BASE_INTEREST + (pathCount(boons, 'fortune') >= PATH_SIZE ? FORTUNE_INTEREST : 0));
+  function goldFloor(boons, mode = TOWER_MODE) {
+    return 10 * (mode.interest + (pathCount(boons, 'fortune') >= PATH_SIZE ? FORTUNE_INTEREST : 0));
   }
 
-  // « Tout jouer » : le combat de l'étage courant est un mur, les PV sont bas, ou l'étage est rejoué (RETRY_ALL_IN_FROM).
+  // « Tout jouer » : le combat courant est un mur (taux de la manche sous HARD_WIN plus la pénalité de difficulté), les PV
+  // sont bas, ou le combat est rejoué (retryFrom du mode).
   function economy(game, stops) {
+    const { mode } = game;
     const here = stops.find(s => s.floor === game.floor);
-    const floor = goldFloor(game.boons);
+    const floor = goldFloor(game.boons, mode);
+    const hard = HARD_WIN + mode.penalty;
     const lowHp = game.hp < LOW_HP;
-    const retry = game.attempts > 0 && game.floor >= RETRY_ALL_IN_FROM;
-    const allIn = lowHp || retry || (here !== undefined && here.win < HARD_WIN);
-    const nextWall = stops.find(s => s.win < HARD_WIN) ?? null;
+    const retry = game.attempts > 0 && game.floor >= mode.retryFrom;
+    const allIn = lowHp || retry || (here !== undefined && here.fightWin < hard);
+    const nextWall = stops.find(s => s.fightWin < hard) ?? null;
     return { gold: game.gold, floor, spend: allIn ? game.gold : Math.max(0, game.gold - floor), allIn, lowHp, retry, nextWall };
   }
 
-  const findLine = (torre, id) => torre.lines.find(l => l.line === id);
+  const findLine = (stats, id) => stats.lines.find(l => l.line === id);
 
-  function lineLo(torre, id) {
-    return findLine(torre, id)?.lo ?? findLine(torre, baseLine(id))?.lo ?? 0;
+  function lineLo(stats, id) {
+    return findLine(stats, id)?.lo ?? findLine(stats, baseLine(id))?.lo ?? 0;
   }
 
   // Écart de victoire rétréci d'une forme : vers 0 pour la lignée de base, vers celui de sa lignée de base pour une forme
   // ancrée, souvent peu jouée ; 0 sans statistiques.
-  function shrunkGap(torre, id) {
+  function shrunkGap(stats, id) {
     const shrink = (s, prior) => (s.d * s.ne + prior * LINE_PRIOR) / (s.ne + LINE_PRIOR);
-    const base = findLine(torre, baseLine(id));
+    const base = findLine(stats, baseLine(id));
     const prior = base ? shrink(base, 0) : 0;
-    const own = id === baseLine(id) ? undefined : findLine(torre, id);
+    const own = id === baseLine(id) ? undefined : findLine(stats, id);
     return own ? shrink(own, prior) : prior;
   }
 
   // Coût gagné (+1) ou perdu (−1) par une forme selon son écart de victoire rétréci, 0 sous SHIFT_GAP points.
-  function costShift(torre, id) {
-    const gap = shrunkGap(torre, id);
+  function costShift(stats, id) {
+    const gap = shrunkGap(stats, id);
     return Math.abs(gap) >= SHIFT_GAP ? Math.sign(gap) : 0;
   }
 
   // ★★★ nettement moins forte que ★★ pour cette forme exacte (identifiant du trio) : intervalles à 95 % de l'API disjoints,
   // ramenés à l'écart de victoire (taux − attendu). Sans statistiques aux deux étoiles, la ★★★ se cherche.
-  function flatThirdStar(torre, id) {
-    const at = star => torre.stars.find(s => s.line === id && s.star === star);
+  function flatThirdStar(stats, id) {
+    const at = star => stats.stars.find(s => s.line === id && s.star === star);
     const [two, three] = [at(2), at(3)];
     return Boolean(two && three) && three.hi - three.exp < two.lo - two.exp;
   }
@@ -423,7 +591,7 @@ const KT = (() => {
   }
 
   // Trios d'au moins MIN_FIGHTS combats de chaque combat, par clé de trio.
-  const coresAt = (torre, stops) => new Map(stops.map(st => [st.stop, new Map(torre.cores
+  const coresAt = (stats, stops) => new Map(stops.map(st => [st.stop, new Map(stats.cores
     .filter(c => c.stop === st.stop && c.n >= MIN_FIGHTS)
     .map(c => [coreKey(c.core), c]))]));
 
@@ -482,10 +650,13 @@ const KT = (() => {
   // types apportés à la compo ; l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte
   // sur ces combats. upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ;
   // replaced : ces compléments ; flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★ (flatThirdStar).
-  function targetComp(torre, data, game, previousKey) {
-    const stops = nextStops(torre.stops, game.floor, HORIZON);
-    const coresByStop = coresAt(torre, stops);
-    const best = bestCore(coresByStop, data, game, stops, previousKey);
+  function targetComp(stats, data, game, previousKey) {
+    const stops = nextStops(stats.stops, game.floor, HORIZON, game.mode);
+    const coresByStop = coresAt(stats, stops);
+    // En campagne, sans trio noté sur ces combats (aventure sans table d'arrêts, Canela aux manches sans statistiques), la
+    // compo se fait sans trio : tes meilleures unités, puis la boutique.
+    const best = bestCore(coresByStop, data, game, stops, previousKey)
+      ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
     if (!best) return null;
     const core = best.core.map(baseLine);
     const known = b => lineInfo(data, b) && !core.includes(b);
@@ -495,7 +666,7 @@ const KT = (() => {
     const owned = b => Number(bestStar(game, b) > 0);
     // Forme de la copie posée (fieldOrder, comme holdersOf) : la note décrit l'unité que la formation place.
     const form = b => unitsOf(game, b).sort(fieldOrder)[0]?.line ?? b;
-    const shift = new Map([...mine, ...cards].map(b => [b, costShift(torre, form(b))]));
+    const shift = new Map([...mine, ...cards].map(b => [b, costShift(stats, form(b))]));
     // Meilleures lignées de chaque liste, une liste après l'autre, jusqu'au niveau.
     const fill = pools => {
       const chosen = [...core];
@@ -517,18 +688,21 @@ const KT = (() => {
     const upgrades = mixed.filter(b => cards.includes(b) && !fillers.includes(b));
     // Autant de compléments possédés que de cartes, les moins bien notés.
     const replaced = upgrades.length ? fillers.filter(b => owned(b) && !mixed.includes(b)).slice(-upgrades.length) : [];
-    const flat = best.core.filter(id => flatThirdStar(torre, id)).map(baseLine);
+    if (!core.length && !fillers.length) return null;
+    const flat = best.core.filter(id => flatThirdStar(stats, id)).map(baseLine);
     return { ...best, fillers, upgrades: upgrades.slice(0, replaced.length), replaced, flat };
   }
 
   // Trio des 9 combats suivants (10 à 18), à préparer avec le surplus ; null s'il est déjà la compo cible.
-  function nextComp(torre, data, game, target, previousKey) {
-    const stops = nextStops(torre.stops, game.floor, 2 * HORIZON).slice(HORIZON);
-    const next = bestCore(coresAt(torre, stops), data, game, stops, previousKey);
+  function nextComp(stats, data, game, target, previousKey) {
+    const ahead = nextStops(stats.stops, game.floor, 2 * HORIZON, game.mode);
+    const floors = [...new Set(ahead.map(s => s.floor))].slice(HORIZON);
+    const stops = ahead.filter(s => floors.includes(s.floor));
+    const next = bestCore(coresAt(stats, stops), data, game, stops, previousKey);
     return next && next.key !== target.key ? next : null;
   }
 
-  const floorRange = stops => `étages ${stops[0].floor}–${stops.at(-1).floor}`;
+  const floorRange = (stops, mode = TOWER_MODE) => `${mode.units} ${stops[0].floor}–${stops.at(-1).floor}`;
 
   const targetBases = target => (target ? [...target.core.map(baseLine), ...target.fillers] : []);
   const nextBases = next => (next ? next.core.map(baseLine) : []);
@@ -617,7 +791,7 @@ const KT = (() => {
     cards.forEach((c, i) => {
       if (!c || marks[i] !== undefined) return;
       if (c.inNext && !c.inTarget) {
-        const range = floorRange(next.stops);
+        const range = floorRange(next.stops, game.mode);
         const fits = c.cost !== undefined && left - c.cost >= eco.floor;
         if (!eco.allIn && fits && left - c.cost - reroll >= eco.floor) {
           left -= c.cost;
@@ -639,7 +813,7 @@ const KT = (() => {
   // forte, target.flat), et toute lignée qui a 2 copies ★ (la 3ᵉ donne la ★★) ou 2 copies ★★ (la 3ᵉ ★★ donne la ★★★).
   function seekLines(game, target) {
     const core = target.core.map(baseLine);
-    const top = game.level >= maxLevel(game.floor);
+    const top = game.level >= maxLevel(game.floor, game.mode);
     const coreStar = base => (top && !target.flat.includes(base) ? 3 : 2);
     return targetBases(target).filter(base => bestStar(game, base) < 3
       && ((core.includes(base) && bestStar(game, base) < coreStar(base)) || ones(game, base) === 2 || copies(game, base, 2) === 2));
@@ -655,13 +829,13 @@ const KT = (() => {
     if (eco.allIn) return left >= REROLL_COST ? mark('do', 'Actualise', 'Actualise', 'tout jouer : chercher les copies de la compo') : null;
     const seek = wanted.filter(base => lineInfo(data, base));
     const keep = why => mark('no', 'Garde l’or', 'N’actualise pas', why);
-    const goal = levelGoal(game.floor);
+    const goal = levelGoal(game.floor, game.mode);
     if (game.level < goal) return keep(`d’abord le niveau ${goal}`);
     const odds = base => `${names.line(base)} (coût ${lineInfo(data, base).c} : ${shopOdds(data, game.level, base)} %)`;
-    const top = game.level >= maxLevel(game.floor);
+    const top = game.level >= maxLevel(game.floor, game.mode);
     const found = seek.filter(base => (top ? shopOdds(data, game.level, base) > 0 : findable(data, game.level, base)));
     if (!found.length) {
-      const levels = Array.from({ length: maxLevel(game.floor) - game.level }, (_, i) => game.level + 1 + i);
+      const levels = Array.from({ length: maxLevel(game.floor, game.mode) - game.level }, (_, i) => game.level + 1 + i);
       const reach = base => levels.find(level => findable(data, level, base));
       const later = seek.find(reach);
       return later ? keep(`${odds(later)} au niveau ${game.level} : à chercher au niveau ${reach(later)}`) : null;
@@ -674,7 +848,7 @@ const KT = (() => {
   // n'est conseillée, l'or au-dessus du palier va au niveau suivant. Sous le niveau visé, tout le surplus utile à ce niveau
   // est engagé : les ◆ de la boutique passent après.
   function xpMark(game, eco, left, spare) {
-    if (game.level >= maxLevel(game.floor)) return { mark: null, cost: 0 };
+    if (game.level >= maxLevel(game.floor, game.mode)) return { mark: null, cost: 0 };
     const missing = XP_TO_NEXT[game.level] - game.xp;
     const toLevel = Math.ceil(missing / XP_COST) * XP_COST;
     if (eco.allIn) {
@@ -687,7 +861,7 @@ const KT = (() => {
     const buy = why => ({ mark: mark('do', 'Monte', 'Achète de l’XP', why), cost: XP_COST });
     const quick = `niveau ${game.level + 1} pour ${XP_COST} pièces`;
     const next = `${missing} XP avant le niveau ${game.level + 1}`;
-    const goal = levelGoal(game.floor);
+    const goal = levelGoal(game.floor, game.mode);
     if (game.level < goal) {
       const toGoal = XP_TO_NEXT.slice(game.level, goal).reduce((sum, xp) => sum + xp, 0) - game.xp;
       const cost = Math.min(Math.ceil(toGoal / XP_COST), Math.floor((left - eco.floor) / XP_COST)) * XP_COST;
@@ -707,7 +881,7 @@ const KT = (() => {
       const u = id && game.units.find(x => x.id === id);
       if (!u) return null;
       const base = baseLine(u.line);
-      const shinyKept = u.shiny && game.floor <= SHINY_KEEP_TO;
+      const shinyKept = u.shiny && game.floor <= game.mode.shinyKeepTo;
       // Vendu, il rend ses objets au sac : seulement s'il ne sert ni à la compo cible ni à la suivante.
       if (u.items?.length && !shinyKept && ![...targetBases(target), ...nextBases(next)].includes(base)) {
         return mark('no', 'Vends', `Vends ${names.line(u.line)}`, 'hors des compos : il rend ses objets au sac');
@@ -739,12 +913,12 @@ const KT = (() => {
     return item.inherits?.length ? item.inherits.flatMap(x => Array(x.n).fill(x.part)) : item.recipe ?? [];
   }
 
-  // Profil de chaque lignée de base, lu sur les objets qu'elle porte en Tour (pondérés par le nombre de combats) : tank si la
+  // Profil de chaque lignée de base, lu sur les objets qu'elle porte dans le mode (pondérés par le nombre de combats) : tank si la
   // part de composants défensifs atteint TANK_SHARE, spéciale si le Calcium l'emporte sur la Protéine. Les stats de data.json
-  // ne séparent pas tanks et attaquants, et data.json ne connaît pas toutes les lignées de la Tour.
-  function lineProfiles(torre, data) {
+  // ne séparent pas tanks et attaquants, et data.json ne connaît pas toutes les lignées des règles 41.
+  function lineProfiles(stats, data) {
     const sums = new Map();
-    for (const h of torre.holders) {
+    for (const h of stats.holders) {
       const parts = itemParts(data, h.id);
       if (!parts.length) continue;
       const base = baseLine(h.line);
@@ -779,16 +953,16 @@ const KT = (() => {
     return profile.tank ? 'offensif sur un tank' : 'défensif sur un attaquant';
   }
 
-  // Meilleurs objets complets portés en Tour par cette lignée exacte et qui conviennent à son profil : une forme ancrée (-aN)
+  // Meilleurs objets complets portés dans le mode par cette lignée exacte et qui conviennent à son profil : une forme ancrée (-aN)
   // ne compte que pour elle-même ; le repli sur la lignée de base est dans idealItems.
-  function topHolders(torre, data, line, profile) {
-    return torre.holders.filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full' && suits(data, profile, h.id))
+  function topHolders(stats, data, line, profile) {
+    return stats.holders.filter(h => h.line === line && h.n >= MIN_FIGHTS && data.items[h.id]?.k === 'full' && suits(data, profile, h.id))
       .sort((a, b) => b.lo - a.lo).slice(0, MAX_ITEMS);
   }
 
-  function idealItems(torre, data, line, profile) {
-    const own = topHolders(torre, data, line, profile);
-    return (own.length ? own : topHolders(torre, data, baseLine(line), profile)).map(h => h.id);
+  function idealItems(stats, data, line, profile) {
+    const own = topHolders(stats, data, line, profile);
+    return (own.length ? own : topHolders(stats, data, baseLine(line), profile)).map(h => h.id);
   }
 
   // Portée inconnue ou nulle : mêlée.
@@ -796,29 +970,29 @@ const KT = (() => {
 
   // Porteurs : un Pokémon possédé par lignée de la compo cible (fieldOrder). Rôles lus sur le profil de la lignée : porteur
   // (attaquant du cœur le mieux classé), tanks (aux PV max d'abord), puis les autres attaquants (★, puis lineLo).
-  function holdersOf(torre, data, game, target, profiles) {
+  function holdersOf(stats, data, game, target, profiles) {
     const own = targetBases(target)
       .map(b => unitsOf(game, b).sort(fieldOrder)[0])
       .filter(Boolean);
     const profile = u => profiles.get(baseLine(u.line)) ?? null;
-    const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || lineLo(torre, b.line) - lineLo(torre, a.line);
+    const rank = (a, b) => b.star - a.star || Number(!!b.shiny) - Number(!!a.shiny) || lineLo(stats, b.line) - lineLo(stats, a.line);
     const hp = u => (lineInfo(data, baseLine(u.line))?.stars?.[u.star - 1]?.stats.hp ?? 0) * (u.shiny ? SHINY_HP : 1);
     const tanks = own.filter(u => profile(u)?.tank).sort((a, b) => hp(b) - hp(a));
     const attackers = own.filter(u => !tanks.includes(u)).sort(rank);
     const carry = attackers.find(u => target.core.some(id => baseLine(id) === baseLine(u.line)));
     return [['carry', carry], ...tanks.map(u => ['tank', u]), ...attackers.filter(u => u !== carry).map(u => ['atk', u])]
       .filter(([, u]) => u)
-      .map(([role, u]) => ({ role, unit: u, profile: profile(u), ideal: idealItems(torre, data, u.line, profile(u)) }));
+      .map(([role, u]) => ({ role, unit: u, profile: profile(u), ideal: idealItems(stats, data, u.line, profile(u)) }));
   }
 
   // Lignées du cœur cible non possédées et du cœur de la compo suivante : leurs recettes idéales se préparent au sac.
-  function futureLines(torre, data, target, next, holders, profiles, names) {
+  function futureLines(stats, data, target, next, holders, profiles, names) {
     const owned = new Set(holders.map(h => baseLine(h.unit.line)));
     return [...target.core, ...(next?.core ?? [])].filter(id => !owned.has(baseLine(id)) && owned.add(baseLine(id)))
-      .map(id => ({ base: baseLine(id), who: names.line(baseLine(id)), ideal: idealItems(torre, data, id, profiles.get(baseLine(id)) ?? null) }));
+      .map(id => ({ base: baseLine(id), who: names.line(baseLine(id)), ideal: idealItems(stats, data, id, profiles.get(baseLine(id)) ?? null) }));
   }
 
-  const BEST = 'meilleur objet de sa lignée en Tour';
+  const bestWhy = mode => `meilleur objet de sa lignée ${mode.where}`;
 
   // Un Pokémon de la compo ne reçoit que ses objets idéaux (idealItems) : l'objet complet, ou un composant de l'un d'eux, va
   // tout de suite sur lui. Un composant posé seul donne déjà son effet et fusionne avec le prochain composant posé sur ce
@@ -829,6 +1003,7 @@ const KT = (() => {
   function itemMarks(data, game, holders, book, target, future, names) {
     const marks = game.bag.map(() => null);
     if (!target) return { marks, holders: [], reserved: new Set() };
+    const BEST = bestWhy(game.mode);
     const kind = id => data.items[id]?.k;
     const hs = holders.map(h => {
       const on = [...(h.unit.items ?? [])];
@@ -1047,6 +1222,7 @@ const KT = (() => {
   // recettes idéales des lignées à venir.
   function offerMarks(book, game, hs, future, names) {
     if (!game.reward.length) return [];
+    const BEST = bestWhy(game.mode);
     const value = id => [...hs.flatMap(h => h.ideal.filter(f => !h.on.includes(f)).map(f => {
       const ab = book.parts.get(f) ?? [];
       if (f === id) return h.slots > 0 && { s: 3, why: `${BEST} pour ${h.who}` };
@@ -1242,22 +1418,22 @@ const KT = (() => {
     }
     return marks;
   }
-  function kt1Code(units, rules) {
+  function kt1Code(units, rules, mode) {
     const parts = units.map(u => `${u.line}:${u.star}${u.shiny ? 's' : ''}:${u.cell}${u.items.length ? `:${u.items.join('.')}` : ''}`);
-    return ['KT1', `r${rules}`, 'xm=tower', `xn=${encodeURIComponent(PLAN_NAME)}`, ...parts].join(';');
+    return ['KT1', `r${rules}`, `xm=${mode.xm}`, `xn=${encodeURIComponent(PLAN_NAME)}`, ...parts].join(';');
   }
 
-  // previous : { key, run, next } des derniers trios choisis (compo cible, compo suivante) ; l'inertie ne vaut que dans la même
-  // partie (runSeed).
-  function advise({ torre, data, lang, save, previous, side }) {
+  // stats : le mode de campana.json de la partie (torre ou camp) ; mode : modeContext de la partie. previous : { key, run, next }
+  // des derniers trios choisis (compo cible, compo suivante) ; l'inertie ne vaut que dans la même partie (runSeed).
+  function advise({ stats, data, lang, save, previous, side, mode = TOWER_MODE }) {
     const names = namer(lang);
-    const game = readGame(save);
+    const game = readGame(save, mode);
     const run = save.runSeed ?? null;
-    const stops = torre ? nextStops(torre.stops, game.floor) : [];
+    const stops = stats ? nextStops(stats.stops, game.floor, 3, mode) : [];
     const eco = economy(game, stops);
     const same = previous?.run === run ? previous : null;
-    const target = torre && data ? targetComp(torre, data, game, same?.key ?? null) : null;
-    const next = target ? nextComp(torre, data, game, target, same?.next ?? null) : null;
+    const target = stats && data ? targetComp(stats, data, game, same?.key ?? null) : null;
+    const next = target ? nextComp(stats, data, game, target, same?.next ?? null) : null;
     const rerollWith = left => rerollMark(game, target, data, eco, names, left);
     let xp;
     const shop = shopMarks(game, target, next, data, eco, names, left => {
@@ -1268,10 +1444,10 @@ const KT = (() => {
     // L'or que ni un achat ni une actualisation n'engage va au niveau suivant.
     if (xp.mark?.level !== 'do' && reroll?.level !== 'do') xp = xpMark(game, eco, shop.left, true);
     const choice = offerChoiceMarks(data, game, eco, names);
-    const profiles = target ? lineProfiles(torre, data) : null;
-    const holders = target ? holdersOf(torre, data, game, target, profiles) : [];
+    const profiles = target ? lineProfiles(stats, data) : null;
+    const holders = target ? holdersOf(stats, data, game, target, profiles) : [];
     const book = target ? recipeBook(data) : null;
-    const future = target ? futureLines(torre, data, target, next, holders, profiles, names) : [];
+    const future = target ? futureLines(stats, data, target, next, holders, profiles, names) : [];
     const items = itemMarks(data, game, holders, book, target, future, names);
     const units = target ? formation(target, game, data, holders, side) : [];
     return {
@@ -1287,7 +1463,7 @@ const KT = (() => {
       unknownOffer: choice.unknown,
       anchor: anchorAdvice(target, game, names),
       moves: moveAdvice(units, game, names),
-      code: target ? kt1Code(units, torre.rules) : null,
+      code: target ? kt1Code(units, stats.rules, mode) : null,
     };
   }
 
@@ -1363,9 +1539,9 @@ const KT = (() => {
   const shortDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
   return {
-    SOURCES, SAVE_KEY, UI_KEY, PLAN_NAME, GOLD_RULES, BOONS, lineInfo, loadJson,
-    parseSave, floorFromSave, isTowerData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores,
-    baseLine, namer, bossName, guideFor, rateLevel, readGame, goldFloor, levelGoal, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
+    SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, lineInfo, loadJson, goldRules, leagueNote, modeContext, latestSave,
+    parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss,
+    baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
   };
 })();
@@ -1588,7 +1764,6 @@ const TARGETS = {
   reward: { sel: '.modal.itemreward .ir-card', modal: true },
   offer: { sel: '.modal.tboon .ev-card', modal: true },
 };
-const TOWER_HUD = '.topbar .rtrack.tw';
 const COMPACT_BELOW = 64;
 // Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
 const TIP_HALF = 120;
@@ -1602,8 +1777,11 @@ const ICON = {
 
 const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
-// Conseils de partie seulement à l'étage de la sauvegarde : un étage saisi à la main ne sert qu'au prochain boss.
-const onSaveFloor = state => state.save !== null && state.floor === KT.floorFromSave(state.lastRaw);
+// Conseils de partie seulement à l'étage ou au combat de la sauvegarde : saisi à la main, il ne sert qu'au prochain boss.
+const onSaveFloor = state => state.save !== null && state.floor === KT.floorFromSave(state.lastRaw, state.mode);
+// Statistiques du mode de la partie (torre ou camp de campana.json) ; null avant leur chargement ou sans elles.
+const modeStats = state => state.stats?.[state.mode.stats] ?? null;
+const UNSUPPORTED = '<p class="kt-msg"><strong>Nuzlocke : pas de conseils</strong>Le panneau conseille la Tour et les aventures de la campagne.</p>';
 
 
 const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
@@ -1624,9 +1802,10 @@ const symHtml = level => `<span class="kt-sym kp-${level}" role="img" aria-label
 const markHtml = m => `<li>${symHtml(m.level)}<span><span class="t">${esc(m.title)}</span><span class="why">${esc(m.why)}</span></span></li>`;
 
 function noAdviceHtml(state) {
+  if (state.unsupported) return UNSUPPORTED;
   return state.save && !onSaveFloor(state)
-    ? `<p class="kt-msg">Conseils de partie masqués : ta partie est à l’étage ${KT.floorFromSave(state.lastRaw)}.</p>`
-    : '<p class="kt-msg">Les conseils de partie apparaissent dès qu’une partie Tour est lancée.</p>';
+    ? `<p class="kt-msg">Conseils de partie masqués : ta partie est ${state.mode.at} ${KT.floorFromSave(state.lastRaw, state.mode)}.</p>`
+    : '<p class="kt-msg">Les conseils de partie apparaissent dès qu’une partie Tour ou campagne est lancée.</p>';
 }
 
 function tourHtml(state, ui) {
@@ -1658,32 +1837,36 @@ function compoHtml(state, ui) {
   const a = state.advice;
   if (!a) return noAdviceHtml(state);
   if (!a.target) {
-    return state.torre && state.data ? '<p class="kt-msg">Aucun trio d’au moins 20 combats sur les prochains étages.</p>'
+    return modeStats(state) && state.data ? `<p class="kt-msg">Aucun trio d’au moins 20 combats sur les prochains ${a.game.mode.units}.</p>`
       : '<p class="kt-msg">Pas de compo cible : données indisponibles (voir l’alerte).</p>';
   }
   const t = a.target;
-  const bosses = t.stops.filter(s => s.boss !== 'elite').map(s => `${KT.bossName(s.boss)} ${s.floor}`);
-  const span = bosses.length > 1 ? `${bosses[0]} → ${bosses.at(-1)}` : bosses[0] ?? '';
+  const { mode } = a.game;
+  // Une manche aux variantes tirées au sort a plusieurs arrêts : un seul nom par manche.
+  const bosses = [...new Map(t.stops.filter(s => KT.isBoss(s, mode)).map(s => [s.floor, `${KT.fightName(s)} ${s.floor}`])).values()];
+  let span = bosses.length > 1 ? `${bosses[0]} → ${bosses.at(-1)}` : bosses[0] ?? '';
+  if (!t.core.length) span = 'sans trio : pas de statistiques sur ces combats';
   const chip = (id, core) => {
     const base = KT.baseLine(id);
     return `<li${core ? ' class="core"' : ''}>${esc(a.names.line(id))} <span class="p">${KT.progress(a.game, base)}</span>${KT.shinyLine(a.game, base) ? ' <span class="sh">shiny</span>' : ''}</li>`;
   };
   return `<p class="kt-label"><span>Compo cible</span><span>${esc(span)}</span></p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
-${a.next ? `<p class="kt-label"><span>Ensuite</span><span>${esc(KT.floorRange(a.next.stops))}</span></p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
+${a.next ? `<p class="kt-label"><span>Ensuite</span><span>${esc(KT.floorRange(a.next.stops, mode))}</span></p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
 ${aimsHtml(a, ui)}
 <button class="kt-copy" id="kt-copy" data-act="copy">Copier la formation</button>
 <p class="kt-hint">Porteur à distance : rangée de sa portée, ${KT.CARRY_ZONES[ui.side].name} (options ⚙).</p>`;
 }
 
 function bossTabHtml(state) {
-  if (!state.torre) return '<p class="kt-msg">Statistiques de la Tour indisponibles.</p>';
-  const stop = KT.nextBossStop(state.torre.stops, state.floor);
+  const stats = modeStats(state);
+  if (!stats) return '<p class="kt-msg">Statistiques indisponibles.</p>';
+  const stop = KT.nextBossStop(stats.stops, state.floor, state.mode);
   // L'en-tête dit déjà qu'aucun boss n'est connu après cet étage.
   if (!stop) return '<p class="kt-msg">Pas de trio à afficher.</p>';
   const names = KT.namer(state.lang);
   const mine = state.advice?.target?.key;
-  const cores = KT.topCores(state.torre.cores, stop.stop);
+  const cores = KT.topCores(stats.cores, stop.stop);
   const coresHtml = cores.length
     ? `<ol class="kt-cores">${cores.map(c => {
       const l = KT.rateLevel(c.win);
@@ -1696,35 +1879,44 @@ function bossTabHtml(state) {
 <p class="kt-label"><span>Meilleurs trios</span><span>≥ 20 combats</span></p>${coresHtml}`;
 }
 
-function rulesHtml(floor) {
-  const g = KT.guideFor(floor);
+// Le guide des shinies par tranche d'étages ne vaut que pour la Tour.
+function rulesHtml(state) {
+  const rules = `<ul class="kt-rules">${KT.goldRules(state.mode).map(r => `<li>${esc(r)}</li>`).join('')}</ul>`;
+  if (state.mode.id !== KT.TOWER.id) return `<p class="kt-label"><span>Règles d’or</span><span>${esc(state.mode.adv?.name ?? state.mode.name)}</span></p>${rules}`;
+  const g = KT.guideFor(state.floor);
   const range = g.to === Infinity ? `étages ${g.from} et plus` : `étages ${g.from}–${g.to}`;
   const shinies = g.shinies.length
     ? `Shinies à saisir : ${esc(g.shinies.join(', '))}. ${esc(g.advice)} (conseil non vérifié ; un shiny a +10 % de PV, de défenses et de dégâts).`
     : esc(g.advice);
   return `<p class="kt-label"><span>Règles d’or</span><span>${range}</span></p><p class="kt-msg">${shinies}</p>
-<ul class="kt-rules">${KT.GOLD_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`;
+${rules}`;
 }
 
 // En-tête toujours visible : or à dépenser, alerte « tout jouer », prochain boss.
 function headHtml(state) {
   const parts = [];
+  const { mode } = state;
   const e = state.advice?.eco;
   if (e) {
     parts.push(`<p class="kt-gold"><span class="kt-coin" aria-hidden="true"></span>Or <b>${e.gold}</b> → <span class="spend">${e.spend} à dépenser</span><span class="m">palier ${e.floor} · +${e.floor / 10}</span></p>`);
     let wall = '';
-    if (e.allIn) wall = `Tout jouer : ${e.lowHp ? 'PV sous 40' : e.retry ? 'étage rejoué' : 'combat difficile'}.`;
-    else if (e.nextWall) wall = `Étage ${e.nextWall.floor} (${esc(KT.bossName(e.nextWall.boss))}, ${KT.pct(e.nextWall.win)}) : tout jouer.`;
+    if (e.allIn) wall = `Tout jouer : ${e.lowHp ? 'PV sous 40' : e.retry ? `${mode.unit} rejoué` : 'combat difficile'}.`;
+    else if (e.nextWall) wall = `${mode.label} ${e.nextWall.floor} (${esc(KT.fightName(e.nextWall))}, ${KT.pct(e.nextWall.fightWin)}) : tout jouer.`;
     if (wall) parts.push(`<p class="kt-warn"><span class="kt-sym kp-no" aria-hidden="true">▼</span>${wall}</p>`);
   }
-  const stop = state.torre && KT.nextBossStop(state.torre.stops, state.floor);
+  if (mode.id !== KT.TOWER.id) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);
+  const stats = modeStats(state);
+  const stop = stats && KT.nextBossStop(stats.stops, state.floor, mode);
   if (stop) {
     const dist = stop.floor - state.floor;
     const lvl = KT.rateLevel(stop.win);
     parts.push(`<div class="kt-boss"><span class="n">${esc(KT.bossName(stop.boss))}</span><span class="kt-rate ${lvl.cls}">${lvl.sym} ${KT.pct(stop.win)}<span class="kt-sr"> de victoires</span></span>
-<span class="w">étage ${stop.floor} · ${dist ? `dans ${dist}` : 'en cours'}</span></div>`);
-  } else if (state.torre) {
-    parts.push(`<p class="kt-msg"><strong>Aucun boss connu après l’étage ${KT.lastBossFloor(state.torre.stops)}</strong>Les statistiques publiques s’arrêtent là.</p>`);
+<span class="w">${mode.unit} ${stop.floor} · ${dist ? `dans ${dist}` : 'en cours'}</span></div>`);
+  } else if (stats) {
+    const last = KT.lastBossFloor(stats.stops, mode);
+    parts.push(last === -Infinity
+      ? '<p class="kt-msg"><strong>Pas de statistiques publiques pour cette aventure</strong>La compo cible se fait sans trio, avec tes meilleures unités.</p>'
+      : `<p class="kt-msg"><strong>Aucun boss connu après ${mode.the} ${last}</strong>Les statistiques publiques s’arrêtent là.</p>`);
   }
   return parts.length ? `<div class="kt-head">${parts.join('')}</div>` : '';
 }
@@ -1742,11 +1934,12 @@ function tabsHtml(state, ui) {
 }
 
 const TAB_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End']);
-const TAB_HTML = { tour: tourHtml, compo: compoHtml, boss: bossTabHtml, rules: state => rulesHtml(state.floor) };
+const TAB_HTML = { tour: tourHtml, compo: compoHtml, boss: bossTabHtml, rules: rulesHtml };
 
 function panelHtml(state, ui) {
-  if (!state.torre && !state.error) return '<div class="kt-panel"><p class="kt-msg" role="status">Chargement des statistiques de la Tour…</p></div>';
-  if (!state.floor) return '<div class="kt-panel"><p class="kt-msg"><strong>Aucune partie Tour en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour est lancée ; tu peux aussi saisir l’étage ci-dessus.</p></div>';
+  if (!state.stats && !state.error) return '<div class="kt-panel"><p class="kt-msg" role="status">Chargement des statistiques…</p></div>';
+  if (state.unsupported) return `<div class="kt-panel">${UNSUPPORTED}</div>`;
+  if (!state.floor) return `<div class="kt-panel"><p class="kt-msg"><strong>Aucune partie en cours</strong>Les conseils d’achat apparaissent dès qu’une partie Tour ou campagne est lancée ; tu peux aussi saisir ${state.mode.the} ci-dessus.</p></div>`;
   return `${headHtml(state)}${tabsHtml(state, ui)}
 <div class="kt-panel" role="tabpanel" id="kt-tabpanel" aria-labelledby="kt-tab-${ui.tab}">${TAB_HTML[ui.tab](state, ui)}</div>`;
 }
@@ -1779,7 +1972,8 @@ function alertHtml(state) {
 function footHtml(state) {
   const cached = state.stale ? ` · copie du ${esc(new Date(state.stale).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))}` : '';
   const uncached = state.uncached ? ' · non gardé en cache' : '';
-  return `Du ${esc(KT.shortDate(state.torre.from))} au ${esc(KT.shortDate(state.torre.to))}${cached}${uncached} · Data: <a href="https://einoow.com" target="_blank" rel="noopener">Kanto Tactics · einoow.com</a>`;
+  const stats = modeStats(state);
+  return `Du ${esc(KT.shortDate(stats.from))} au ${esc(KT.shortDate(stats.to))}${cached}${uncached} · Data: <a href="https://einoow.com" target="_blank" rel="noopener">Kanto Tactics · einoow.com</a>`;
 }
 
 function statusHtml(state) {
@@ -1838,13 +2032,13 @@ function waitFor(test, message, ms = PLANNER_WAIT_MS) {
   });
 }
 
-// Colle code dans le Planificateur de la partie Tour affichée. Rend false sans rien toucher quand ce n'est pas le moment :
-// pas de partie Tour à l'écran, modale du jeu ou Planificateur déjà ouverts, écran portrait. Rejette avec PlannerError si
-// l'interface du jeu ne répond pas comme prévu ou si 10 plans du joueur remplissent déjà le mode. Le Planificateur est
-// refermé et le focus rendu.
-async function pastePlan(code) {
+// Colle code dans le Planificateur de la partie affichée, dont hud est la barre de progression. Rend false sans rien toucher
+// quand ce n'est pas le moment : pas de partie de ce mode à l'écran, modale du jeu ou Planificateur déjà ouverts, écran
+// portrait. Rejette avec PlannerError si l'interface du jeu ne répond pas comme prévu ou si 10 plans du joueur remplissent
+// déjà le mode. Le Planificateur est refermé et le focus rendu.
+async function pastePlan(code, hud = KT.TOWER.hud) {
   const chip = document.querySelector(PLANNER.chip);
-  if (!document.querySelector(TOWER_HUD) || !chip || document.querySelector(PLANNER.veil) || document.querySelector('.modal')
+  if (!document.querySelector(hud) || !chip || document.querySelector(PLANNER.veil) || document.querySelector('.modal')
     || isPortrait()) return false;
   // Le Planificateur prend le focus à l'ouverture et ne le rend pas.
   const back = document.activeElement;
@@ -1859,7 +2053,7 @@ async function pastePlan(code) {
       del.click();
       await waitFor(() => !li.isConnected, 'ancien plan non supprimé');
     }
-    if (items().length >= PLANNER_MAX_PLANS) throw new PlannerError(`${PLANNER_MAX_PLANS} plans Tour déjà enregistrés, supprimes-en un`);
+    if (items().length >= PLANNER_MAX_PLANS) throw new PlannerError(`${PLANNER_MAX_PLANS} plans déjà enregistrés dans ce mode, supprimes-en un`);
     const field = await waitFor(() => inPlanner(PLANNER.input), 'champ Coller un code introuvable');
     // Setter natif : le même dans les deux contextes d'injection, sans passer par celui que React pose sur le champ.
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, code);
@@ -1898,8 +2092,9 @@ async function syncPlanner(planner, code, paste = pastePlan) {
   return pasted !== false;
 }
 
-// Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien).
-function pinLayer(layer) {
+// Pastilles : nœuds de l'overlay posés sur les éléments du jeu, jamais insérés dans le jeu (un clic n'y achète rien). hud() :
+// barre de progression du mode de la partie conseillée ; sans elle à l'écran, les pastilles sont masquées.
+function pinLayer(layer, hud) {
   let lastPins = null;
   let pins = [];
   // show : niveaux affichés (option Pastilles), { do, opt, no } → booléen.
@@ -1935,7 +2130,7 @@ function pinLayer(layer) {
   }
 
   function position() {
-    const tower = document.querySelector(TOWER_HUD) !== null;
+    const shown = document.querySelector(hud()) !== null;
     const modal = document.querySelector('.modal') !== null;
     const found = new Map();
     for (const { pin, t, i } of pins) {
@@ -1943,7 +2138,7 @@ function pinLayer(layer) {
       const all = found.get(t.sel);
       const el = t.by ? all.find(e => t.by(e, i)) : all[i];
       const r = el?.getBoundingClientRect();
-      const show = tower && t.modal === modal && r !== undefined && r.width > 0 && r.height > 0;
+      const show = shown && t.modal === modal && r !== undefined && r.width > 0 && r.height > 0;
       pin.hidden = !show;
       if (!show) continue;
       pin.style.left = `${r.left + r.width / 2}px`;
@@ -1959,10 +2154,12 @@ function pinLayer(layer) {
   return { paint, position };
 }
 
-// Sources indépendantes : sans data.json ou lang.json, le prochain boss et les trios restent affichés.
+// Sources indépendantes : sans data.json ou lang.json, le prochain boss et les trios restent affichés. campana.json est
+// accepté avec la Tour seule : sans modes.camp valide, la campagne n'a que les conseils d'économie.
 async function loadSources(state) {
   const sources = [
-    ['torre', 'campana.json', KT.SOURCES.torre, j => KT.isTowerData(j?.modes?.torre), j => j.modes.torre],
+    ['stats', 'campana.json', KT.SOURCES.stats, j => KT.isStatsData(j?.modes?.torre),
+      j => ({ torre: j.modes.torre, camp: KT.isStatsData(j.modes.camp) ? j.modes.camp : null })],
     ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j],
     ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j],
   ];
@@ -1988,13 +2185,13 @@ async function loadSources(state) {
 function mount() {
   const ui = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
   KT.checkUi(ui);
-  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, torre: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: null, save: null, mode: KT.TOWER_MODE, unsupported: false, stats: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${CSS}</style>
 <div class="kt-root">
-<div class="kt" role="complementary" aria-label="Aide Tour Kanto Tactics">
+<div class="kt" role="complementary" aria-label="Aide Kanto Tactics">
   <div class="kt-bar">
     <span class="kt-lbl">Étage</span>
     <span class="kt-stepper"><button data-act="dec" aria-label="Étage précédent">−</button><input class="kt-floor" inputmode="numeric" aria-label="Étage courant" placeholder="?"><button data-act="inc" aria-label="Étage suivant">+</button></span>
@@ -2026,7 +2223,9 @@ function mount() {
   const src = root.querySelector('.kt-src');
   const status = root.querySelector('.kt-status');
   const alertBox = root.querySelector('.kt-alert');
-  const pins = pinLayer(layer);
+  const pins = pinLayer(layer, () => state.mode.hud);
+  const label = root.querySelector('.kt-lbl');
+  const steps = { dec: root.querySelector('[data-act="dec"]'), inc: root.querySelector('[data-act="inc"]') };
 
   let lastHtml = null;
   let lastSummary = '';
@@ -2069,8 +2268,8 @@ function mount() {
 
   function compute() {
     const code = state.advice?.code;
-    state.advice = state.save && onSaveFloor(state) && (state.torre || state.error)
-      ? KT.advise({ torre: state.torre, data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side })
+    state.advice = state.save && onSaveFloor(state) && (state.stats || state.error)
+      ? KT.advise({ stats: modeStats(state), data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side, mode: state.mode })
       : null;
     if (state.advice?.code !== code) state.copied = null;
     const a = state.advice;
@@ -2093,6 +2292,12 @@ function mount() {
     toggle.setAttribute('aria-label', ui.collapsed ? 'Déplier le panneau' : 'Replier le panneau');
     toggle.setAttribute('aria-expanded', String(!ui.collapsed));
     src.textContent = state.source;
+    if (label.textContent !== state.mode.label) {
+      label.textContent = state.mode.label;
+      input.setAttribute('aria-label', `${state.mode.label} courant`);
+      steps.dec.setAttribute('aria-label', `${state.mode.label} précédent`);
+      steps.inc.setAttribute('aria-label', `${state.mode.label} suivant`);
+    }
     if (root.activeElement !== input) input.value = state.floor ?? '';
     input.classList.toggle('is-empty', !state.floor);
     // Réécrire seulement ce qui change : un focus ou une bulle ouverte survit aux réécritures de la sauvegarde.
@@ -2118,8 +2323,8 @@ function mount() {
       alertBox.innerHTML = alert;
       lastAlert = alert;
     }
-    foot.hidden = !state.torre;
-    if (state.torre) {
+    foot.hidden = !modeStats(state);
+    if (!foot.hidden) {
       const footer = footHtml(state);
       if (footer !== lastFoot) {
         foot.innerHTML = footer;
@@ -2142,7 +2347,7 @@ function mount() {
   for (const type of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(type, () => { pointerHeld = false; }, true);
   function plannerTick() {
     if (pointerHeld || root.activeElement !== null) return;
-    syncPlanner(state.planner, state.advice?.code).then(changed => changed && render(), err => {
+    syncPlanner(state.planner, state.advice?.code, code => pastePlan(code, state.mode.hud)).then(changed => changed && render(), err => {
       render();
       throw err;
     });
@@ -2155,13 +2360,17 @@ function mount() {
     render();
   }
 
+  // Partie jouée en dernier : la Tour, Kanto ou une autre aventure ; le Nuzlocke n'a pas de conseils.
   function pollSave() {
-    const raw = localStorage.getItem(KT.SAVE_KEY);
+    const found = KT.latestSave(localStorage);
+    const raw = found?.raw ?? null;
     if (raw === state.lastRaw) return;
     state.lastRaw = raw;
-    state.save = KT.parseSave(raw);
+    state.unsupported = found !== null && found.mode === null;
+    if (found?.mode) state.mode = found.mode;
+    state.save = found?.mode ? KT.parseSave(raw) : null;
     // L'étage saisi à la main tient jusqu'à ce que la sauvegarde change d'étage.
-    const f = KT.floorFromSave(raw);
+    const f = found?.mode ? KT.floorFromSave(raw, state.mode) : null;
     if (f !== state.lastAuto) {
       state.lastAuto = f;
       if (f !== null) {
@@ -2330,5 +2539,5 @@ function mount() {
 }
 
 // Les tests reçoivent aussi le pilote du Planificateur, joué sur un faux DOM.
-if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, PlannerError };
+if (typeof module !== 'undefined') module.exports = { ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, PlannerError };
 else mount();

@@ -8,7 +8,7 @@ const root = new URL('..', import.meta.url).pathname;
 const require = createRequire(import.meta.url);
 const KT = require(`${root}kanto-overlay.user.js`);
 const script = readFileSync(`${root}kanto-overlay.user.js`, 'utf8');
-const torre = require(`${root}test/fixtures/campana.json`).modes.torre;
+const modes = require(`${root}test/fixtures/campana.json`).modes;
 const data = require(`${root}test/fixtures/data.json`);
 const lang = require(`${root}test/fixtures/lang.json`);
 
@@ -28,8 +28,17 @@ const SHINY = {
   bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null],
 };
 
+// Campagne Kanto en Légende, combat 15 (Sbire Rocket), Morgane choisie au 4ᵉ badge : seuils durcis de 20 points ; Safari, aventure
+// sans table d'arrêts : compo sans trio.
+const CAMP = { ...S57, mode: 'campaign', round: 14, league: 3, gymOrder: ['sabrina', 'koga'], level: 6, gold: 47, tower: undefined };
+const SAVE_KANTO = 'kanto-tactics-save';
+
 const STATES = {
   conseils: { save: S57, api: 'ok', tip: true },
+  campagne: { save: CAMP, key: SAVE_KANTO, api: 'ok', tip: true },
+  'campagne-compo': { save: CAMP, key: SAVE_KANTO, api: 'ok', ui: { tab: 'compo' } },
+  'campagne-regles': { save: CAMP, key: SAVE_KANTO, api: 'ok', ui: { tab: 'rules' } },
+  'aventure-sans-stats': { save: { ...CAMP, league: 1, gymOrder: [] }, key: 'kanto-tactics-save-adv-safari', api: 'ok', ui: { tab: 'compo' } },
   // Leveinard et Lokhlass (compo suivante) en boutique : ◆ « prépare » sur le surplus, ✕ au-delà.
   'compo-suivante': { save: { ...S57, gold: 40, shop: ['chansey', 'lapras', 'magmar', 'rattata', 'ekans'] }, api: 'ok', tip: true, ui: { tab: 'compo' } },
   shiny: { save: SHINY, api: 'ok', ui: { tab: 'compo' } },
@@ -49,28 +58,36 @@ const STATES = {
   erreur: { save: S57, api: 'error' },
 };
 
-// Seules les données lues par ces états restent dans la page (URL data: limitée à ~90 Ko de HTML).
-function slim(s) {
-  // Compo cible et compo suivante de l'étage 57 : les 18 prochains combats ; les 6 meilleurs trios de chaque combat gardent leurs
-  // statistiques sur tous ces combats, pour un score identique à celui des données complètes.
-  const next = KT.nextStops(torre.stops, 57, 18).map(x => x.stop);
-  const stops = torre.stops.filter(x => {
+// Seules les données lues par ces états restent dans la page (URL data: limitée à ~90 Ko de HTML) : le mode de la partie,
+// l'autre réduit à un arrêt (campana.json est refusé sans la Tour).
+function slim(s, key) {
+  const camp = key !== undefined;
+  const mode = camp ? KT.latestSave({ length: 1, key: () => key, getItem: () => JSON.stringify(s) }).mode : KT.TOWER_MODE;
+  const stats = modes[mode.stats];
+  const floor = mode.floorOf(s.round);
+  // Compo cible et compo suivante : les 18 prochains combats ; les 6 meilleurs trios de chaque combat gardent leurs
+  // statistiques sur tous ces combats, pour un score identique à celui des données complètes. Tour : boss des étages 196 à 200.
+  const next = KT.nextStops(stats.stops, floor, 18, mode).map(x => x.stop);
+  const stops = stats.stops.filter(x => {
     const f = Number(x.stop.split(':')[0]);
-    return next.includes(x.stop) || (f >= 196 && f <= 200);
+    return next.includes(x.stop) || (!camp && f >= 196 && f <= 200);
   });
-  const played = torre.cores.filter(c => next.includes(c.stop) && c.n >= 20);
+  const played = stats.cores.filter(c => next.includes(c.stop) && c.n >= 20);
   const best = new Set(next.flatMap(st => played.filter(c => c.stop === st).sort((a, b) => b.lo - a.lo).slice(0, 6).map(c => `${c.core}`)));
+  const boss = KT.nextBossStop(stats.stops, floor, mode)?.stop;
   const cores = [...played.filter(c => best.has(`${c.core}`)),
-    ...['60:zapdos', '200:mewtwo2'].flatMap(st => KT.topCores(torre.cores, st))];
+    ...(camp ? [boss] : ['60:zapdos', '200:mewtwo2']).flatMap(st => KT.topCores(stats.cores, st))];
   const lines = new Set([...cores.flatMap(c => c.core), ...s.shop, ...Object.values(s.units).map(u => u.line)].map(KT.baseLine));
+  const slimmed = {
+    rules: stats.rules, from: stats.from, to: stats.to, stops, cores: [...new Map(cores.map(c => [`${c.stop}|${c.core}`, c])).values()],
+    lines: stats.lines.filter(l => lines.has(KT.baseLine(l.line))),
+    stars: stats.stars.filter(x => lines.has(KT.baseLine(x.line))),
+    // Tous les objets portés par ces lignées : le profil de chaque lignée (lineProfiles) se lit sur eux.
+    holders: stats.holders.filter(h => lines.has(KT.baseLine(h.line))),
+  };
+  const torre = camp ? { ...modes.torre, stops: modes.torre.stops.slice(0, 1), cores: [], lines: [], stars: [], holders: [] } : slimmed;
   return {
-    torre: {
-      rules: torre.rules, from: torre.from, to: torre.to, stops, cores: [...new Map(cores.map(c => [`${c.stop}|${c.core}`, c])).values()],
-      lines: torre.lines.filter(l => lines.has(KT.baseLine(l.line))),
-      stars: torre.stars.filter(s => lines.has(KT.baseLine(s.line))),
-      // Tous les objets portés par ces lignées : le profil de chaque lignée (lineProfiles) se lit sur eux.
-      holders: torre.holders.filter(h => lines.has(KT.baseLine(h.line))),
-    },
+    modes: camp ? { torre, camp: slimmed } : { torre },
     data: {
       ...data, lines: Object.fromEntries([...lines].filter(b => data.lines[b]).map(b => [b, data.lines[b]])),
       seals: {},
@@ -81,7 +98,8 @@ function slim(s) {
 
 const card = (name, cost) => `<div class="cardwrap"><button class="card"><span class="cname">${name}</span><span class="cost">${cost}</span></button></div>`;
 const decor = (s, modal) => `
-<div class="topbar"><div class="rtrack tw"><span class="st-place-l">Étage ${s.round - 999}</span></div></div>
+<div class="topbar">${s.mode === 'campaign' ? `<div class="rtrack ph-gyms"><span>Combat ${s.round + 1}</span></div>`
+  : `<div class="rtrack tw"><span class="st-place-l">Étage ${s.round - 999}</span></div>`}</div>
 <div class="bottom">
   <div class="items">${s.items.map((id, i) => `<div class="it-slot" data-islot="${i}">${lang.items[id]?.name ?? id}</div>`).join('')}</div>
   <div class="bench">${s.bench.map(id => `<div class="slot">${id ? KT.namer(lang).line(s.units[id].line) : ''}</div>`).join('')}</div>
@@ -105,12 +123,13 @@ const STYLE = `body{margin:0;min-height:100vh;background:#2b3a2a;color:#eef1ff;f
 
 mkdirSync(`${root}build`, { recursive: true });
 for (const [name, s] of Object.entries(STATES)) {
-  const api = slim(s.save ?? S57);
-  const payload = { [KT.SOURCES.torre]: { v: 1, modes: { torre: api.torre } }, [KT.SOURCES.data]: api.data, [KT.SOURCES.lang]: api.lang };
+  const api = slim(s.save ?? S57, s.key);
+  const payload = { [KT.SOURCES.stats]: { v: 1, modes: api.modes }, [KT.SOURCES.data]: api.data, [KT.SOURCES.lang]: api.lang };
   const stub = `
-const store = new Map(${JSON.stringify([...(s.save ? [[KT.SAVE_KEY, JSON.stringify(s.save)]] : []), ...(s.ui ? [[KT.UI_KEY, JSON.stringify(s.ui)]] : [])])});
+const store = new Map(${JSON.stringify([...(s.save ? [[s.key ?? 'kanto-tactics-save-tower', JSON.stringify(s.save)]] : []), ...(s.ui ? [[KT.UI_KEY, JSON.stringify(s.ui)]] : [])])});
 Object.defineProperty(window, 'localStorage', { configurable: true, value: {
-  getItem: k => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) } });
+  getItem: k => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)),
+  get length() { return store.size; }, key: i => [...store.keys()][i] ?? null } });
 const cacheStore = new Map();
 Object.defineProperty(window, 'caches', { configurable: true, value: { open: async () => ({
   match: async url => cacheStore.get(url)?.clone(), put: async (url, res) => { cacheStore.set(url, res); } }) } });
