@@ -1,5 +1,6 @@
 'use strict';
-// Fixtures : extraits réduits de l'API publique (campana.json : stops, trios des étages 5, 35–105 et 200, lines, holders n ≥ 20 ;
+// Fixtures : extraits réduits de l'API publique (campana.json : stops, trios des étages 5, 35–105 et 200, holders n ≥ 20, et
+// lines et stars, avec l'écart de victoire d, de la copie du 10 novembre 2026 ;
 // data.json et lang.json?lang=fr : champs utilisés) et une sauvegarde Tour v11 d'une partie de test.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -65,6 +66,10 @@ test('forme des données : Tour, données de jeu, langue', () => {
   assert.equal(KT.isTowerData({ ...torre, stops: [ok, null] }), false);
   assert.equal(KT.isTowerData({ ...torre, stops: [ok, { ...ok, stop: 'brock' }] }), false);
   assert.equal(KT.isTowerData({ ...torre, cores: [null] }), false);
+  // L'écart de victoire d (lines, stars) entre dans les notes : sans lui, le format a changé.
+  assert.equal(KT.isTowerData({ ...torre, lines: [{ line: 'abra', n: 500, lo: 60 }] }), false);
+  assert.equal(KT.isTowerData({ ...torre, stars: undefined }), false);
+  assert.equal(KT.isTowerData({ ...torre, stars: [{ line: 'abra', star: 2, n: 500 }] }), false);
   assert.equal(KT.isGameData(data), true);
   assert.equal(KT.isGameData({ ...data, recipes: [['a', 'b']] }), false);
   assert.equal(KT.isGameData({ ...data, lines: { abra: { c: 1 } } }), false);
@@ -201,8 +206,9 @@ test('compléments : possédés par puissance (coût, étoiles) et types, boutiq
   const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
   const trio = { stop: '10:brock', core: ['pidgey', 'spearow', 'abra'], n: 50, win: 90, lo: 80 };
   const units = (...list) => Object.fromEntries(list.map(([line, star]) => [line, { id: line, line, star }]));
+  // Sans statistiques de lignée, aucun coût n'est décalé : la note est la puissance seule.
   const comp = (level, own, shop, cores = [trio]) => {
-    const t = KT.targetComp({ ...torre, stops, cores }, data,
+    const t = KT.targetComp({ ...torre, stops, cores, lines: [] }, data,
       KT.readGame({ ...save, round: 1009, level, units: own, board: Object.fromEntries(Object.keys(own).map((id, i) => [28 + i, id])), bench: [], shop }), null);
     return [t.fillers, t.upgrades, t.replaced];
   };
@@ -219,6 +225,31 @@ test('compléments : possédés par puissance (coût, étoiles) et types, boutiq
   assert.deepEqual(comp(5, units(['rattata', 1]), ['doduo']), [['rattata', 'doduo'], [], []]);
   assert.deepEqual(comp(4, {}, ['clefairy', 'meowth']), [['clefairy'], [], []]);
   assert.deepEqual(comp(4, {}, ['clefairy', 'meowth'], [trio, { ...trio, core: ['meowth', 'abra', 'pidgey'] }]), [['meowth'], [], []]);
+});
+
+test('compléments : l’écart de victoire de la lignée, rétréci par 400 combats fictifs, décale son coût d’un cran par 5 points', () => {
+  const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
+  const cores = [{ stop: '10:brock', core: ['pidgey', 'spearow', 'abra'], n: 50, win: 90, lo: 80 }];
+  const stat = (line, d, n) => ({ line, n, win: 80, lo: 79, d });
+  const comp = (lines, own, shop = []) => {
+    const t = KT.targetComp({ ...torre, stops, cores, lines }, data, KT.readGame({
+      ...save, round: 1009, level: 4, units: own, board: Object.fromEntries(Object.keys(own).map((id, i) => [28 + i, id])), bench: [], shop,
+    }), null);
+    return [t.fillers, t.upgrades];
+  };
+  const own = (...list) => Object.fromEntries(list.map(([id, line, star]) => [id, { id, line, star }]));
+  // Chenipan (coût 1) et Mimitoss (coût 2) n'ont aucun type du trio. Chenipan à +11 sur 4 000 combats (10 rétréci) gagne deux
+  // coûts (1,7) et passe devant Mimitoss sans statistiques (1,35) ; sur 40 combats, +11 ne rétrécit qu'à 1 : aucun décalage.
+  const pair = own(['c', 'caterpie', 1], ['v', 'venonat', 1]);
+  assert.deepEqual(comp([stat('caterpie', 11, 4000)], pair), [['caterpie'], []]);
+  assert.deepEqual(comp([stat('caterpie', 11, 40)], pair), [['venonat'], []]);
+  // Un coût 1 ★★ neutre (1,9) reste devant un coût 2 ★ fort (coût 3 : 1,7).
+  assert.deepEqual(comp([stat('venonat', 6, 4000)], own(['c', 'caterpie', 2], ['v', 'venonat', 1])), [['caterpie'], []]);
+  // Une forme ancrée possédée est notée sur ses propres statistiques, pas sur celles de sa lignée de base.
+  const anchored = [stat('caterpie', -11, 4000), stat('caterpie-a0', 11, 4000)];
+  assert.deepEqual(comp(anchored, own(['c', 'caterpie-a0', 1], ['v', 'venonat', 1])), [['caterpie'], []]);
+  // Une carte de boutique est notée sur sa lignée de base : Chenipan fort est conseillé à la place de Mimitoss possédé.
+  assert.deepEqual(comp([stat('caterpie', 11, 4000)], own(['v', 'venonat', 1]), ['caterpie']), [['venonat'], ['caterpie']]);
 });
 
 test('compléments : à l’étage 72, les unités fortes possédées passent avant les coûts 1 de la boutique', () => {
@@ -281,9 +312,11 @@ test('boutique : ★ 3ᵉ copie, cœur et place libre, ◆ si l’or, ✕ hors c
   const nine = advise({ ...S57, level: 9, gold: 60, units: { ...S57.units, ...own }, bench: ['b', 'c', 'e', ...Object.keys(own), null, null] });
   assert.deepEqual([nine.target.upgrades, nine.target.replaced], [['magmar'], ['rattata']]);
   assert.deepEqual(nine.shop.slice(2).map(why), ['opt Si l’or : plus fort que Rattata', 'opt Si l’or : renforce le plateau de la compo', 'no Ignore : hors compo cible']);
-  // Niveau 8, 5 places : Rattata est déjà hors compo, Magmar vaut plus que Carapuce ★★ ; sous le niveau visé, il passe après l'XP.
-  assert.equal(why(advise({ ...S57, level: 8, gold: 60, units: { ...S57.units, ...own }, bench: ['b', 'c', 'e', ...Object.keys(own), null, null] }).shop[2]),
-    'no Ignore : plus fort que Carapuce ; l’or va d’abord à l’XP');
+  // Niveau 8, 5 places : Rattata est déjà hors compo. Sans statistiques, Magmar (coût 3) vaut plus que Carapuce ★★ ; sous le
+  // niveau visé, il passe après l'XP. Avec celles de la fixture, Magmar (écart −4,6) perd un coût et Carapuce (+2,6) en gagne un.
+  const eight = { ...S57, level: 8, gold: 60, units: { ...S57.units, ...own }, bench: ['b', 'c', 'e', ...Object.keys(own), null, null] };
+  assert.equal(why(advise(eight, { torre: { ...torre, lines: [] } }).shop[2]), 'no Ignore : plus fort que Carapuce ; l’or va d’abord à l’XP');
+  assert.equal(why(advise(eight).shop[2]), 'no Ignore : hors compo cible');
   const shiny = advise({ ...S57, shopShiny: [false, false, true, false, false] });
   assert.equal(shiny.shop[2].title, 'Achète Magmar shiny');
 });

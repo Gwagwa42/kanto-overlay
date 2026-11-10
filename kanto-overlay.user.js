@@ -78,6 +78,11 @@ const KT = (() => {
   const COST_POWER = 0.35;
   const STAR_POWER = [1, 1.9, 3.6];
   const TRAIT_WEIGHT = 0.25;
+  // Écart de victoire d'une lignée (lines.d, stars.d : corrigé de la difficulté des combats, pas du niveau des joueurs) rétréci
+  // vers 0 par LINE_PRIOR combats fictifs, le seuil minFlag de l'API. D_PER_COST points d'écart valent un coût : c'est
+  // l'étendue de d entre les lignées d'un même coût (−5,3 à +5,1, novembre 2026).
+  const LINE_PRIOR = 400;
+  const D_PER_COST = 5;
   const MAX_ITEMS = 3;
   // Composants défensifs ; Protéine (Attaque), Calcium (Atq. Spé.) et Carbone (vitesse d'attaque) sont offensifs.
   const DEFENSE = ['hp-up', 'iron', 'zinc'];
@@ -235,7 +240,8 @@ const KT = (() => {
       && t.stops.every(s => typeof s?.stop === 'string' && /^\d+:\w+$/.test(s.stop) && [s.win, s.first, s.tries].every(Number.isFinite))
       && t.stops.some(s => !s.stop.endsWith(':elite'))
       && t.cores.every(c => typeof c?.stop === 'string' && Array.isArray(c.core) && [c.n, c.win, c.lo].every(Number.isFinite))
-      && t.lines.every(l => typeof l?.line === 'string' && Number.isFinite(l.lo))
+      && t.lines.every(l => typeof l?.line === 'string' && [l.n, l.lo, l.d].every(Number.isFinite))
+      && Array.isArray(t.stars) && t.stars.every(s => typeof s?.line === 'string' && [s.star, s.n, s.d].every(Number.isFinite))
       && t.holders.every(h => typeof h?.line === 'string' && typeof h.id === 'string' && [h.n, h.lo].every(Number.isFinite));
   }
 
@@ -366,9 +372,14 @@ const KT = (() => {
     return { gold: game.gold, floor, spend: allIn ? game.gold : Math.max(0, game.gold - floor), allIn, lowHp, retry, nextWall };
   }
 
-  function lineLo(torre, id) {
-    return torre.lines.find(l => l.line === id)?.lo ?? torre.lines.find(l => l.line === baseLine(id))?.lo ?? 0;
-  }
+  // Statistiques de la forme (ancrée ou non), sinon de sa lignée de base ; undefined pour une lignée jamais jouée.
+  const lineStats = (torre, id) => torre.lines.find(l => l.line === id) ?? torre.lines.find(l => l.line === baseLine(id));
+  const lineLo = (torre, id) => lineStats(torre, id)?.lo ?? 0;
+  // Coûts gagnés ou perdus par une forme selon son écart de victoire rétréci ; aucun sans statistiques.
+  const costShift = (torre, id) => {
+    const s = lineStats(torre, id);
+    return s ? Math.round((s.d * s.n) / (s.n + LINE_PRIOR) / D_PER_COST) : 0;
+  };
 
   // Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
   function coreScore(core, stops, coresByStop, game, data) {
@@ -440,8 +451,10 @@ const KT = (() => {
 
   // Compo cible : le meilleur trio, puis fillers, le remplissage jusqu'au niveau par les lignées possédées les mieux notées ;
   // la boutique ne complète que les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une
-  // carte de boutique vaut une ★) et types apportés à la compo ; à égalité, possédée, shiny, puis la plus forte sur ces combats.
-  // upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ; replaced : ces compléments.
+  // carte de boutique vaut une ★), au coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et
+  // types apportés à la compo ; l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte
+  // sur ces combats. upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ;
+  // replaced : ces compléments.
   function targetComp(torre, data, game, previousKey) {
     const stops = nextStops(torre.stops, game.floor, HORIZON);
     const coresByStop = coresAt(torre, stops);
@@ -453,10 +466,12 @@ const KT = (() => {
     const cards = [...new Set(game.shop.filter(Boolean))].filter(b => known(b) && !mine.includes(b));
     const strength = lineStrength(coresByStop, stops);
     const owned = b => Number(bestStar(game, b) > 0);
+    const form = b => unitsOf(game, b).sort((x, y) => y.star - x.star)[0]?.line ?? b;
     // Meilleures lignées de chaque liste, une liste après l'autre, jusqu'au niveau.
     const fill = pools => {
       const chosen = [...core];
-      const score = b => unitPower(lineInfo(data, b).c, Math.max(1, bestStar(game, b))) + TRAIT_WEIGHT * traitGain(data, chosen, b);
+      const score = b => unitPower(lineInfo(data, b).c + costShift(torre, form(b)), Math.max(1, bestStar(game, b)))
+        + TRAIT_WEIGHT * traitGain(data, chosen, b);
       for (const pool of pools) {
         while (chosen.length < game.level) {
           const next = pool
