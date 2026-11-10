@@ -1,7 +1,8 @@
 # kanto-overlay
 
-Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](https://einoow.com/playables/kanto-tactics/) :
-- prochain boss (nom, étage, taux de victoire, taux au premier essai, nombre moyen d'essais) ;
+Panneau flottant, non officiel, pour la **Tour de combat** et la **campagne** (aventure Kanto aux trois difficultés, autres
+aventures) de [Kanto Tactics](https://einoow.com/playables/kanto-tactics/) :
+- prochain boss (nom, étage ou combat, taux de victoire, taux au premier essai, nombre moyen d'essais) ;
 - les 3 meilleurs trios contre ce boss (au moins 20 combats) ;
 - une **compo cible** choisie pour les 9 prochains combats (environ 20 étages) en partant de ton équipe, et des **conseils lus sur
   ta partie** : quoi acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, lesquels retirer, quelle
@@ -10,7 +11,7 @@ Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](ht
   ses ombres s'affichent sur le plateau. Le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos », avant, colonne 4) ;
 - un bouton **Copier la formation** : le même code `KT1;…`, pour le partager ou le coller à la main (Planificateur → Coller un code)
   si l'écriture automatique échoue ;
-- les règles d'or (intérêts, actualisation, shinies) pour la tranche d'étages en cours.
+- les règles d'or (intérêts, actualisation, tout jouer, shinies en Tour) du mode et de la difficulté en cours.
 
 Les conseils apparaissent aussi en **pastilles** sur le jeu : ★ fais-le, ◆ si l'or le permet, ✕ évite. Survoler une pastille (ou la
 sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rien.
@@ -26,10 +27,13 @@ thème sombre, sombres en thème clair) et la zone du porteur dans la formation.
 
 Pages où il s'affiche : les pages d'entrée du jeu, `https://einoow.com/` et `/kanto-tactics`, `/tower`, `/pvp`, `/duo`, `/nuzlocke`
 (avec ou sans `?…`), ainsi que `https://einoow.com/playables/kanto-tactics/…`. Le jeu change de mode sans changer d'adresse : le panneau
-est présent dans tous les modes, les pastilles seulement quand la Tour est affichée.
+est présent dans tous les modes, les pastilles seulement quand la partie conseillée est affichée (barre de progression de la Tour
+ou de la campagne).
 
-La partie est lue dans la sauvegarde Tour du jeu (`localStorage`, clé `kanto-tactics-save-tower`), toutes les 2 s ; sans partie, on
-saisit l'étage avec − / + ou dans le champ. `Alt+K` replie le panneau ; on le déplace par sa barre de titre, et un double-clic sur cette
+La partie est lue toutes les 2 s dans la sauvegarde du jeu (`localStorage`) écrite en dernier (`savedAt`) : Tour
+(`kanto-tactics-save-tower`), Kanto (`kanto-tactics-save`) ou une autre aventure (`kanto-tactics-save-adv-<aventure>`). Le Nuzlocke
+(`kanto-tactics-save-nuzlocke`) n'a pas de conseils : le panneau le dit plutôt que de conseiller la dernière partie Kanto. Sans
+partie, on saisit l'étage (ou le combat) avec − / + ou dans le champ. `Alt+K` replie le panneau ; on le déplace par sa barre de titre, et un double-clic sur cette
 barre le remet en haut à droite.
 
 ## Comment les conseils sont choisis
@@ -115,7 +119,28 @@ barre le remet en haut à droite.
   menu, le panneau invite à copier le code. Si l'interface du jeu a changé, le panneau le signale et le bouton Copier reste.
 - **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny »
   dans la compo cible, ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, et s'écrit `ligne:2s:…` dans
-  le code KT1. Une unité shiny n'est pas proposée à la vente jusqu'à l'étage 120.
+  le code KT1. Une unité shiny n'est pas proposée à la vente : jusqu'à l'étage 120 en Tour, sur toute la campagne.
+
+### Campagne
+
+Mêmes conseils qu'en Tour, sur les combats de l'aventure en cours, avec les règles de la campagne relevées dans le code du jeu :
+- **Combats** : le combat N est la manche N − 1 de la sauvegarde. Les statistiques `modes.camp` mêlent toutes les aventures ; le
+  panneau garde les combats de la tienne (table relevée dans le jeu pour Kanto, Cap sur Cramois'Île et « Je te choisis ! »). Une
+  manche aux variantes tirées au sort (combat 11 : Marin, Gentleman ou Pêcheur) compte chacune selon sa part des combats. Aux
+  4ᵉ, 5ᵉ et 6ᵉ badges, le champion est celui que tu as choisi (`gymOrder`), sinon un de ceux qui restent.
+- **Boss** (Kanto) : les 8 badges, le Conseil 4, le Maître de la Ligue et Mewtwo ; dans les autres aventures, chaque combat.
+- **Économie** : intérêts plafonnés à +4, donc palier de 40 pièces ; 2 XP gratuites par combat, niveau 9 au plus. Niveaux visés
+  (choix de jeu, d'après la taille des équipes des champions) : 4 dès le combat 4, 5 dès 8, 6 dès 12, 7 dès 16, 8 dès 24, 9 dès 30.
+  Sur un combat obligatoire (badge, Ligue, boss), une deuxième défaite ne rapporte plus d'intérêts : un combat rejoué se joue à fond
+  dès le premier échec. Ni bénédiction ni sceau.
+- **Difficulté** : lue dans la sauvegarde (Normal, Vétéran, Légende) et affichée en tête du panneau. Les taux de l'API mêlent les
+  trois ; en Vétéran (rivaux +5 % à toutes les stats, équipes variées, objets) et en Légende (as à une étoile de plus, objets
+  combinés, boucliers et rage des boss), le panneau retire 10 puis 20 points au taux de chaque combat : « tout jouer » sous 55 puis
+  65 %, poids des combats dans la compo cible relevés d'autant, niveaux visés avancés d'un puis de deux combats. Ces écarts sont un
+  choix de jeu : aucune statistique publique ne sépare les difficultés.
+- **Aventures sans statistiques** (Parc Safari, Nuit à Lavanville, Team Rocket : le jeu charge leurs manches par un module chiffré)
+  : compo sans trio, faite de tes meilleures unités puis de la boutique, avec objets, formation et Planificateur.
+- **Planificateur** : le code est écrit en mode aventure (`xm=adv`).
 
 ## Installation (Firefox)
 
@@ -126,7 +151,7 @@ barre le remet en haut à droite.
 ## Données
 
 Data: Kanto Tactics · [einoow.com](https://einoow.com) — API publique `https://einoow.com/api/meta/kanto/` : `campana.json`
-(statistiques de la Tour), `data.json` (lignées, objets, recettes, types, sceaux), `lang.json?lang=fr` (noms et effets des objets, sceaux,
+(statistiques de la Tour et de la campagne), `data.json` (lignées, objets, recettes, types, sceaux), `lang.json?lang=fr` (noms et effets des objets, sceaux,
 types). Conformément à ses conditions, chaque source est gardée **une heure** dans le Cache Storage du navigateur, puis revalidée
 (`ETag`) ; en cas d'erreur, la dernière copie sert et le pied du panneau en donne la date.
 
@@ -140,13 +165,16 @@ spécial reste lu sur les objets : en v41, une quinzaine de lignées (Staross, S
 selon la stat que leur donnent leurs objets, alors que `data.json` (règles 40) leur prête une seule attaque.
 La courbe de niveaux visés est un choix de jeu : aucune statistique publique ne donne le niveau des joueurs en Tour. La liste des
 shinies à saisir par tranche d'étages vient d'un guide et n'est pas vérifiée.
+`modes.camp` ne dit ni l'aventure ni la difficulté d'un combat (`difficulty: "todas"`) : deux aventures qui partagent un arrêt
+(`1:Pokémon salvajes`, `9:Pokémon salvajes` pour Kanto et « Je te choisis ! ») y sont confondues, et la table des arrêts de Cap sur
+Cramois'Île et de « Je te choisis ! » ne couvre que les manches relevées dans le code du jeu.
 
 Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pokémon Company.
 
 ## Développement
 
 ```sh
-node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur
+node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur, campagne
 node scripts/preview.mjs   # pages d'aperçu par état dans build/, puis la commande de rendu imprimée
 ```
 
