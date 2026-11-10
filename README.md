@@ -73,16 +73,28 @@ barre le remet en haut à droite.
      haut est annoncée (« Kabuto (coût 4 : 12 %) au niveau 7 : à chercher au niveau 8 ») ; un coût 1 ou 2, qui sort de moins en moins, ne donne aucun conseil.
   5. Les ◆ de la compo suivante.
   6. L'XP avec ce qui reste, jusqu'au niveau maximal (9, puis 10 à partir de l'étage 60).
-- **Profil de chaque lignée** : lu sur les objets qu'elle porte dans le mode (Tour ou campagne). Elle est tank si la moitié au moins de leurs composants
-  sont défensifs (PV Plus, Fer, Zinc), spéciale si le Calcium l'emporte sur la Protéine, physique sinon. Exemples : Ronflex et Machop
-  tanks, Minidraco et Caninos attaquants physiques, Abra et Goupix attaquants spéciaux.
-- **Objets** : un objet ne va qu'à un Pokémon à qui il convient. Jamais un objet d'Atq. Spé. à un physique ni d'Attaque à un spécial
-  (les objets mixtes, comme Orbe Vie et Lentilscope, vont aux deux) ; au moins la moitié de défensif pour un tank, d'offensif pour
-  un attaquant. Les composants pris en compte sont ceux qui donnent ses stats à l'objet (Casque Brut : PV et Défense).
+- **Profil de chaque lignée** : tank ou attaquant, et les stats d'attaque qui la servent.
+  - Tank : lu sur les objets qu'elle porte dans le mode (Tour ou campagne), quand la moitié au moins de leurs composants sont
+    défensifs (PV Plus, Fer, Zinc). Exemples en Tour : Ronflex et Machop.
+  - Stats d'attaque : lues dans `data.json`, selon les règles du jeu. L'Attaque porte les attaques de base de tous les Pokémon
+    et les capacités physiques ; l'Atq. Spé. porte les capacités spéciales, les soins et les boucliers. L'Atq. Spé. sert une
+    lignée dont une capacité la suit. L'Attaque sert une lignée dont une capacité la suit, ou dont les attaques de base
+    comptent : son Attaque égale ou dépasse son Atq. Spé. à un stade au moins. Mystherbe, Abra et Goupix sont des lanceurs
+    (capacité spéciale, Attaque plus faible) : seule l'Atq. Spé. les sert. Minidraco et Machop ne sont servis que par
+    l'Attaque ; Carapuce, tireur à capacité spéciale, par les deux.
+  - Lignée à deux formes (Salamèche, Caninos, Stari, Sulfura… : capacité physique ou spéciale selon la stat que ses objets
+    lui donnent le plus) : une seule stat la sert, celle que les joueurs lui donnent le plus dans le mode. Des objets des deux
+    stats la feraient changer de capacité.
+- **Objets** : un objet ne va qu'à un Pokémon à qui il convient. S'il donne de l'Attaque ou de l'Atq. Spé., l'une des deux doit
+  servir la lignée (Orbe Vie donne les deux, il va à tous). Le critique de Lentilscope ne touche que les attaques de base et
+  les capacités qui le disent : il ne va pas à un lanceur. Au moins la moitié de défensif pour un tank, d'offensif pour un
+  attaquant. Les composants pris en compte sont ceux qui donnent ses stats à l'objet (Casque Brut : PV et Défense).
   - Pose : chaque Pokémon de la compo ne reçoit que ses objets idéaux, les 3 meilleurs couples Pokémon/objet de sa lignée dans le mode
     qui conviennent à son profil. L'objet complet, ou un composant de l'une de ces recettes, va tout de suite sur lui. Un
     composant seul donne déjà son effet et fusionne sur le Pokémon avec le suivant ; deux composants du sac pour le même Pokémon
-    sont donnés en paire, avec l'ordre de pose quand il compte. Un objet complet idéal de plusieurs Pokémon va à celui qui le
+    sont donnés en paire, avec l'ordre de pose quand il compte. Un composant dont la stat d'attaque ne sert pas le Pokémon ne
+    se pose pas seul : il attend au sac l'autre composant de la recette (« Garde Protéine — pour Goupix, avec Calcium : Orbe
+    Vie »). Un objet complet idéal de plusieurs Pokémon va à celui qui le
     classe le plus haut ; un composant, au premier dans l'ordre porteur, tanks, attaquants. 3 objets au plus. Un objet idéal
     qu'un Pokémon de la compo ne peut pas recevoir attend au sac pour lui, avant toute lignée à venir, avec la raison : plus de
     place, après l'Aimant, composant seul à fusionner d'abord, ou bloqué par un composant seul hors de ses recettes. Le reste
@@ -163,12 +175,13 @@ types). Conformément à ses conditions, chaque source est gardée **une heure**
 
 L'API publique s'arrête aux règles 40 alors que la Tour tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
 le script (seuils d'XP, 1 XP gratuite par étage, chances de chaque coût en boutique par niveau, plafond d'intérêts, intérêts perdus
-sur une deuxième défaite au même étage, voies et noms des bénédictions, coût, types et portée de 24 lignées, effet d'un shiny :
+sur une deuxième défaite au même étage, voies et noms des bénédictions, coût, types, portée et stats d'attaque utiles de 24 lignées, effet d'un shiny :
 +10 % de PV, dégâts et défenses, transmis par la fusion). La puissance d'une unité et le seuil de 15 % sont ceux des robots du jeu.
 L'écart de victoire `d` corrige la difficulté du combat, pas le niveau du joueur : une lignée que choisissent surtout les bons
-joueurs paraît plus forte qu'elle n'est, d'où le décalage borné à un cran et les 400 combats fictifs. Le profil physique ou
-spécial reste lu sur les objets : en v41, une quinzaine de lignées (Staross, Salamèche, Caninos, Sulfura…) changent d'attaque
-selon la stat que leur donnent leurs objets, alors que `data.json` (règles 40) leur prête une seule attaque.
+joueurs paraît plus forte qu'elle n'est, d'où le décalage borné à un cran et les 400 combats fictifs. L'API ne publie
+ni le rôle d'une lignée (mage, tireur, tank…) ni les capacités qui peuvent être critiques. Que ses attaques de base comptent se
+lit donc sur ses stats (Attaque au moins égale à l'Atq. Spé. à un stade), ce qui sépare mages et soutiens des autres rôles du
+jeu en novembre 2026, et le critique n'est compté que pour les attaques de base.
 La courbe de niveaux visés est un choix de jeu : aucune statistique publique ne donne le niveau des joueurs en Tour. La liste des
 shinies à saisir par tranche d'étages vient d'un guide et n'est pas vérifiée.
 `modes.camp` ne dit ni l'aventure ni la difficulté d'un combat (`difficulty: "todas"`) : deux aventures qui partagent un arrêt
