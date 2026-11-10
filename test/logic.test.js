@@ -1,6 +1,6 @@
 'use strict';
-// Fixtures : extraits réduits de l'API publique (campana.json : stops, trios des étages 5, 35–105 et 200, holders n ≥ 20, et
-// lines et stars, avec l'écart de victoire d, de la copie du 10 novembre 2026 ;
+// Fixtures : extraits réduits de l'API publique (campana.json : stops, trios des étages 5, 35–105 et 200 et holders n ≥ 20 de la
+// copie du 31 octobre au 4 novembre 2026 ; lines et stars, avec l'écart de victoire d, de celle du 31 octobre au 8 novembre ;
 // data.json et lang.json?lang=fr : champs utilisés) et une sauvegarde Tour v11 d'une partie de test.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -66,10 +66,10 @@ test('forme des données : Tour, données de jeu, langue', () => {
   assert.equal(KT.isTowerData({ ...torre, stops: [ok, null] }), false);
   assert.equal(KT.isTowerData({ ...torre, stops: [ok, { ...ok, stop: 'brock' }] }), false);
   assert.equal(KT.isTowerData({ ...torre, cores: [null] }), false);
-  // L'écart de victoire d (lines, stars) entre dans les notes : sans lui, le format a changé.
-  assert.equal(KT.isTowerData({ ...torre, lines: [{ line: 'abra', n: 500, lo: 60 }] }), false);
+  // Écarts de victoire lus dans les notes (lines : d sur ne combats ; stars : intervalle et taux attendu) : sans eux, le format a changé.
+  assert.equal(KT.isTowerData({ ...torre, lines: [{ line: 'abra', n: 500, ne: 400, lo: 60 }] }), false);
   assert.equal(KT.isTowerData({ ...torre, stars: undefined }), false);
-  assert.equal(KT.isTowerData({ ...torre, stars: [{ line: 'abra', star: 2, n: 500 }] }), false);
+  assert.equal(KT.isTowerData({ ...torre, stars: [{ line: 'abra', star: 2, lo: 60, hi: 70 }] }), false);
   assert.equal(KT.isGameData(data), true);
   assert.equal(KT.isGameData({ ...data, recipes: [['a', 'b']] }), false);
   assert.equal(KT.isGameData({ ...data, lines: { abra: { c: 1 } } }), false);
@@ -227,10 +227,10 @@ test('compléments : possédés par puissance (coût, étoiles) et types, boutiq
   assert.deepEqual(comp(4, {}, ['clefairy', 'meowth'], [trio, { ...trio, core: ['meowth', 'abra', 'pidgey'] }]), [['meowth'], [], []]);
 });
 
-test('compléments : l’écart de victoire de la lignée, rétréci par 400 combats fictifs, décale son coût d’un cran par 5 points', () => {
+test('compléments : l’écart de victoire rétréci (400 combats fictifs) décale le coût d’un cran, dès 2,5 points', () => {
   const stops = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
   const cores = [{ stop: '10:brock', core: ['pidgey', 'spearow', 'abra'], n: 50, win: 90, lo: 80 }];
-  const stat = (line, d, n) => ({ line, n, win: 80, lo: 79, d });
+  const stat = (line, d, ne) => ({ line, n: ne, ne, win: 80, lo: 79, d });
   const comp = (lines, own, shop = []) => {
     const t = KT.targetComp({ ...torre, stops, cores, lines }, data, KT.readGame({
       ...save, round: 1009, level: 4, units: own, board: Object.fromEntries(Object.keys(own).map((id, i) => [28 + i, id])), bench: [], shop,
@@ -238,18 +238,30 @@ test('compléments : l’écart de victoire de la lignée, rétréci par 400 com
     return [t.fillers, t.upgrades];
   };
   const own = (...list) => Object.fromEntries(list.map(([id, line, star]) => [id, { id, line, star }]));
-  // Chenipan (coût 1) et Mimitoss (coût 2) n'ont aucun type du trio. Chenipan à +11 sur 4 000 combats (10 rétréci) gagne deux
-  // coûts (1,7) et passe devant Mimitoss sans statistiques (1,35) ; sur 40 combats, +11 ne rétrécit qu'à 1 : aucun décalage.
+  // Chenipan (coût 1), Mimitoss (coût 2) et Scarabrute (coût 3) n'ont aucun type du trio. Sur 4 000 combats, ±6 rétrécit à
+  // ±5,5 : Chenipan fort (coût 2 : 1,35) passe devant Mimitoss faible (coût 1 : 1). Sur 40 combats, ±6 rétrécit à ±0,5 :
+  // aucun décalage.
+  const weak = stat('venonat', -6, 4000);
   const pair = own(['c', 'caterpie', 1], ['v', 'venonat', 1]);
-  assert.deepEqual(comp([stat('caterpie', 11, 4000)], pair), [['caterpie'], []]);
-  assert.deepEqual(comp([stat('caterpie', 11, 40)], pair), [['venonat'], []]);
+  assert.deepEqual(comp([stat('caterpie', 6, 4000), weak], pair), [['caterpie'], []]);
+  assert.deepEqual(comp([stat('caterpie', 6, 40), stat('venonat', -6, 40)], pair), [['venonat'], []]);
+  // Un cran au plus : Chenipan à +30 vaut un coût 2 (1,35), pas plus que Scarabrute neutre (1,7).
+  assert.deepEqual(comp([stat('caterpie', 30, 4000)], own(['c', 'caterpie', 1], ['p', 'pinsir', 1])), [['pinsir'], []]);
   // Un coût 1 ★★ neutre (1,9) reste devant un coût 2 ★ fort (coût 3 : 1,7).
   assert.deepEqual(comp([stat('venonat', 6, 4000)], own(['c', 'caterpie', 2], ['v', 'venonat', 1])), [['caterpie'], []]);
-  // Une forme ancrée possédée est notée sur ses propres statistiques, pas sur celles de sa lignée de base.
-  const anchored = [stat('caterpie', -11, 4000), stat('caterpie-a0', 11, 4000)];
+  // Forme ancrée possédée : ses statistiques, rétrécies vers celles de sa lignée de base. Bien jouée (4 000 combats), elle
+  // garde son signe ; peu jouée (40 combats à +30), elle reste près de sa base faible ; sans ligne propre, elle prend sa base.
+  const anchored = [stat('caterpie', -6, 4000), stat('caterpie-a0', 11, 4000), weak];
   assert.deepEqual(comp(anchored, own(['c', 'caterpie-a0', 1], ['v', 'venonat', 1])), [['caterpie'], []]);
+  assert.deepEqual(comp([stat('caterpie', -6, 4000), stat('caterpie-a1', 30, 40)], own(['c', 'caterpie-a1', 1], ['v', 'venonat', 1])), [['venonat'], []]);
+  assert.deepEqual(comp([stat('caterpie', 6, 4000), weak], own(['c', 'caterpie-a1', 1], ['v', 'venonat', 1])), [['caterpie'], []]);
+  // Deux copies de même étoile, ancrée et non : l'identifiant (ici la forme non ancrée, faible) choisit, quel que soit
+  // l'ordre des copies sur le plateau.
+  const both = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1], ['v', 'venonat', 1]];
+  assert.deepEqual(comp(anchored, own(...both)), [['venonat'], []]);
+  assert.deepEqual(comp(anchored, own(...[...both].reverse())), [['venonat'], []]);
   // Une carte de boutique est notée sur sa lignée de base : Chenipan fort est conseillé à la place de Mimitoss possédé.
-  assert.deepEqual(comp([stat('caterpie', 11, 4000)], own(['v', 'venonat', 1]), ['caterpie']), [['venonat'], ['caterpie']]);
+  assert.deepEqual(comp([stat('caterpie', 6, 4000), weak], own(['v', 'venonat', 1]), ['caterpie']), [['venonat'], ['caterpie']]);
 });
 
 test('compléments : à l’étage 72, les unités fortes possédées passent avant les coûts 1 de la boutique', () => {
@@ -408,19 +420,23 @@ test('or en trop : XP quand rien n’est à chercher, puis ★★★ du trio au 
   assert.equal(why(ten.reroll), 'do Actualise : cherche Miaouss de Giovanni (coût 5 : 20 %), Smogo de Koga (coût 5 : 20 %), Scarabrute du Samouraï (coût 5 : 20 %) au niveau 10');
 });
 
-test('niveau maximal : pas de ★★★ cherchée pour une lignée du trio qu’elle ne renforce pas (au moins 400 combats par étoile)', () => {
-  const giovanni = (n, three) => ({ torre: { ...torre, stars: [...torre.stars.filter(s => s.line !== 'giovanni'),
-    { line: 'giovanni', star: 2, n, d: 1 }, { line: 'giovanni', star: 3, n, d: three }] }, ...LATE_TRIO });
+test('niveau maximal : pas de ★★★ cherchée pour une lignée du trio qu’elle affaiblit nettement (intervalles disjoints)', () => {
+  // Écart de victoire d ± demi-largeur de l'intervalle à 95 %, autour d'un taux attendu de 70 %.
+  const star = (n, d, half) => ({ line: 'giovanni', star: n, n: 1000, win: 70 + d, lo: 70 + d - half, hi: 70 + d + half, exp: 70, d });
+  const giovanni = (...stars) => ({ torre: { ...torre, stars: [...torre.stars.filter(s => s.line !== 'giovanni'), ...stars] }, ...LATE_TRIO });
   const others = 'Smogo de Koga (coût 5 : 20 %), Scarabrute du Samouraï (coût 5 : 20 %) au niveau 10';
-  const ten = advise(late(10), giovanni(500, 1));
+  const all = `do Actualise : cherche Miaouss de Giovanni (coût 5 : 20 %), ${others}`;
+  // ★★ à +4 ± 1, ★★★ à 0 ± 1 : au mieux +1 contre au moins +3.
+  const clear = giovanni(star(2, 4, 1), star(3, 0, 1));
+  const ten = advise(late(10), clear);
   assert.deepEqual(ten.target.flat, ['giovanni']);
   assert.equal(why(ten.reroll), `do Actualise : cherche ${others}`);
-  // Moins de 400 combats à une étoile, ou un gain : la ★★★ se cherche.
-  assert.equal(why(advise(late(10), giovanni(300, 0)).reroll), `do Actualise : cherche Miaouss de Giovanni (coût 5 : 20 %), ${others}`);
-  assert.deepEqual(advise(late(10), giovanni(500, 2)).target.flat, []);
+  // Intervalles qui se chevauchent (± 2,5), ou ★★★ sans statistiques : la ★★★ se cherche.
+  assert.equal(why(advise(late(10), giovanni(star(2, 4, 2.5), star(3, 0, 2.5))).reroll), all);
+  assert.deepEqual(advise(late(10), giovanni(star(2, 4, 1))).target.flat, []);
   // Deux copies ★★ : la 3ᵉ donne la ★★★ sans actualisation dédiée, elle reste cherchée.
   const pair = late(10, { units: { ...late(10).units, g2: { id: 'g2', line: 'giovanni', star: 2 } }, bench: ['g2', ...Array(8).fill(null)] });
-  assert.equal(why(advise(pair, giovanni(500, 1)).reroll), `do Actualise : cherche Miaouss de Giovanni (coût 5 : 20 %), ${others}`);
+  assert.equal(why(advise(pair, clear).reroll), all);
 });
 
 test('actualiser : lignée introuvable à ce niveau → XP ; fusion à une copie cherchée', () => {

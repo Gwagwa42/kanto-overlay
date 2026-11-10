@@ -78,9 +78,11 @@ const KT = (() => {
   const COST_POWER = 0.35;
   const STAR_POWER = [1, 1.9, 3.6];
   const TRAIT_WEIGHT = 0.25;
-  // Écart de victoire d'une lignée (lines.d, stars.d : corrigé de la difficulté des combats, pas du niveau des joueurs) rétréci
-  // vers 0 par LINE_PRIOR combats fictifs, le seuil minFlag de l'API. D_PER_COST points d'écart valent un coût : c'est
-  // l'étendue de d entre les lignées d'un même coût (−5,3 à +5,1, novembre 2026).
+  // Écart de victoire d'une forme (lines.d = win − exp, corrigé de la difficulté des combats, pas du niveau des joueurs) rétréci
+  // par LINE_PRIOR combats fictifs, le seuil minFlag de l'API, compté comme elle sur ne (combats qui ont un taux attendu).
+  // D_PER_COST points valent un coût, arrondi (un cran dès 2,5 points) et borné à un cran : c'est la demi-étendue de d entre
+  // les lignées d'un même coût (−5,3 à +5,1, novembre 2026), dont les extrêmes gagnent ou perdent ainsi un coût. Au-delà
+  // d'un cran, un biais de sélection (qui joue la lignée) pèserait autant que le coût.
   const LINE_PRIOR = 400;
   const D_PER_COST = 5;
   const MAX_ITEMS = 3;
@@ -240,8 +242,8 @@ const KT = (() => {
       && t.stops.every(s => typeof s?.stop === 'string' && /^\d+:\w+$/.test(s.stop) && [s.win, s.first, s.tries].every(Number.isFinite))
       && t.stops.some(s => !s.stop.endsWith(':elite'))
       && t.cores.every(c => typeof c?.stop === 'string' && Array.isArray(c.core) && [c.n, c.win, c.lo].every(Number.isFinite))
-      && t.lines.every(l => typeof l?.line === 'string' && [l.n, l.lo, l.d].every(Number.isFinite))
-      && Array.isArray(t.stars) && t.stars.every(s => typeof s?.line === 'string' && [s.star, s.n, s.d].every(Number.isFinite))
+      && t.lines.every(l => typeof l?.line === 'string' && [l.lo, l.ne, l.d].every(Number.isFinite))
+      && Array.isArray(t.stars) && t.stars.every(s => typeof s?.line === 'string' && [s.star, s.lo, s.hi, s.exp].every(Number.isFinite))
       && t.holders.every(h => typeof h?.line === 'string' && typeof h.id === 'string' && [h.n, h.lo].every(Number.isFinite));
   }
 
@@ -372,20 +374,33 @@ const KT = (() => {
     return { gold: game.gold, floor, spend: allIn ? game.gold : Math.max(0, game.gold - floor), allIn, lowHp, retry, nextWall };
   }
 
-  // Statistiques de la forme (ancrée ou non), sinon de sa lignée de base ; undefined pour une lignée jamais jouée.
-  const lineStats = (torre, id) => torre.lines.find(l => l.line === id) ?? torre.lines.find(l => l.line === baseLine(id));
-  const lineLo = (torre, id) => lineStats(torre, id)?.lo ?? 0;
-  // Coûts gagnés ou perdus par une forme selon son écart de victoire rétréci ; aucun sans statistiques.
-  const costShift = (torre, id) => {
-    const s = lineStats(torre, id);
-    return s ? Math.round((s.d * s.n) / (s.n + LINE_PRIOR) / D_PER_COST) : 0;
-  };
-  // ★★★ sans gain mesuré sur ★★ pour cette forme exacte (identifiant du trio) : écart ≤ 0, au moins LINE_PRIOR combats à
-  // chaque étoile. Sans ces données, la ★★★ se cherche.
+  function lineLo(torre, id) {
+    return torre.lines.find(l => l.line === id)?.lo ?? torre.lines.find(l => l.line === baseLine(id))?.lo ?? 0;
+  }
+
+  // Écart de victoire rétréci d'une forme : vers 0 pour la lignée de base, vers celui de sa lignée de base pour une forme
+  // ancrée, souvent peu jouée ; 0 sans statistiques.
+  function shrunkGap(torre, id) {
+    const shrink = (s, prior) => (s.d * s.ne + prior * LINE_PRIOR) / (s.ne + LINE_PRIOR);
+    const find = line => torre.lines.find(l => l.line === line);
+    const base = find(baseLine(id));
+    const prior = base ? shrink(base, 0) : 0;
+    const own = id === baseLine(id) ? undefined : find(id);
+    return own ? shrink(own, prior) : prior;
+  }
+
+  // Coût gagné ou perdu (un cran au plus, arrondi symétrique) par une forme selon son écart de victoire rétréci.
+  function costShift(torre, id) {
+    const gap = shrunkGap(torre, id);
+    return Math.sign(gap) * Math.min(1, Math.round(Math.abs(gap) / D_PER_COST));
+  }
+
+  // ★★★ nettement moins forte que ★★ pour cette forme exacte (identifiant du trio) : intervalles à 95 % de l'API disjoints,
+  // ramenés à l'écart de victoire (taux − attendu). Sans statistiques aux deux étoiles, la ★★★ se cherche.
   function flatThirdStar(torre, id) {
-    const at = star => torre.stars.find(s => s.line === id && s.star === star && s.n >= LINE_PRIOR);
+    const at = star => torre.stars.find(s => s.line === id && s.star === star);
     const [two, three] = [at(2), at(3)];
-    return Boolean(two && three) && three.d <= two.d;
+    return Boolean(two && three) && three.hi - three.exp < two.lo - two.exp;
   }
 
   // Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
@@ -461,7 +476,7 @@ const KT = (() => {
   // carte de boutique vaut une ★), au coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et
   // types apportés à la compo ; l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte
   // sur ces combats. upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ;
-  // replaced : ces compléments ; flat : lignées du trio dont la ★★★ ne rapporte rien (flatThirdStar).
+  // replaced : ces compléments ; flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★ (flatThirdStar).
   function targetComp(torre, data, game, previousKey) {
     const stops = nextStops(torre.stops, game.floor, HORIZON);
     const coresByStop = coresAt(torre, stops);
@@ -473,12 +488,13 @@ const KT = (() => {
     const cards = [...new Set(game.shop.filter(Boolean))].filter(b => known(b) && !mine.includes(b));
     const strength = lineStrength(coresByStop, stops);
     const owned = b => Number(bestStar(game, b) > 0);
-    const form = b => unitsOf(game, b).sort((x, y) => y.star - x.star)[0]?.line ?? b;
+    // Forme de la meilleure copie ; à étoile égale, l'identifiant départage, pour que déplacer une copie ne change pas le plan.
+    const form = b => unitsOf(game, b).sort((x, y) => y.star - x.star || x.line.localeCompare(y.line))[0]?.line ?? b;
+    const shift = new Map([...mine, ...cards].map(b => [b, costShift(torre, form(b))]));
     // Meilleures lignées de chaque liste, une liste après l'autre, jusqu'au niveau.
     const fill = pools => {
       const chosen = [...core];
-      const score = b => unitPower(lineInfo(data, b).c + costShift(torre, form(b)), Math.max(1, bestStar(game, b)))
-        + TRAIT_WEIGHT * traitGain(data, chosen, b);
+      const score = b => unitPower(lineInfo(data, b).c + shift.get(b), Math.max(1, bestStar(game, b))) + TRAIT_WEIGHT * traitGain(data, chosen, b);
       for (const pool of pools) {
         while (chosen.length < game.level) {
           const next = pool
@@ -614,8 +630,8 @@ const KT = (() => {
     return { marks, left, short };
   }
 
-  // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal, sauf ★★★ sans gain mesuré,
-  // target.flat), et toute lignée qui a 2 copies ★ (la 3ᵉ donne la ★★) ou 2 copies ★★ (la 3ᵉ ★★ donne la ★★★).
+  // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal, sauf ★★★ nettement moins
+  // forte, target.flat), et toute lignée qui a 2 copies ★ (la 3ᵉ donne la ★★) ou 2 copies ★★ (la 3ᵉ ★★ donne la ★★★).
   function seekLines(game, target) {
     const core = target.core.map(baseLine);
     const top = game.level >= maxLevel(game.floor);
