@@ -130,10 +130,10 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
   rangée pleine déborde sur celle de derrière, puis sur celle de devant.
   - Colonnes : à l'avant, depuis le centre, tanks d'abord. Derrière, le porteur à distance prend les colonnes de la zone choisie
     (option Porteur à distance du menu ⚙ : coin gauche, centre ou coin droit ; aucune statistique publique ne départage ces
-    placements), puis les autres une colonne sur deux depuis cette zone. Une unité à distance évite la colonne d'une autre,
-    quelle que soit sa rangée : sur deux rangées voisines, deux cases de la même colonne se touchent. Posées depuis le banc,
-    4 unités à distance ne se touchent pas (3 avec la zone centre) ; au-delà, ou autour d'une unité qui garde sa case, elles
-    peuvent se toucher.
+    placements), puis les autres une colonne sur deux depuis cette zone. Une unité à distance évite la colonne de tout Pokémon
+    déjà posé derrière l'avant, quelle que soit sa rangée : sur deux rangées voisines, deux cases de la même colonne se touchent.
+    Posées depuis le banc, 4 unités à distance ne se touchent pas (3 avec la zone centre, moins si un Pokémon de mêlée déborde
+    derrière l'avant ou sert d'appât au fond) ; au-delà, ou autour d'une unité qui garde sa case, elles peuvent se toucher.
   - Capacités qui dépendent des voisins (code du jeu ; deux cases sont collées quand leurs hexagones se touchent) :
     - Mew (Métronome) copie la capacité de l'allié collé qui vaut le plus (coût × 3 par étoile au-delà de la première) ; il
       se pose donc sur une case collée au Pokémon de plus grande valeur de la compo, sur sa rangée si elle le permet. Abra
@@ -161,7 +161,7 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
     sinon l'unité à distance de plus grande valeur ; jamais Ramoloss ni un de tes assassins. La parade prime sur la zone du
     porteur et sur une case déjà occupée ; une parade déjà posée sur le plateau ne donne aucun déplacement. Les autres
     Pokémon se placent ensuite autour du porteur et de l'appât : celui qui débordait derrière un avant plein y revient quand
-    l'appât libère sa case, et un Pokémon plus au fond que le porteur évite les cases qui le touchent. Sans porteur à
+    l'appât libère sa case, et une unité à distance plus au fond que le porteur évite les cases qui le touchent. Sans porteur à
     distance, sans appât ou sans case libre, la formation ne change pas et le panneau le dit. Limites : contre Nosferapti,
     le porteur reste exposé s'il est le plus au fond de la colonne visée ; un porteur en colonne 4 touche son appât ; Mew,
     placé après les autres, collé à son modèle, n'est ni couvert ni appât (porteur, il n'a pas de parade) ; Taupiqueur (PV max les plus bas) et Roucool (plus grande valeur)
