@@ -2732,31 +2732,39 @@ function pinLayer(layer, hud) {
 
 // Sources indépendantes : sans data.json ou lang.json, le prochain boss et les trios restent affichés. campana.json est
 // accepté avec la Tour seule : sans modes.camp valide, la campagne n'a que les conseils d'économie.
-async function loadSources(state) {
-  const sources = [
-    ['stats', 'campana.json', KT.SOURCES.stats, j => KT.isStatsData(j?.modes?.torre),
-      j => ({ torre: j.modes.torre, camp: KT.isStatsData(j.modes.camp) ? j.modes.camp : null })],
-    ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j],
-    ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j],
-  ];
-  const env = { caches: globalThis.caches, fetch: (...a) => fetch(...a), now: Date.now() };
-  const results = await Promise.allSettled(sources.map(([, , url, accept]) => KT.loadJson(url, accept, env)));
+const SOURCE_FILES = [
+  ['stats', 'campana.json', KT.SOURCES.stats, j => KT.isStatsData(j?.modes?.torre),
+    j => ({ torre: j.modes.torre, camp: KT.isStatsData(j.modes.camp) ? j.modes.camp : null })],
+  ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j],
+  ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j],
+];
+
+// Champs de l'état tirés du chargement : results, issus de Promise.allSettled sur loadJson, dans l'ordre de SOURCE_FILES.
+function sourcesState(results) {
+  const loaded = { stats: null, data: null, lang: null, failed: [], uncached: false };
   const errors = [];
   const stale = [];
   results.forEach((r, i) => {
-    const [key, file, , , pick] = sources[i];
+    const [key, file, , , pick] = SOURCE_FILES[i];
     if (r.status === 'rejected') {
-      state.failed.push(key);
+      loaded.failed.push(key);
       errors.push(`${file} : ${r.reason.message}`);
       return;
     }
-    state[key] = pick(r.value.json);
+    loaded[key] = pick(r.value.json);
     if (r.value.stale) stale.push(r.value.at);
-    if (r.value.uncached) state.uncached = true;
+    if (r.value.uncached) loaded.uncached = true;
   });
-  state.campBroken = state.stats !== null && !state.stats.camp;
-  state.error = errors.length ? errors.join(' ; ') : null;
-  state.stale = stale.length ? Math.min(...stale) : null;
+  return {
+    ...loaded, campBroken: loaded.stats !== null && !loaded.stats.camp, error: errors.length ? errors.join(' ; ') : null,
+    stale: stale.length ? Math.min(...stale) : null,
+  };
+}
+
+async function loadSources(state) {
+  const env = { caches: globalThis.caches, fetch: (...a) => fetch(...a), now: Date.now() };
+  const results = await Promise.allSettled(SOURCE_FILES.map(([, , url, accept]) => KT.loadJson(url, accept, env)));
+  Object.assign(state, sourcesState(results));
 }
 
 // Gabarit du panneau et calque des pastilles. Au montage, les parties sont vides et render les remplit ; les pages d'aperçu le
@@ -2793,6 +2801,14 @@ function shellHtml({ look = {}, label = 'Étage', floor = null, src = '', sum = 
 const fightKey = state => `${state.saveKey}:${state.save?.runSeed ?? ''}:${state.floor}`;
 const diveOn = (ui, state) => ui.dive === fightKey(state);
 const UI_DEFAULTS = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, dive: null };
+
+// Conseils de la partie à l'écran : null hors de l'étage de sa sauvegarde, ou tant qu'aucune source n'a répondu. ui.target :
+// le conseil précédent, pour l'inertie des trios et des compléments.
+function adviceOf(state, ui) {
+  return onSaveFloor(state) && (state.stats || state.error)
+    ? KT.advise({ stats: modeStats(state), data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side, mode: state.mode, dive: diveOn(ui, state) })
+    : null;
+}
 
 function mount() {
   const ui = { ...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
@@ -2861,9 +2877,7 @@ function mount() {
 
   function compute() {
     const code = state.advice?.code;
-    state.advice = state.save && onSaveFloor(state) && (state.stats || state.error)
-      ? KT.advise({ stats: modeStats(state), data: state.data, lang: state.lang, save: state.save, previous: ui.target, side: ui.side, mode: state.mode, dive: diveOn(ui, state) })
-      : null;
+    state.advice = adviceOf(state, ui);
     // Case d'un autre combat oubliée : une sauvegarde sans runSeed la retrouverait au même étage d'une autre partie.
     if (state.advice && ui.dive !== null && !diveOn(ui, state)) {
       ui.dive = null;
@@ -3153,6 +3167,7 @@ function mount() {
 if (typeof module !== 'undefined') {
   module.exports = {
     ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, optionsHtml, summaryHtml, footHtml, shellHtml,
-    PlannerError, tabForKey, keptByPanel, foldKey, setOption, diveHtml, fightKey, diveOn, UI_DEFAULTS, onSaveFloor, modeStats,
+    PlannerError, tabForKey, keptByPanel, foldKey, setOption, diveHtml, fightKey, diveOn, UI_DEFAULTS, modeStats, adviceOf,
+    SOURCE_FILES, sourcesState,
   };
 } else mount();

@@ -132,26 +132,24 @@ const STYLE = `body{margin:0;min-height:100vh;background:#2b3a2a;color:#eef1ff;f
 // les données (quelques dizaines de Ko) : render-html.sh la rend telle quelle. Les pastilles, posées sur le jeu, n'y sont pas ; le
 // thème « auto » suit le système par une ligne de script.
 const FAILED = { error: ['stats', 'data', 'lang'], partial: ['data'] };
-const FILES = { stats: 'campana.json', data: 'data.json', lang: 'lang.json' };
+const JSON_OF = { stats: { v: 1, modes }, data, lang };
+// Résultats du chargement simulé, au format de Promise.allSettled sur loadJson ; pending : aucune source n'a répondu.
+const settled = api => (api === 'pending' ? {} : KT.sourcesState(KT.SOURCE_FILES.map(([key]) => (FAILED[api]?.includes(key)
+  ? { status: 'rejected', reason: new Error('HTTP 429') }
+  : { status: 'fulfilled', value: { json: JSON_OF[key], at: Date.now(), stale: false } }))));
 function panelPage(name, s) {
   const ui = { ...KT.UI_DEFAULTS, ...s.ui };
   KT.checkUi(ui);
   const raw = s.save ? JSON.stringify(s.save) : null;
   const found = raw && KT.latestSave({ length: 1, key: () => s.key ?? 'kanto-tactics-save-tower', getItem: () => raw });
   const start = { mode: KT.TOWER_MODE, saveKey: undefined, lastAuto: undefined, floor: null, source: 'manuel' };
-  const failed = FAILED[s.api] ?? [];
-  const loaded = k => s.api !== 'pending' && !failed.includes(k);
   const fights = s.fights ?? [];
   const state = {
-    ...KT.pollState(start, found, null, ui, fights), fights, lastRaw: raw, stats: loaded('stats') ? { torre: modes.torre, camp: modes.camp } : null,
-    campBroken: false, data: loaded('data') ? data : null, lang: loaded('lang') ? lang : null, failed, stale: null, uncached: false,
-    error: failed.length ? failed.map(k => `${FILES[k]} : HTTP 429`).join(' ; ') : null, copied: null,
+    ...KT.pollState(start, found, null, ui, fights), fights, lastRaw: raw, stats: null, campBroken: false, data: null, lang: null,
+    failed: [], stale: null, uncached: false, error: null, ...settled(s.api), copied: null,
   };
   const stats = KT.modeStats(state);
-  // Même condition que compute dans mount.
-  state.advice = KT.onSaveFloor(state) && (state.stats || state.error)
-    ? KT.advise({ stats, data: state.data, lang: state.lang, save: state.save, previous: null, side: ui.side, mode: state.mode, dive: KT.diveOn(ui, state) })
-    : null;
+  state.advice = KT.adviceOf(state, ui);
   // Plan collé dans le Planificateur : le statut du panneau synchronisé.
   state.planner = { code: state.advice?.code ?? null, error: null };
   const look = { scheme: ui.theme === 'auto' ? 'dark' : ui.theme, width: ui.width, text: ui.text, alpha: ui.alpha };
