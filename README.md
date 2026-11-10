@@ -82,11 +82,19 @@ barre le remet en haut à droite.
   - « Objets visés », dans l'onglet Compo : pour chaque Pokémon de la compo, ses 3 objets visés, portés (✓), prêts au sac (●) ou
     avec les composants qui manquent (○).
 - **Bénédictions** : PV bas → soins ; sinon voie Fortune jusqu'à 3, puis la voie la plus avancée. **Sceaux** : règles par catégorie.
-- **Formation** : la compo cible dans la limite du niveau. Chaque Pokémon a sa zone : tanks (profil) au premier rang, porteur à
-  distance au fond, dans la zone choisie (option Porteur du menu ⚙ : coin gauche, centre ou coin droit ; aucune statistique publique ne
-  départage ces placements), mêlée devant, distance au fond. Un Pokémon déjà dans sa zone garde sa case ; les autres prennent la
-  première case libre (avant depuis le centre, fond depuis la zone du porteur). Les déplacements sont listés dans l'ordre où les
-  faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors formation si le plateau est plein.
+- **Formation** : la compo cible dans la limite du niveau, sur les 4 rangées. La rangée d'un Pokémon est sa portée : portée 1 à
+  l'avant, 2 en 2ᵉ rangée, 3 en 3ᵉ, 4 et 5 au fond. Le plateau est en hexagones et les deux camps se touchent : de là, il atteint la
+  première rangée ennemie sans avancer. Les tanks que tu possèdes (profil) restent à l'avant quelle que soit leur portée. Une
+  rangée pleine déborde sur celle de derrière, puis sur celle de devant.
+  - Colonnes : à l'avant, depuis le centre, tanks d'abord. Derrière, le porteur à distance prend les colonnes de la zone choisie
+    (option Porteur à distance du menu ⚙ : coin gauche, centre ou coin droit ; aucune statistique publique ne départage ces
+    placements), puis les autres une colonne sur deux depuis cette zone. Une unité à distance évite la colonne d'une autre,
+    quelle que soit sa rangée : sur deux rangées voisines, deux cases de la même colonne se touchent. Posées depuis le banc,
+    4 unités à distance ne se touchent pas (3 avec la zone centre) ; au-delà, ou autour d'une unité qui garde sa case, elles
+    peuvent se toucher.
+  - Un Pokémon déjà sur sa rangée garde sa case ; le porteur à distance, seulement dans les colonnes de sa zone. Les déplacements
+    sont listés dans l'ordre où les faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors
+    formation si le plateau est plein.
 - **Planificateur** : quand la formation change, le script ouvre le Planificateur depuis la barre du jeu, supprime l'ancien
   « Plan kanto-overlay », colle le code et referme ; on voit l'écran s'ouvrir un instant et le jeu joue son bruit de clic. La CSP
   du site empêche d'atteindre les plans du jeu autrement que par son interface. Au-delà de 10 plans par mode, le jeu efface le
