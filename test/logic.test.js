@@ -404,7 +404,7 @@ test('compléments : celui du conseil précédent reste sous 10 points d’écar
   assert.deepEqual(advise(PAIR, { stats: nextFight(5), previous: { ...previous, run: 8 } }).target.fillers, ['rattata']);
 });
 
-test('compléments : toutes les variantes du prochain combat comptent, à leur part', () => {
+test('compléments : toutes les variantes du prochain combat comptent', () => {
   // Étage 10 à deux variantes (Pierre, Ondine) : Rattata ne figure que dans un trio contre Ondine (+20), soit +10 sur le combat.
   const variants = nextFight(0);
   const stats = {

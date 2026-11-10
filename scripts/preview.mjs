@@ -35,7 +35,7 @@ const SHINY = {
 const CAMP = { ...S57, mode: 'campaign', round: 14, league: 3, gymOrder: ['sabrina', 'koga'], level: 6, gold: 47, tower: undefined };
 const SAVE_KANTO = 'kanto-tactics-save';
 // 33 pièces : Abo, puis Chenipan pour la compo des étages 19–27 (test « boutique : ◆ pour la compo suivante… »).
-const PREPARE = { ...NEXT_SHOP, gold: 33 };
+const PREPARE = { ...NEXT_SHOP, gold: 33, items: [] };
 // Abra ★★ porteur à distance, Onix et Racaillou au banc (test « parade aux assassins adverses : porteur du fond avancé… »).
 const PARADE = brockSave(ownedGame({ abra: 2, onix: 1, geodude: 1 }));
 

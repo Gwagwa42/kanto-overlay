@@ -1784,7 +1784,7 @@ const KT = (() => {
   // rangée ennemie. Un tank possédé (le rôle vient de holdersOf) reste à l'avant quelle que soit sa portée. Colonnes : depuis le
   // centre à l'avant, Ramoloss d'abord, puis les tanks et les autres, enfin les assassins et Grolem ★★★ depuis les bords ;
   // derrière, dans l'ordre de la zone choisie (coin gauche, centre ou coin droit), le porteur d'abord dans les colonnes de cette
-  // zone, en évitant la colonne d'une autre unité à distance, quelle que soit sa rangée. Déjà sur une case de sa première
+  // zone, en évitant la colonne de tout Pokémon déjà posé derrière l'avant. Déjà sur une case de sa première
   // liste, un Pokémon la garde ; rangée pleine, il passe derrière, puis devant. Mew se place en dernier (placeMimic). dive :
   // parade aux assassins adverses, qui prime sur la zone du porteur : guard choisit sur une première pose la case du porteur
   // et celle de l'appât, puis la pose reprend avec ces deux cases en tête de leurs listes ; les autres se placent autour, et
@@ -1828,7 +1828,7 @@ const KT = (() => {
     const parade = dive ? guard(others, board.taken, zone, value) : null;
     if (parade) {
       const pinned = new Map([[parade.carry, parade.spot], [parade.bait, parade.cell]]);
-      // Comme guard pour sa case : plus au fond que le porteur, une unité ne le touche pas si elle peut (l'assassin arrivé
+      // Comme guard pour sa case : plus au fond que le porteur, une unité à distance ne le touche pas si elle peut (l'assassin arrivé
       // sur elle se retournerait vers lui).
       const apart = c => rowOf(c) <= rowOf(parade.spot) || !touching(c, parade.spot);
       board = arrange(others, u => (pinned.has(u) ? [[pinned.get(u)], ...zones(u)] : zones(u)), [...pinned.keys()], apart);
