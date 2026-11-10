@@ -1,7 +1,8 @@
 # kanto-overlay
 
-Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](https://einoow.com/playables/kanto-tactics/) :
-- prochain boss (nom, étage, taux de victoire, taux au premier essai, nombre moyen d'essais) ;
+Panneau flottant, non officiel, pour la **Tour de combat** et la **campagne** (aventure Kanto aux trois difficultés, autres
+aventures) de [Kanto Tactics](https://einoow.com/playables/kanto-tactics/) :
+- prochain boss (nom, étage ou combat, taux de victoire, taux au premier essai, nombre moyen d'essais) ;
 - les 3 meilleurs trios contre ce boss (au moins 20 combats) ;
 - une **compo cible** choisie pour les 9 prochains combats (environ 20 étages) en partant de ton équipe, et des **conseils lus sur
   ta partie** : quoi acheter, actualiser ou non, acheter de l'XP ou non, quoi vendre, quels objets fusionner et sur qui, lesquels retirer, quelle
@@ -10,7 +11,7 @@ Panneau flottant, non officiel, pour la **Tour de combat** de [Kanto Tactics](ht
   ses ombres s'affichent sur le plateau. Le panneau liste les Pokémon à poser ou à déplacer (« Pose Caninos », avant, colonne 4) ;
 - un bouton **Copier la formation** : le même code `KT1;…`, pour le partager ou le coller à la main (Planificateur → Coller un code)
   si l'écriture automatique échoue ;
-- les règles d'or (intérêts, actualisation, shinies) pour la tranche d'étages en cours.
+- les règles d'or (intérêts, actualisation, tout jouer, shinies en Tour) du mode et de la difficulté en cours.
 
 Les conseils apparaissent aussi en **pastilles** sur le jeu : ★ fais-le, ◆ si l'or le permet, ✕ évite. Survoler une pastille (ou la
 sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rien.
@@ -26,10 +27,13 @@ thème sombre, sombres en thème clair) et la zone du porteur dans la formation.
 
 Pages où il s'affiche : les pages d'entrée du jeu, `https://einoow.com/` et `/kanto-tactics`, `/tower`, `/pvp`, `/duo`, `/nuzlocke`
 (avec ou sans `?…`), ainsi que `https://einoow.com/playables/kanto-tactics/…`. Le jeu change de mode sans changer d'adresse : le panneau
-est présent dans tous les modes, les pastilles seulement quand la Tour est affichée.
+est présent dans tous les modes, les pastilles seulement quand la partie conseillée est affichée (barre de progression de la Tour
+ou de la campagne).
 
-La partie est lue dans la sauvegarde Tour du jeu (`localStorage`, clé `kanto-tactics-save-tower`), toutes les 2 s ; sans partie, on
-saisit l'étage avec − / + ou dans le champ. `Alt+K` replie le panneau ; on le déplace par sa barre de titre, et un double-clic sur cette
+La partie est lue toutes les 2 s dans la sauvegarde du jeu (`localStorage`) écrite en dernier (`savedAt`) : Tour
+(`kanto-tactics-save-tower`), Kanto (`kanto-tactics-save`) ou une autre aventure (`kanto-tactics-save-adv-<aventure>`). Le Nuzlocke
+(`kanto-tactics-save-nuzlocke`) n'a pas de conseils : le panneau le dit plutôt que de conseiller la dernière partie Kanto. Sans
+partie, on saisit l'étage (ou le combat) avec − / + ou dans le champ. `Alt+K` replie le panneau ; on le déplace par sa barre de titre, et un double-clic sur cette
 barre le remet en haut à droite.
 
 ## Comment les conseils sont choisis
@@ -40,7 +44,7 @@ barre le remet en haut à droite.
   niveau. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
   Le reste du plateau est rempli par tes unités les mieux notées, puis par la boutique pour les places restantes (★ « place libre »).
   La note d'une unité est sa puissance, `(1 + 0,35 × (coût − 1))` × 1, 1,9 ou 3,6 selon l'étoile, plus 0,25 par type renforcé et
-  0,5 par seuil de type franchi. Le coût gagne ou perd un cran, un seul, selon l'écart de victoire de la lignée en Tour (champ
+  0,5 par seuil de type franchi. Le coût gagne ou perd un cran, un seul, selon l'écart de victoire de la lignée dans le mode (champ
   `d` de l'API : taux de victoire moins le taux attendu sur les mêmes combats), rétréci par 400 combats fictifs : un cran dès
   2,5 points. Sur les 85 lignées de base (novembre 2026), 3 gagnent un coût (Mystherbe, Nidoran♀, Carapuce) et 18 en perdent un
   (dont Salamèche, Pikachu, Magmar, Roucool, Abra). On lit l'écart de la forme possédée, rétréci vers celui de sa lignée de
@@ -64,18 +68,18 @@ barre le remet en haut à droite.
   4. L'actualisation, s'il y a quelque chose à chercher dont le coût sort à 15 % ou plus à ton niveau : un Pokémon du trio sous ★★,
      ou un Pokémon de la compo qui a 2 copies ★ ou 2 copies ★★. Au niveau maximal, le trio se cherche jusqu'à ★★★ et le seuil de
      15 % ne vaut plus : l'or n'a pas d'autre emploi. Seule exception, le trio ne cherche plus la ★★★ d'une forme
-     qu'elle affaiblit nettement en Tour (intervalles à 95 % disjoints : 16 formes en novembre 2026, dont Hypotrempe, Ptitard,
+     qu'elle affaiblit nettement dans le mode (intervalles à 95 % disjoints : 16 formes en novembre 2026, dont Hypotrempe, Ptitard,
      Psykokwak, Kabuto, Rhinocorne) ; deux copies ★★ font encore chercher la troisième. Une lignée trouvable seulement plus
      haut est annoncée (« Kabuto (coût 4 : 12 %) au niveau 7 : à chercher au niveau 8 ») ; un coût 1 ou 2, qui sort de moins en moins, ne donne aucun conseil.
   5. Les ◆ de la compo suivante.
   6. L'XP avec ce qui reste, jusqu'au niveau maximal (9, puis 10 à partir de l'étage 60).
-- **Profil de chaque lignée** : lu sur les objets qu'elle porte en Tour. Elle est tank si la moitié au moins de leurs composants
+- **Profil de chaque lignée** : lu sur les objets qu'elle porte dans le mode (Tour ou campagne). Elle est tank si la moitié au moins de leurs composants
   sont défensifs (PV Plus, Fer, Zinc), spéciale si le Calcium l'emporte sur la Protéine, physique sinon. Exemples : Ronflex et Machop
   tanks, Minidraco et Caninos attaquants physiques, Abra et Goupix attaquants spéciaux.
 - **Objets** : un objet ne va qu'à un Pokémon à qui il convient. Jamais un objet d'Atq. Spé. à un physique ni d'Attaque à un spécial
   (les objets mixtes, comme Orbe Vie et Lentilscope, vont aux deux) ; au moins la moitié de défensif pour un tank, d'offensif pour
   un attaquant. Les composants pris en compte sont ceux qui donnent ses stats à l'objet (Casque Brut : PV et Défense).
-  - Pose : chaque Pokémon de la compo ne reçoit que ses objets idéaux, les 3 meilleurs couples Pokémon/objet de sa lignée en Tour
+  - Pose : chaque Pokémon de la compo ne reçoit que ses objets idéaux, les 3 meilleurs couples Pokémon/objet de sa lignée dans le mode
     qui conviennent à son profil. L'objet complet, ou un composant de l'une de ces recettes, va tout de suite sur lui. Un
     composant seul donne déjà son effet et fusionne sur le Pokémon avec le suivant ; deux composants du sac pour le même Pokémon
     sont donnés en paire, avec l'ordre de pose quand il compte. Un objet complet idéal de plusieurs Pokémon va à celui qui le
@@ -109,13 +113,40 @@ barre le remet en haut à droite.
 - **Planificateur** : quand la formation change, le script ouvre le Planificateur depuis la barre du jeu, supprime l'ancien
   « Plan kanto-overlay », colle le code et referme ; on voit l'écran s'ouvrir un instant et le jeu joue son bruit de clic. La CSP
   du site empêche d'atteindre les plans du jeu autrement que par son interface. Au-delà de 10 plans par mode, le jeu efface le
-  plus ancien : le script supprime donc l'ancien plan avant de coller, et ne colle rien si tu as déjà 10 plans Tour (le panneau te
+  plus ancien : le script supprime donc l'ancien plan avant de coller, et ne colle rien si tu as déjà 10 plans dans ce mode (le panneau te
   demande d'en supprimer un). Rien n'est fait pendant un glisser, quand le focus est dans le panneau, sous une modale du jeu ou
   quand le Planificateur est déjà ouvert (nouvel essai 2 s plus tard) ; en affichage portrait, où le bouton de la barre ouvre un
   menu, le panneau invite à copier le code. Si l'interface du jeu a changé, le panneau le signale et le bouton Copier reste.
 - **Shinies** : une lignée est shiny quand sa copie de meilleure étoile l'est (la fusion transmet le shiny) ; elle porte « shiny »
   dans la compo cible, ajoute 2 points au trio, départage porteur, tank (+10 % de PV) et remplissage, et s'écrit `ligne:2s:…` dans
-  le code KT1. Une unité shiny n'est pas proposée à la vente jusqu'à l'étage 120.
+  le code KT1. Une unité shiny n'est pas proposée à la vente : jusqu'à l'étage 120 en Tour, sur toute la campagne.
+
+### Campagne
+
+Mêmes conseils qu'en Tour, sur les combats de l'aventure en cours, avec les règles de la campagne relevées dans le code du jeu :
+- **Combats** : le combat N est la manche N − 1 de la sauvegarde. Les statistiques `modes.camp` mêlent toutes les aventures ; le
+  panneau garde les combats de la tienne (table relevée dans le jeu pour Kanto, Cap sur Cramois'Île et « Je te choisis ! »). Une
+  manche aux variantes tirées au sort (combat 11 : Marin, Gentleman ou Pêcheur) compte chacune selon sa part des combats. Aux
+  4ᵉ, 5ᵉ et 6ᵉ badges, le champion est celui que tu as choisi (`gymOrder`), sinon un de ceux qui restent.
+- **Boss** (Kanto) : les 8 badges, le Conseil 4, le Maître de la Ligue et Mewtwo ; dans les autres aventures, chaque combat.
+- **Économie** : intérêts plafonnés à +4, donc palier de 40 pièces ; 2 XP gratuites par combat, niveau 9 au plus. Niveaux visés
+  (choix de jeu, d'après la taille des équipes des champions) : 4 dès le combat 4, 5 dès 8, 6 dès 12, 7 dès 16, 8 dès 24, 9 dès 30.
+  Sur un combat obligatoire (badge, Ligue, boss), une deuxième défaite ne rapporte plus d'intérêts : un combat rejoué se joue à fond
+  dès le premier échec. Ni bénédiction ni sceau.
+- **Difficulté** : lue dans la sauvegarde (Normal, Vétéran, Légende) et affichée en tête du panneau. Les taux de l'API mêlent les
+  trois ; or le jeu renforce les adversaires (textes du jeu, roster-*.js : en Vétéran, rivaux +5 % à toutes les stats, équipes
+  variées et objets ; au-delà, as à une étoile de plus, objets combinés, boucliers et rage des boss, selon l'aventure). Le panneau
+  retire donc 10 puis 20 points au taux de chaque combat : « tout jouer » sous 55 puis 65 %, couleur des taux en conséquence,
+  niveaux visés avancés d'un puis de deux combats, et poids des combats dans la compo cible relevés d'autant, ce qui resserre
+  l'écart entre combats faciles et murs (80 % contre 30 % : 20 contre 70 en Normal, 40 contre 90 en Légende). Ces écarts sont un
+  choix de jeu : aucune statistique publique ne sépare les difficultés.
+- **Partie lue** : celle du mode à l'écran (barre de la Tour, de la campagne, vies du Nuzlocke), la plus récente à l'accueil. Entre
+  deux aventures, le jeu ne réécrit la sauvegarde qu'à la première action : jusque-là, le panneau garde l'aventure précédente.
+- **Champion à choisir** (4ᵉ et 5ᵉ badges) : l'en-tête montre la manche entière (« Erika ou Koga ou Morgane », taux moyen
+  pondéré par les choix des joueurs), l'onglet Boss le taux de chacun, puis les trios contre le plus joué.
+- **Aventures sans statistiques** (Parc Safari, Nuit à Lavanville, Team Rocket : le jeu charge leurs manches par un module chiffré)
+  : compo sans trio, faite de tes meilleures unités puis de la boutique, avec objets, formation et Planificateur.
+- **Planificateur** : le code est écrit en mode aventure (`xm=adv`).
 
 ## Installation (Firefox)
 
@@ -126,7 +157,7 @@ barre le remet en haut à droite.
 ## Données
 
 Data: Kanto Tactics · [einoow.com](https://einoow.com) — API publique `https://einoow.com/api/meta/kanto/` : `campana.json`
-(statistiques de la Tour), `data.json` (lignées, objets, recettes, types, sceaux), `lang.json?lang=fr` (noms et effets des objets, sceaux,
+(statistiques de la Tour et de la campagne), `data.json` (lignées, objets, recettes, types, sceaux), `lang.json?lang=fr` (noms et effets des objets, sceaux,
 types). Conformément à ses conditions, chaque source est gardée **une heure** dans le Cache Storage du navigateur, puis revalidée
 (`ETag`) ; en cas d'erreur, la dernière copie sert et le pied du panneau en donne la date.
 
@@ -140,13 +171,17 @@ spécial reste lu sur les objets : en v41, une quinzaine de lignées (Staross, S
 selon la stat que leur donnent leurs objets, alors que `data.json` (règles 40) leur prête une seule attaque.
 La courbe de niveaux visés est un choix de jeu : aucune statistique publique ne donne le niveau des joueurs en Tour. La liste des
 shinies à saisir par tranche d'étages vient d'un guide et n'est pas vérifiée.
+`modes.camp` ne dit ni l'aventure ni la difficulté d'un combat (`difficulty: "todas"`) : deux aventures qui partagent un arrêt
+(`1:Pokémon salvajes`, `9:Pokémon salvajes` pour Kanto et « Je te choisis ! », peut-être d'autres avec les aventures chiffrées)
+y sont confondues, et la table des arrêts de Cap sur
+Cramois'Île et de « Je te choisis ! » ne couvre que les manches relevées dans le code du jeu.
 
 Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pokémon Company.
 
 ## Développement
 
 ```sh
-node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur
+node --test test/          # logique : étage, boss, trios, noms, compo cible, économie, boutique, objets, bénédictions, code KT1, Planificateur, campagne
 node scripts/preview.mjs   # pages d'aperçu par état dans build/, puis la commande de rendu imprimée
 ```
 

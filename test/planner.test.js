@@ -82,7 +82,7 @@ const playerPlans = n => Array.from({ length: n }, (_, i) => ({ id: `mine${i}`, 
 test('planificateur : ancien plan du panneau supprimé avant le collage, aucun plan du joueur évincé à 10 plans', async () => {
   const mine = playerPlans(9);
   install({ plans: [{ id: 'old', name: KT.PLAN_NAME }, ...mine], active: 'old' });
-  assert.equal(await KT.pastePlan(CODE), true);
+  assert.equal(await KT.pastePlan(CODE, KT.TOWER.hud), true);
   assert.deepEqual(game.plans.slice(1), mine);
   assert.equal(game.plans[0].name, KT.PLAN_NAME);
   assert.equal(game.active, game.plans[0].id);
@@ -92,14 +92,14 @@ test('planificateur : ancien plan du panneau supprimé avant le collage, aucun p
 
 test('planificateur : code refusé → PlannerError, Planificateur refermé', async () => {
   install({ plans: playerPlans(2) });
-  await assert.rejects(KT.pastePlan('pas un code'), e => e instanceof KT.PlannerError && e.message === 'code refusé par le jeu');
+  await assert.rejects(KT.pastePlan('pas un code', KT.TOWER.hud), e => e instanceof KT.PlannerError && e.message === 'code refusé par le jeu');
   assert.equal(game.open, false);
   assert.equal(game.plans.length, 2);
 });
 
 test('planificateur : bouton Supprimer absent → PlannerError, rien collé, Planificateur refermé', async () => {
   install({ plans: [{ id: 'old', name: KT.PLAN_NAME }], active: 'old', noDelete: true });
-  await assert.rejects(KT.pastePlan(CODE), e => e instanceof KT.PlannerError && e.message === 'bouton Supprimer introuvable');
+  await assert.rejects(KT.pastePlan(CODE, KT.TOWER.hud), e => e instanceof KT.PlannerError && e.message === 'bouton Supprimer introuvable');
   assert.deepEqual(game.plans.map(p => p.id), ['old']);
   assert.equal(game.open, false);
 });
@@ -107,12 +107,12 @@ test('planificateur : bouton Supprimer absent → PlannerError, rien collé, Pla
 test('planificateur : rien d’ouvert hors partie Tour, sous une modale, en portrait ou Planificateur déjà ouvert', async () => {
   for (const options of [{ hud: false }, { modal: true }, { layout: 'portrait' }]) {
     install(options);
-    assert.equal(await KT.pastePlan(CODE), false);
+    assert.equal(await KT.pastePlan(CODE, KT.TOWER.hud), false);
     assert.equal(game.opened, 0);
   }
   install();
   game.open = true;
-  assert.equal(await KT.pastePlan(CODE), false);
+  assert.equal(await KT.pastePlan(CODE, KT.TOWER.hud), false);
   assert.equal(game.opened, 0);
 });
 
@@ -127,10 +127,18 @@ test('planificateur : statut du panneau', () => {
   assert.match(KT.statusHtml(state({ code: null, error: null })), /non mis à jour en affichage portrait/);
 });
 
+test('planificateur : la barre attendue est celle du mode conseillé (paramètre hud), rien collé sans elle', async () => {
+  install({ plans: [] });
+  // Barre de la Tour affichée, barre de campagne attendue : le Planificateur reste fermé. Le faux DOM ne lit pas le CSS : que
+  // :not(.tw) exclue la Tour n'est vérifiable qu'en jeu.
+  assert.equal(await KT.pastePlan(CODE, KT.CAMPAIGN.hud), false);
+  assert.equal(game.opened, 0);
+});
+
 test('planificateur : 10 plans du joueur → rien collé, aucun plan perdu', async () => {
   const mine = playerPlans(10);
   install({ plans: mine, active: 'mine0' });
-  await assert.rejects(KT.pastePlan(CODE), e => e instanceof KT.PlannerError && /10 plans Tour/.test(e.message));
+  await assert.rejects(KT.pastePlan(CODE, KT.TOWER.hud), e => e instanceof KT.PlannerError && /10 plans déjà enregistrés dans ce mode/.test(e.message));
   assert.deepEqual(game.plans, mine);
   assert.equal(game.open, false);
 });
