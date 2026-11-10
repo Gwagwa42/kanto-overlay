@@ -715,26 +715,15 @@ const KT = (() => {
     return { key: best.key, core: best.core, stops, proof };
   }
 
-  // Compo cible : le meilleur trio, puis fillers, le remplissage jusqu'au niveau par les lignées possédées les mieux notées ;
-  // la boutique ne complète que les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une
-  // carte de boutique vaut une ★), au coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et
-  // types apportés à la compo ; l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte
-  // sur ces combats. upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ;
-  // replaced : ces compléments ; flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★ (flatThirdStar) ;
-  // strength : lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
-  function targetComp(stats, data, game, previousKey) {
-    const stops = nextStops(stats.stops, game.floor, HORIZON, game.mode);
-    const coresByStop = coresAt(stats, stops);
-    // En campagne, sans trio noté sur ces combats (aventure sans table d'arrêts, Canela aux manches sans statistiques), la
-    // compo se fait sans trio : tes meilleures unités, puis la boutique.
-    const best = bestCore(coresByStop, data, game, stops, previousKey)
-      ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
-    if (!best) return null;
-    const core = best.core.map(baseLine);
+  // Compléments du trio core jusqu'au niveau (fillers) : les lignées possédées les mieux notées ; la boutique ne complète que
+  // les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une carte de boutique vaut une ★),
+  // au coût décalé par costShift de la forme possédée (la lignée de base pour une carte), et types apportés à la compo ;
+  // l'arrondi du décalage garde les égalités, départagées par possédée, shiny, puis la plus forte sur ces combats (strength).
+  // upgrades : cartes de boutique mieux notées qu'un complément possédé, à acheter pour le remplacer ; replaced : ces compléments.
+  function fillersOf(stats, data, game, core, strength) {
     const known = b => lineInfo(data, b) && !core.includes(b);
     const mine = [...new Set(game.units.map(u => baseLine(u.line)))].filter(known);
     const cards = [...new Set(game.shop.filter(Boolean))].filter(b => known(b) && !mine.includes(b));
-    const strength = lineStrength(coresByStop, stops);
     const owned = b => Number(bestStar(game, b) > 0);
     // Forme de la copie posée (fieldOrder, comme holdersOf) : la note décrit l'unité que la formation place.
     const form = b => unitsOf(game, b).sort(fieldOrder)[0]?.line ?? b;
@@ -760,9 +749,24 @@ const KT = (() => {
     const upgrades = mixed.filter(b => cards.includes(b) && !fillers.includes(b));
     // Autant de compléments possédés que de cartes, les moins bien notés.
     const replaced = upgrades.length ? fillers.filter(b => owned(b) && !mixed.includes(b)).slice(-upgrades.length) : [];
-    if (!core.length && !fillers.length) return null;
+    return { fillers, upgrades: upgrades.slice(0, replaced.length), replaced };
+  }
+
+  // Compo cible : le meilleur trio et ses compléments (fillersOf). flat : lignées du trio dont la ★★★ est nettement moins forte
+  // que la ★★ (flatThirdStar) ; strength : lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
+  function targetComp(stats, data, game, previousKey) {
+    const stops = nextStops(stats.stops, game.floor, HORIZON, game.mode);
+    const coresByStop = coresAt(stats, stops);
+    // En campagne, sans trio noté sur ces combats (aventure sans table d'arrêts, Canela aux manches sans statistiques), la
+    // compo se fait sans trio : tes meilleures unités, puis la boutique.
+    const best = bestCore(coresByStop, data, game, stops, previousKey)
+      ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
+    if (!best) return null;
+    const strength = lineStrength(coresByStop, stops);
+    const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), strength);
+    if (!best.core.length && !fillers.length) return null;
     const flat = best.core.filter(id => flatThirdStar(stats, id)).map(baseLine);
-    return { ...best, fillers, upgrades: upgrades.slice(0, replaced.length), replaced, flat, strength };
+    return { ...best, fillers, upgrades, replaced, flat, strength };
   }
 
   // Trio des 9 combats suivants (10 à 18), à préparer avec le surplus ; null s'il est déjà la compo cible.
