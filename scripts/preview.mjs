@@ -142,6 +142,7 @@ function panelPage(name, s) {
     campBroken: false, data: loaded('data') ? data : null, lang: loaded('lang') ? lang : null, failed, stale: null, uncached: false,
     error: failed.length ? failed.map(k => `${FILES[k]} : HTTP 429`).join(' ; ') : null, copied: null,
   };
+  state.mode = KT.withStrategy(state.mode, ui);
   const stats = KT.modeStats(state);
   // Même condition que compute dans mount.
   state.advice = KT.onSaveFloor(state) && (state.stats || state.error)

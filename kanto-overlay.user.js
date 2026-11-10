@@ -48,18 +48,25 @@ const KT = (() => {
   // Le jeu numérote les manches de la Tour à partir de 1000 : étage = round − 1000 + 1 (assets/route-*.js).
   const ROUND_BASE = 1000;
   const MIN_FIGHTS = 20;
-  const HARD_WIN = 45;
   // Difficulté de la campagne (league de la sauvegarde) : l'API mélange les trois (difficulty « todas »), ses taux surestiment
   // Vétéran et Légende. Points retirés au taux de chaque combat par cran de difficulté (choix de jeu, aucune statistique par
-  // difficulté) : « tout jouer » sous 45, 55 puis 65 %. Les niveaux visés avancent d'un combat par cran.
+  // difficulté) : « tout jouer » sous 45, 55 puis 65 % en stratégie normale. Les niveaux visés avancent d'un combat par cran.
   const LEAGUES = { 1: 'Normal', 2: 'Vétéran', 3: 'Légende' };
   const LEAGUE_PENALTY = 10;
-  const LOW_HP = 40;
-  // Compo cible : combats vus d'avance (≈ 20 étages, élites comprises) et gain minimal pour changer de trio.
-  const HORIZON = 9;
-  const INERTIA = 30;
-  // Par Pokémon possédé (+10, puis +10 à ★★) : un trio monté en ★★ (+60) l'emporte sur l'inertie.
-  const OWNED_BONUS = 10;
+  // Stratégie réglable dans le menu ⚙ (choix de jeu, aucune statistique ne les départage), mêmes champs qu'OPTIONS ; le
+  // troisième élément de chaque valeur rejoint le mode (withStrategy). Valeurs normales :
+  // - pace : facteur sur l'étage de chaque niveau visé (levelGoals des règles du mode) ;
+  // - hardWin, lowHp : « tout jouer » sous ce taux de victoire du combat (%) ou sous ces PV ;
+  // - horizon, inertia : combats vus d'avance (9 ≈ 20 étages, élites comprises) et gain minimal pour changer de trio ;
+  // - ownedBonus : par Pokémon possédé, puis encore à ★★ ; aussi le malus d'un Pokémon à trouver introuvable à ton niveau.
+  //   En normal, un trio monté en ★★ (+60) l'emporte sur l'inertie.
+  const STRATEGY = [
+    { key: 'pace', label: 'Niveaux visés', values: [['early', 'Plus tôt', { pace: 0.75 }], ['normal', 'Normal', { pace: 1 }], ['late', 'Plus tard', { pace: 1.25 }]], def: 'normal' },
+    { key: 'allIn', label: 'Tout jouer', values: [['careful', 'Prudent', { hardWin: 50, lowHp: 50 }], ['normal', 'Normal', { hardWin: 45, lowHp: 40 }], ['bold', 'Audacieux', { hardWin: 40, lowHp: 30 }]], def: 'normal' },
+    { key: 'comp', label: 'Compo cible', values: [['reactive', 'Réactive', { horizon: 6, inertia: 15 }], ['normal', 'Normale', { horizon: 9, inertia: 30 }], ['stable', 'Stable', { horizon: 12, inertia: 45 }]], def: 'normal' },
+    { key: 'owned', label: 'Bonus des Pokémon possédés', values: [['low', 'Faible', { ownedBonus: 5 }], ['normal', 'Normal', { ownedBonus: 10 }], ['high', 'Fort', { ownedBonus: 20 }]], def: 'normal' },
+  ];
+  const STRATEGY_DEFAULTS = Object.fromEntries(STRATEGY.map(o => [o.key, o.def]));
   // Shiny : +10 % de PV, dégâts et défenses (makeUnit du jeu) ; bonus de trio bien sous une copie possédée et sous l'inertie.
   const SHINY_BONUS = 2;
   const SHINY_HP = 1.1;
@@ -289,10 +296,18 @@ const KT = (() => {
     const known = [1, 2, 3].includes(save.league);
     if (rules === CAMPAIGN && !known && save.league !== undefined) console.warn('kanto-overlay : difficulté inconnue, comptée Normal', save.league);
     const league = rules === CAMPAIGN && known ? save.league : 1;
-    return {
+    return withStrategy({
       ...rules, adventure, adv: adventure ? ADVENTURES[adventure] ?? null : null, league,
       penalty: (league - 1) * LEAGUE_PENALTY, gymOrder: Array.isArray(save.gymOrder) ? save.gymOrder : [],
-    };
+    }, STRATEGY_DEFAULTS);
+  }
+
+  // Mode avec la stratégie choisie (choice : clé de STRATEGY → valeur, l'objet ui) ; les niveaux visés repartent des règles
+  // du mode, pour qu'un nouveau choix remplace le précédent.
+  function withStrategy(mode, choice) {
+    const params = Object.assign({}, ...STRATEGY.map(o => o.values.find(([v]) => v === choice[o.key])[2]));
+    const rules = mode.id === TOWER.id ? TOWER : CAMPAIGN;
+    return { ...mode, ...params, levelGoals: rules.levelGoals.map(([from, level]) => [Math.max(1, Math.round(from * params.pace)), level]) };
   }
   const TOWER_MODE = modeContext(TOWER);
 
@@ -377,19 +392,19 @@ const KT = (() => {
   // En-tête de campagne : aventure, difficulté et seuil de « tout jouer » durci (raison dans l'onglet Règles).
   function leagueNote(mode) {
     const where = `${mode.adv?.name ?? mode.adventure} · ${LEAGUES[mode.league]}`;
-    return mode.penalty ? `${where} · tout jouer sous ${HARD_WIN + mode.penalty} %` : where;
+    return mode.penalty ? `${where} · tout jouer sous ${mode.hardWin + mode.penalty} %` : where;
   }
 
   function goldRules(mode) {
     const goals = mode.levelGoals.map(([from, level]) => `${level} dès ${mode.the} ${Math.max(1, from - mode.league + 1)}`).join(', ');
-    const hard = HARD_WIN + mode.penalty;
-    const league = mode.penalty ? `${LEAGUES[mode.league]} : ${HARD_WIN} % plus ${mode.penalty} points, les taux publics mêlant les trois difficultés`
+    const hard = mode.hardWin + mode.penalty;
+    const league = mode.penalty ? `${LEAGUES[mode.league]} : ${mode.hardWin} % plus ${mode.penalty} points, les taux publics mêlant les trois difficultés`
       : LEAGUES[mode.league];
     return [
       `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus ${mode.where} → garder ${10 * mode.interest} pièces${mode.fortuneNote}.`,
       `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation pour les copies trouvables, puis XP.${mode.xpNote}`,
       'Actualisation à 2 pièces : ne pas en enchaîner pour un shiny.',
-      `Tout jouer sur un combat sous ${hard} % de victoires${mode.hasLeague ? ` (${league})` : ''}, sous ${LOW_HP} PV, ou ${mode.retryNote}.`,
+      `Tout jouer sur un combat sous ${hard} % de victoires${mode.hasLeague ? ` (${league})` : ''}, sous ${mode.lowHp} PV, ou ${mode.retryNote}.`,
     ];
   }
 
@@ -600,14 +615,14 @@ const KT = (() => {
     return 10 * (mode.interest + (pathCount(boons, 'fortune') >= PATH_SIZE ? FORTUNE_INTEREST : 0));
   }
 
-  // « Tout jouer » : le combat courant est un mur (taux de la manche sous HARD_WIN plus la pénalité de difficulté), les PV
-  // sont bas, ou le combat est rejoué (retryFrom du mode).
+  // « Tout jouer » : le combat courant est un mur (taux de la manche sous hardWin plus la pénalité de difficulté), les PV
+  // sont sous lowHp, ou le combat est rejoué (retryFrom du mode).
   function economy(game, stops) {
     const { mode } = game;
     const here = stops.find(s => s.floor === game.floor);
     const floor = goldFloor(game.boons, mode);
-    const hard = HARD_WIN + mode.penalty;
-    const lowHp = game.hp < LOW_HP;
+    const hard = mode.hardWin + mode.penalty;
+    const lowHp = game.hp < mode.lowHp;
     const retry = game.attempts > 0 && game.floor >= mode.retryFrom;
     const allIn = lowHp || retry || (here !== undefined && here.fightWin < hard);
     const nextWall = stops.find(s => s.fightWin < hard) ?? null;
@@ -642,14 +657,15 @@ const KT = (() => {
 
   // Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
   function coreScore(core, stops, coresByStop, game, data) {
+    const { ownedBonus } = game.mode;
     const total = totalWeight(stops);
     const key = coreKey(core);
     const stat = stops.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop)?.get(key)?.lo ?? 0), 0) / total;
     const owned = core.reduce((s, id) => {
       const base = baseLine(id);
       const star = bestStar(game, base);
-      if (star === 0) return s - (lineInfo(data, base) && !findable(data, game.level, base) ? OWNED_BONUS : 0);
-      return s + OWNED_BONUS + (star >= 2 ? OWNED_BONUS : 0) + (shinyLine(game, base) ? SHINY_BONUS : 0);
+      if (star === 0) return s - (lineInfo(data, base) && !findable(data, game.level, base) ? ownedBonus : 0);
+      return s + ownedBonus + (star >= 2 ? ownedBonus : 0) + (shinyLine(game, base) ? SHINY_BONUS : 0);
     }, 0);
     return stat + owned;
   }
@@ -703,7 +719,7 @@ const KT = (() => {
     return gain;
   }
 
-  // Meilleur trio sur une fenêtre de combats (+INERTIA pour le trio précédent), avec sa preuve : le trio sur le combat le plus
+  // Meilleur trio sur une fenêtre de combats (+inertia du mode pour le trio précédent), avec sa preuve : le trio sur le combat le plus
   // dur où il a des statistiques.
   function bestCore(coresByStop, data, game, stops, previousKey) {
     const candidates = new Map();
@@ -711,7 +727,7 @@ const KT = (() => {
     if (!candidates.size) return null;
     let best = null;
     for (const [key, core] of candidates) {
-      const score = coreScore(core, stops, coresByStop, game, data) + (key === previousKey ? INERTIA : 0);
+      const score = coreScore(core, stops, coresByStop, game, data) + (key === previousKey ? game.mode.inertia : 0);
       if (!best || score > best.score) best = { key, core: [...core], score };
     }
     const proof = [...stops].sort((a, b) => b.weight - a.weight)
@@ -759,7 +775,7 @@ const KT = (() => {
   // Compo cible : le meilleur trio et ses compléments (fillersOf). flat : lignées du trio dont la ★★★ est nettement moins forte
   // que la ★★ (flatThirdStar) ; strength : lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
   function targetComp(stats, data, game, previousKey) {
-    const stops = nextStops(stats.stops, game.floor, HORIZON, game.mode);
+    const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode);
     const coresByStop = coresAt(stats, stops);
     // En campagne, sans trio noté sur ces combats (aventure sans table d'arrêts, Canela aux manches sans statistiques), la
     // compo se fait sans trio : tes meilleures unités, puis la boutique.
@@ -773,9 +789,9 @@ const KT = (() => {
     return { ...best, fillers, upgrades, replaced, flat, strength };
   }
 
-  // Trio des 9 combats suivants (10 à 18), à préparer avec le surplus ; null s'il est déjà la compo cible.
+  // Trio des horizon combats suivants (10 à 18 en normal), à préparer avec le surplus ; null s'il est déjà la compo cible.
   function nextComp(stats, data, game, target, previousKey) {
-    const stops = nextStops(stats.stops, game.floor, HORIZON, game.mode, HORIZON);
+    const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode, game.mode.horizon);
     const next = bestCore(coresAt(stats, stops), data, game, stops, previousKey);
     return next && next.key !== target.key ? next : null;
   }
@@ -1424,7 +1440,7 @@ const KT = (() => {
   function boonScore(id, game) {
     const path = boonPath(id);
     const tie = Object.keys(BOONS).indexOf(id) / 100;
-    if (game.hp < LOW_HP && HEAL_BOONS.includes(id)) return 100 - tie;
+    if (game.hp < game.mode.lowHp && HEAL_BOONS.includes(id)) return 100 - tie;
     if (path === 'fortune' && pathCount(game.boons, 'fortune') < PATH_SIZE) return 90 - tie;
     if (path && pathCount(game.boons, path) < PATH_SIZE) return 50 + 10 * pathCount(game.boons, path) - PATH_ORDER.indexOf(path) - tie;
     return 10 - tie;
@@ -1455,7 +1471,7 @@ const KT = (() => {
         const path = boonPath(x.id);
         const open = path !== null && pathCount(game.boons, path) < PATH_SIZE;
         const why = x.seal ? 'sceau le plus utile pour ta situation'
-          : game.hp < LOW_HP && HEAL_BOONS.includes(x.id) ? `PV bas (${game.hp})`
+          : game.hp < game.mode.lowHp && HEAL_BOONS.includes(x.id) ? `PV bas (${game.hp})`
             : open ? `voie ${PATH_NAMES[path]} : ${pathCount(game.boons, path) + 1} sur ${PATH_SIZE}` : 'meilleur effet immédiat';
         const detail = !x.seal && open ? `À ${PATH_SIZE} : ${PATH_BONUS[path]}.` : '';
         return mark('do', 'Prends', `Prends ${x.seal ? names.seal(x.id) : BOONS[x.id][1]}`, why, detail);
@@ -1508,6 +1524,7 @@ const KT = (() => {
     { key: 'text', label: 'Texte', values: [['small', 'Petit'], ['normal', 'Normal'], ['large', 'Grand']], def: 'normal' },
     { key: 'alpha', label: 'Fond', values: [['100', 'Opaque'], ['90', '90 %'], ['85', '85 %']], def: '90' },
     { key: 'side', label: 'Porteur à distance (formation)', values: Object.entries(CARRY_ZONES).map(([k, z]) => [k, capital(z.name)]), def: 'left' },
+    ...STRATEGY,
   ];
   // Valeurs inconnues du stockage (modifié à la main, version antérieure) ramenées aux valeurs par défaut : une zone de porteur
   // inconnue ferait échouer la formation à chaque lecture de la sauvegarde.
@@ -1722,7 +1739,7 @@ const KT = (() => {
   const shortDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
   return {
-    SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, lineInfo, loadJson, goldRules, leagueNote, modeContext, latestSave, shownMode, pollState,
+    SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, latestSave, shownMode, pollState,
     parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss,
     baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
@@ -2106,7 +2123,7 @@ function headHtml(state) {
   if (e) {
     parts.push(`<p class="kt-gold"><span class="kt-coin" aria-hidden="true"></span>Or <b>${e.gold}</b> → <span class="spend">${e.spend} à dépenser</span><span class="m">palier ${e.floor} · +${e.floor / 10}</span></p>`);
     let wall = '';
-    if (e.allIn) wall = `Tout jouer : ${e.lowHp ? 'PV sous 40' : e.retry ? `${mode.unit} rejoué` : 'combat difficile'}.`;
+    if (e.allIn) wall = `Tout jouer : ${e.lowHp ? `PV sous ${mode.lowHp}` : e.retry ? `${mode.unit} rejoué` : 'combat difficile'}.`;
     else if (e.nextWall) wall = `${mode.label} ${e.nextWall.floor} (${esc(KT.fightName(e.nextWall))}, ${KT.pct(e.nextWall.fightWin)}) : tout jouer.`;
     if (wall) parts.push(`<p class="kt-warn"><span class="kt-sym kp-no" aria-hidden="true">▼</span>${wall}</p>`);
   }
@@ -2179,7 +2196,8 @@ function optionsHtml(ui) {
     `<label><input type="radio" name="${o.key}" value="${v}"${ui[o.key] === v ? ' checked' : ''}><span>${name}</span></label>`).join('')}</div></fieldset>`;
   const checks = o => `<fieldset><legend>${o.label}</legend><div class="kt-checks">${o.values.map(([v, name]) =>
     `<label><input type="checkbox" name="${o.key}" value="${v}"${ui[o.key][v] ? ' checked' : ''}><span>${SYM[v]} ${name}</span></label>`).join('')}</div></fieldset>`;
-  return `<h2>Options</h2>${KT.OPTIONS.map(o => (o.type === 'checks' ? checks(o) : seg(o))).join('')}
+  const html = list => list.map(o => (o.type === 'checks' ? checks(o) : seg(o))).join('');
+  return `<h2>Options</h2>${html(KT.OPTIONS.filter(o => !KT.STRATEGY.includes(o)))}<h2>Stratégie</h2>${html(KT.STRATEGY)}
 <p class="kt-hint">Alt+K replie le panneau ; double-clic sur la barre pour le remettre en haut à droite.</p>`;
 }
 
@@ -2443,7 +2461,7 @@ const UI_DEFAULTS = { x: null, y: 16, collapsed: false, avoid: false, aims: true
 function mount() {
   const ui = { ...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
   KT.checkUi(ui);
-  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: undefined, save: null, saveKey: undefined, mode: KT.TOWER_MODE, unsupported: false, stats: null, campBroken: false, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: undefined, save: null, saveKey: undefined, mode: KT.withStrategy(KT.TOWER_MODE, ui), unsupported: false, stats: null, campBroken: false, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, copied: null, planner: { code: null, error: null, running: false } };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
@@ -2612,6 +2630,7 @@ function mount() {
     shown = now;
     state.lastRaw = raw;
     Object.assign(state, KT.pollState(state, found, shown));
+    state.mode = KT.withStrategy(state.mode, ui);
     compute();
     render();
   }
@@ -2678,7 +2697,9 @@ function mount() {
     setOption(ui, e.target);
     saveUi();
     applyLook();
-    if (name === 'side') compute();
+    const strategic = KT.STRATEGY.some(o => o.key === name);
+    if (strategic) state.mode = KT.withStrategy(state.mode, ui);
+    if (name === 'side' || strategic) compute();
     render();
   });
   opts.addEventListener('submit', e => e.preventDefault());
