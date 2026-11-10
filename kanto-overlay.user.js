@@ -1519,7 +1519,8 @@ const KT = (() => {
   const TABS = [['tour', 'Tour'], ['compo', 'Compo'], ['boss', 'Boss'], ['rules', 'Règles']];
   const capital = s => s[0].toUpperCase() + s.slice(1);
   // Options du menu ⚙, dans l'ordre affiché : clé de l'objet ui, valeurs [valeur, libellé], valeur par défaut. checks : cases à
-  // cocher, ui[key] associe chaque valeur à un booléen (pastilles : un niveau de conseil, précédé de son symbole).
+  // cocher, ui[key] associe chaque valeur à un booléen (pastilles : un niveau de conseil, précédé de son symbole). STRATEGY,
+  // en dernier, s'affiche sous son titre et ajoute à chaque valeur ses paramètres.
   const OPTIONS = [
     { key: 'theme', label: 'Thème', values: [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']], def: 'auto' },
     { key: 'pins', label: 'Pastilles sur le jeu', type: 'checks', values: [['do', 'Faire'], ['opt', 'Si l’or'], ['no', 'Éviter']], def: { do: true, opt: true, no: true } },
