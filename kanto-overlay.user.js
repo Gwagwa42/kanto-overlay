@@ -976,8 +976,9 @@ const KT = (() => {
   // basic : ses attaques de base comptent, quand l'Attaque d'un stade au moins atteint BASIC_RATIO fois son Atq. Spé.
   // (Magicarpe n'y arrive qu'en Léviator) ; l'API ne publie pas le rôle. flex : lignée à deux formes, qui prend la capacité
   // physique ou spéciale selon la stat que ses objets donnent le plus. Une lignée inconnue de data.json et de LINES_V41, ou
-  // dont un stade n'a pas ces champs, est traitée de même, faute de capacité connue. Deux formes sur d'autres axes (Ramoloss :
-  // Défense contre Déf. Spé.) : les stats des deux capacités comptent, la forme jouée ne se lit pas sur les objets d'attaque.
+  // sans échelle au dernier stade, ou sans Attaque ni Atq. Spé. à un stade, est traitée de même, faute de capacité connue.
+  // Deux formes sur d'autres axes (Ramoloss : Défense contre Déf. Spé. ; Nidoqueen : Attaque contre Défense) : les stats des
+  // deux capacités comptent, approximation faute de lire la forme jouée sur les seuls objets d'attaque.
   function attackKit(data, base) {
     const info = lineInfo(data, base);
     if (info?.hit) return { basic: info.hit.includes('atk'), atk: info.hit.includes('atk'), spa: info.hit.includes('spa'), flex: false };
@@ -1187,8 +1188,8 @@ const KT = (() => {
       }
       const begun = free.filter(h => !idlePart(h.profile, id)).map(h => ({ h, f: recipesWith(h, id)[0] })).find(x => x.f);
       if (begun) {
-        const [a, b] = book.parts.get(begun.f);
-        return alone(i, begun.h, id, `${names.effect(id) ?? 'son effet'} tout de suite ; plus tard avec ${names.item(a === id ? b : a)} : ${names.item(begun.f)}, ${BEST}`);
+        const other = names.item(otherPart(book, begun.f, id));
+        return alone(i, begun.h, id, `${names.effect(id) ?? 'son effet'} tout de suite ; plus tard avec ${other} : ${names.item(begun.f)}, ${BEST}`);
       }
       if (takers(id).length) return;
       const later = needs.find(n => n.left.includes(id));

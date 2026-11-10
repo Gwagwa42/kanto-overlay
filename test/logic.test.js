@@ -580,8 +580,8 @@ test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamai
   assert.equal(at(40, { round: 1009 }).shop[0].why, 'compo des étages 19–27 ; l’or va d’abord à l’XP');
 });
 
-// S57_4 : porteur Minidraco ★★ physique (idéal Bandeau Choix, Ceinture Force, Lentilscope), attaquants Goupix ★★ spécial (idéal
-// Lunettes Choix, Lentilscope, Vive Griffe) et Caninos physique (idéal Lentilscope, Bandeau Choix, Ceinture Force) ; aucun tank.
+// S57_4 : porteur Minidraco ★★ physique (idéal Bandeau Choix, Ceinture Force, Lentilscope), attaquants Goupix ★★ lanceur (idéal
+// Lunettes Choix, Vive Griffe, Cuiller Tordue) et Caninos physique (idéal Lentilscope, Bandeau Choix, Ceinture Force) ; aucun tank.
 // À venir : Ptéra (cœur cible non possédé), Leveinard et Lokhlass (compo suivante).
 const withItems = (items, held = {}) => ({
   ...S57_4, items, units: Object.fromEntries(Object.entries(S57.units).map(([k, u]) => [k, held[k] ? { ...u, items: held[k] } : u])),

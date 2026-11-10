@@ -134,7 +134,7 @@ test('objets de campagne : Mystherbe, lanceur, ne vise pas Lentilscope et ne re�
     'kanto', { stats: { ...camp, cores } });
   assert.deepEqual(a.target.core, ['oddish', 'geodude', 'abra']);
   assert.deepEqual(a.bag.map(m => m.title), ['Garde Protéine', 'Carbone → Mystherbe']);
-  // La Protéine n'entre plus dans aucune recette de Mystherbe : elle attend Racaillou, du même trio, pas encore acheté.
+  // La Protéine n'entre dans aucune recette idéale de Mystherbe : elle attend Racaillou, du même trio, pas encore acheté.
   assert.equal(a.bag[0].why, 'Casque Brut pour Racaillou, à venir');
   assert.match(a.bag[1].why, /plus tard avec Calcium : Vive Griffe, meilleur objet de sa lignée en campagne$/);
 });
