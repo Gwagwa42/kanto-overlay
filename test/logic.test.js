@@ -13,7 +13,7 @@ const data = require('./fixtures/data.json');
 const lang = require('./fixtures/lang.json');
 const save = require('./fixtures/save-tower.json');
 const ids = require('./fixtures/ids.json');
-const { brockStop, BROCK, brockCore, brockStats, twoWindows, brockSave, ownedGame, NEXT_SHOP } = require('./fixtures/brock.js');
+const { brockStop, BROCK, brockCore, brockStats, twoWindows, brockSave, ownedGame, EMPTY10, NEXT_SHOP } = require('./fixtures/brock.js');
 
 const names = KT.namer(lang);
 // Étage 57, 38 pièces, niveau 8 : scénario commun avec la maquette et les pages d'aperçu.
@@ -206,7 +206,7 @@ test('stratégie : compo réactive ou stable (combats vus d’avance, inertie)',
   const cores = [brockCore(['abra', 'onix', 'zubat']), brockCore(['pidgey', 'rattata', 'spearow'], 40)];
   const game = comp => KT.readGame({ ...save, round: 1009, level: 6, units: {}, board: {}, bench: [], shop: [] }, strategy({ comp }));
   // Écart de 40 points : gardé avec une inertie de 45, pas de 30.
-  const key = comp => KT.targetComp(brockStats(cores), data, game(comp), 'pidgey+rattata+spearow').key;
+  const key = comp => KT.targetComp(brockStats(cores), data, game(comp), { key: 'pidgey+rattata+spearow' }).key;
   assert.deepEqual([key('normal'), key('stable')], ['abra+onix+zubat', 'pidgey+rattata+spearow']);
 });
 
@@ -241,8 +241,8 @@ test('compo cible : inertie de 30 points', () => {
   const game = readGame({ ...save, round: 1009, level: 6, units: {}, board: {}, bench: [], shop: [] });
   const t = lo => brockStats(cores(lo));
   assert.equal(KT.targetComp(t(51), data, game, null).key, 'abra+onix+zubat');
-  assert.equal(KT.targetComp(t(51), data, game, 'pidgey+rattata+spearow').key, 'pidgey+rattata+spearow');
-  assert.equal(KT.targetComp(t(49), data, game, 'pidgey+rattata+spearow').key, 'abra+onix+zubat');
+  assert.equal(KT.targetComp(t(51), data, game, { key: 'pidgey+rattata+spearow' }).key, 'pidgey+rattata+spearow');
+  assert.equal(KT.targetComp(t(49), data, game, { key: 'pidgey+rattata+spearow' }).key, 'abra+onix+zubat');
 });
 
 test('compo cible : −10 points par lignée du trio à trouver dont le coût ne sort pas à ce niveau', () => {
@@ -271,13 +271,12 @@ test('compo cible : inertie seulement dans la même partie (runSeed)', () => {
     brockCore(['abra', 'onix', 'zubat']),
     brockCore(['pidgey', 'rattata', 'spearow'], 60),
   ];
-  const s = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
-  const at = previous => advise(s, { stats: brockStats(cores), previous }).target.key;
+  const at = previous => advise(EMPTY10, { stats: brockStats(cores), previous }).target.key;
   assert.equal(at({ key: 'pidgey+rattata+spearow', run: 7 }), 'pidgey+rattata+spearow');
   assert.equal(at({ key: 'pidgey+rattata+spearow', run: 8 }), 'abra+onix+zubat');
   // Valeur des versions précédentes (clé seule) : rattachée à aucune partie.
   assert.equal(at('pidgey+rattata+spearow'), 'abra+onix+zubat');
-  assert.equal(advise(s).run, 7);
+  assert.equal(advise(EMPTY10).run, 7);
 });
 
 test('compléments : possédés par puissance (coût, étoiles) et types, boutique pour les places libres, carte plus forte à part', () => {
@@ -381,7 +380,7 @@ const nextFight = (rattata, n = 50) => ({
 });
 // Niveau 4 : le trio à trouver et une place, pour Rattata ★ ou Magicarpe ★ (coût 1, aucun type du trio), tous deux au banc.
 const PAIR = {
-  ...save, round: 1009, level: 4, xp: 0, board: {}, bench: ['r', 'm'], shop: [], items: [], runSeed: 7,
+  ...EMPTY10, level: 4, xp: 0, bench: ['r', 'm'], items: [],
   units: { r: { id: 'r', line: 'rattata', star: 1 }, m: { id: 'm', line: 'magikarp', star: 1 } },
 };
 const posed = a => a.moves.map(m => m.title).filter(t => /Rattata|Magicarpe/.test(t));
@@ -436,7 +435,7 @@ test('compo cible : un trio monté en ★★ l’emporte sur l’inertie d’un 
   ];
   const units = Object.fromEntries(['pidgey', 'rattata', 'spearow'].map(line => [line, { id: line, line, star: 2 }]));
   const game = readGame({ ...save, round: 1009, level: 3, units, board: { 0: 'pidgey', 1: 'rattata', 2: 'spearow' }, bench: [], shop: [] });
-  assert.equal(KT.targetComp(brockStats(cores), data, game, 'abra+onix+zubat').key, 'pidgey+rattata+spearow');
+  assert.equal(KT.targetComp(brockStats(cores), data, game, { key: 'abra+onix+zubat' }).key, 'pidgey+rattata+spearow');
 });
 
 test('achat d’une carte ★ : les autres pastilles de la boutique ne changent pas', () => {
@@ -652,8 +651,6 @@ test('vendre : unité du banc hors compo et sans paire, banc presque plein', () 
   const sold = advise({ ...kept, gold: 3 }).bench[3];
   assert.deepEqual([brief(sold), sold.why], ['no Vends', 'il manque de l’or pour un achat conseillé']);
 });
-
-const EMPTY10 = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
 
 test('compo suivante : trio des combats 10 à 18, absent s’il est déjà la compo cible', () => {
   const a = advise(S57);

@@ -633,6 +633,8 @@ const KT = (() => {
   const shinyLine = (game, base) => unitsOf(game, base).some(u => u.shiny && u.star === bestStar(game, base));
   const copies = (game, base, star) => unitsOf(game, base).filter(u => u.star === star).length;
   const ones = (game, base) => copies(game, base, 1);
+  // Deux copies de cette étoile, sous ★★★ : la 3ᵉ les fusionne en une copie de l'étoile suivante.
+  const pairAt = (game, base, star) => star < 3 && copies(game, base, star) === 2;
   const pathCount = (boons, path) => boons.filter(b => boonPath(b) === path).length;
 
   function goldFloor(boons, mode) {
@@ -900,7 +902,7 @@ const KT = (() => {
     const shift = new Map([...mine, ...cards].map(b => [b, costShift(stats, form(b))]));
     const star = b => {
       const best = Math.max(1, bestStar(game, b));
-      return best < 3 && copies(game, b, best) === 2 ? best + 1 : best;
+      return pairAt(game, b, best) ? best + 1 : best;
     };
     // Meilleures lignées de chaque liste, une liste après l'autre, jusqu'au niveau.
     const fill = pools => {
@@ -928,31 +930,32 @@ const KT = (() => {
     return { fillers, upgrades: upgrades.slice(0, replaced.length), replaced };
   }
 
-  // Compo cible : le meilleur trio et ses compléments (fillersOf). previousKey, previousFillers : trio et compléments du
-  // conseil précédent de la même partie. flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★
-  // (flatThirdStar) ; strength : lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
-  function targetComp(stats, data, game, previousKey, previousFillers = []) {
+  // Compo cible : le meilleur trio et ses compléments (fillersOf). previous : { key, fillers } du conseil précédent de la même
+  // partie, ou null. flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★ (flatThirdStar) ; strength :
+  // lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
+  function targetComp(stats, data, game, previous) {
     const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode);
     const coresByStop = coresAt(stats, stops);
     // En campagne, sans trio noté sur ces combats (aventure sans table d'arrêts, Canela aux manches sans statistiques), la
     // compo se fait sans trio : tes meilleures unités, puis la boutique.
-    const best = bestCore(coresByStop, data, game, stops, previousKey)
+    const best = bestCore(coresByStop, data, game, stops, previous?.key)
       ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
     if (!best) return null;
     const strength = lineStrength(coresByStop, stops);
     // Toutes les variantes du prochain combat (champions possibles d'une manche), pondérées par leur part. Sans trio d'au moins
     // MIN_FIGHTS combats sur ce combat, la carte est vide : rien ne change.
     const nextFight = lineStrength(coresByStop, stops.filter(st => st.floor === stops[0].floor));
-    const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), { strength, nextFight, previous: previousFillers });
+    const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), { strength, nextFight, previous: previous?.fillers ?? [] });
     if (!best.core.length && !fillers.length) return null;
     const flat = best.core.filter(id => flatThirdStar(stats, id)).map(baseLine);
     return { ...best, fillers, upgrades, replaced, flat, strength };
   }
 
   // Trio des horizon combats suivants (10 à 18 en normal), à préparer avec le surplus ; null s'il est déjà la compo cible.
-  function nextComp(stats, data, game, target, previousKey) {
+  // previous : { next } du conseil précédent de la même partie, ou null.
+  function nextComp(stats, data, game, target, previous) {
     const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode, game.mode.horizon);
-    const next = bestCore(coresAt(stats, stops), data, game, stops, previousKey);
+    const next = bestCore(coresAt(stats, stops), data, game, stops, previous?.next);
     return next && next.key !== target.key ? next : null;
   }
 
@@ -979,14 +982,14 @@ const KT = (() => {
     const later = nextBases(next);
     const upgrades = target?.upgrades ?? [];
     return game.shop.map((base, i) => base && {
-      base, name: names.line(base), cost: lineInfo(data, base)?.c, triple: ones(game, base) === 2,
+      base, name: names.line(base), cost: lineInfo(data, base)?.c, triple: pairAt(game, base, 1),
       inTarget: wanted.includes(base) || upgrades.includes(base), inCore: core.includes(base), inNext: later.includes(base), shiny: game.shopShiny[i],
       // Lignée de la compo pas encore possédée : elle remplit une place libre du plateau.
       fills: wanted.includes(base) && bestStar(game, base) === 0, upgrade: upgrades.includes(base),
     }).map(c => c && { ...c, stronger: c.upgrade ? `plus fort que ${target.replaced.map(names.line).join(', ')}` : '' });
   }
 
-  // Les fonctions de marques de la boutique lisent shop = { cards, marks, game, target, next, eco, names } (spend) et
+  // Les fonctions de marques de la boutique lisent shop = { cards, marks, game, target, next, data, eco, names } (spend) et
   // remplissent marks, une case par carte ; left : or restant, qu'elles renvoient diminué de ce qu'elles engagent.
   const keepFloor = eco => `garde ${eco.floor} pièces pour les intérêts`;
 
@@ -1082,7 +1085,7 @@ const KT = (() => {
   // (déclenche « Vends »).
   function spend(game, target, next, data, eco, names) {
     const cards = shopCards(game, target, next, data, names);
-    const shop = { cards, marks: cards.map(() => undefined), game, target, next, eco, names };
+    const shop = { cards, marks: cards.map(() => undefined), game, target, next, data, eco, names };
     const stars = starMarks(shop, game.gold);
     let left = stars.short ? stars.left : freeSlotMarks(shop, stars.left);
     const xp = xpMark(game, eco, left);
@@ -1090,7 +1093,7 @@ const KT = (() => {
     let reroll = null;
     if (target) {
       left = targetOptMarks(shop, left);
-      reroll = rerollMark(game, target, data, eco, names, left);
+      reroll = rerollMark(shop, left);
       left = restMarks(shop, left, xp.cost, reroll?.level === 'do' ? REROLL_COST : 0);
     }
     return { shop: shop.marks.map(m => m ?? null), xp: xp.spare ? spareXp(game, eco, left, reroll) : xp.mark, reroll, short: stars.short };
@@ -1103,15 +1106,17 @@ const KT = (() => {
     const top = game.level >= maxLevel(game.floor, game.mode);
     const coreStar = base => (top && !target.flat.includes(base) ? 3 : 2);
     return targetBases(target).filter(base => bestStar(game, base) < 3
-      && ((core.includes(base) && bestStar(game, base) < coreStar(base)) || ones(game, base) === 2 || copies(game, base, 2) === 2));
+      && ((core.includes(base) && bestStar(game, base) < coreStar(base)) || pairAt(game, base, 1) || pairAt(game, base, 2)));
   }
 
-  // left : or restant après les achats conseillés. Hors tout jouer, le niveau visé passe avant l'actualisation, et seules
+  // Marque de l'actualisation, renvoyée sans toucher shop.marks ; shop : contexte de spend, avec une compo cible. left : or
+  // restant après les achats conseillés. Hors tout jouer, le niveau visé passe avant l'actualisation, et seules
   // les lignées trouvables à ce niveau la justifient ; au niveau maximal, où l'or n'a plus d'autre emploi, toute lignée qui
   // sort en boutique. Une lignée qui ne devient trouvable qu'à un niveau plus haut est annoncée ; un coût 1 ou 2, qui sort
   // de moins en moins, ne donne aucun conseil, ni une lignée de coût inconnu.
-  function rerollMark(game, target, data, eco, names, left) {
-    const wanted = target ? seekLines(game, target) : [];
+  function rerollMark(shop, left) {
+    const { game, target, data, eco, names } = shop;
+    const wanted = seekLines(game, target);
     if (!wanted.length) return null;
     if (eco.allIn) return left >= REROLL_COST ? mark('do', 'Actualise', 'Actualise', 'tout jouer : chercher les copies de la compo') : null;
     const seek = wanted.filter(base => lineInfo(data, base));
@@ -1755,8 +1760,11 @@ const KT = (() => {
       const free = zonesOf(u).map(cells => cells.filter(c => !taken.has(c))).find(cells => cells.length);
       put(u, (u.row > 0 ? free.find(c => spaced(c) && apart(c)) ?? free.find(spaced) : undefined) ?? free[0]);
     };
-    return { taken, put, spaced, place };
+    return { taken, put, spaced, place, zonesOf };
   }
+
+  // Valeur d'une unité de la formation : son coût × 3^(étoile − 1), le prix des copies qu'elle a fusionnées.
+  const unitValue = (data, u) => lineInfo(data, u.base).c * 3 ** (u.star - 1);
 
   // Grolem avant les assassins : ceux-ci quittent leur case, le bord compte moins pour eux.
   const frontRank = u => {
@@ -1821,11 +1829,10 @@ const KT = (() => {
       if (onEdge) return [cells[0].filter(c => EDGE_COLS.includes(colOf(c))), ...cells];
       return shield ? [cells[0].filter(c => c !== center), ...cells] : cells;
     };
-    const value = u => lineInfo(data, u.base).c * 3 ** (u.star - 1);
     const mimic = units.find(u => moveKind(data, u.base, u.star) === 'metronome');
     const others = units.filter(u => u !== mimic);
     let board = arrange(others, zones);
-    const parade = dive ? guard(others, board.taken, zone, value) : null;
+    const parade = dive ? guard(others, board.taken, zone, data) : null;
     if (parade) {
       const pinned = new Map([[parade.carry, parade.spot], [parade.bait, parade.cell]]);
       // Comme guard pour sa case : plus au fond que le porteur, une unité à distance ne le touche pas si elle peut (l'assassin arrivé
@@ -1835,20 +1842,21 @@ const KT = (() => {
       parade.carry.guarded = true;
       parade.bait.bait = true;
     }
-    if (mimic) placeMimic(mimic, others, board, zones(mimic), data, value);
+    if (mimic) placeMimic(mimic, others, board, data);
     // Doc de l'API : unités triées par cellule.
     return units.sort((a, b) => a.cell - b.cell);
   }
 
-  // Mew, posé après les autres sur board : une case collée à l'allié qu'il copiera (copies : sa lignée), sur sa rangée, sinon
-  // derrière, sinon devant (cells : ses listes, zones) ; sans allié à copier ni case libre collée, il se place comme les autres.
-  // Modèles par valeur décroissante, capacité connue (les lignées v41 hors de data.json n'en ont pas) et copiable : le premier
-  // qui a une case libre collée. Les modèles mieux classés n'en ont aucune : Mew ne les touchera pas.
-  function placeMimic(mimic, units, board, cells, data, value) {
+  // Mew, posé après les autres unités (units) sur board : une case collée à l'allié qu'il copiera (copies : sa lignée), dans
+  // ses listes de board.zonesOf (sa rangée, puis derrière, puis devant) ; sans allié à copier ni case libre collée, il se place
+  // comme les autres. Modèles par valeur décroissante (unitValue), capacité connue (les lignées v41 hors de data.json n'en ont
+  // pas) et copiable : le premier qui a une case libre collée. Les modèles mieux classés n'en ont aucune : Mew ne les touchera pas.
+  function placeMimic(mimic, units, board, data) {
+    const cells = board.zonesOf(mimic);
     const kind = u => moveKind(data, u.base, mimic.star);
     const near = model => cells.map(list => list.filter(c => !board.taken.has(c) && touching(c, model.cell))).find(list => list.length);
     const model = units.filter(u => kind(u) && !UNCOPIED.has(kind(u)))
-      .sort((a, b) => value(b) - value(a) || a.cell - b.cell).find(near);
+      .sort((a, b) => unitValue(data, b) - unitValue(data, a) || a.cell - b.cell).find(near);
     const keep = list => list.includes(mimic.from) && !board.taken.has(mimic.from) && board.spaced(mimic.from);
     if (model) {
       const list = near(model);
@@ -1863,13 +1871,15 @@ const KT = (() => {
   // où il entre, la colonne 4 comptant dans les deux) ; Nosferapti (flyover) vise le plus au fond de la colonne la plus proche
   // de la sienne. Un appât strictement plus au fond que le porteur à distance, dans chaque moitié où se trouve le porteur,
   // prend donc l'assaut : au fond, colonne 4 d'abord puis du côté du porteur, si possible sans le toucher (l'assassin se
-  // retournerait vers lui). Le porteur du fond avance d'une rangée, dans sa zone d'abord, hors de la colonne 4 s'il le peut. Appât, parmi les Pokémon possédés :
-  // un Pokémon déjà plus au fond que le porteur, dans la formation ou sur le plateau (du bon côté, il ne bouge pas ; de l'autre, il y vient), sinon le tank de moindre valeur quand il en
-  // reste un devant, sinon l'unité de mêlée de plus grande valeur quand il en reste une devant, sinon l'unité à distance de
-  // plus grande valeur. Ni Ramoloss (son mur couvre l'avant) ni un assassin (il quitte sa case). units : posées sans parade,
-  // sans Mew ; taken : leurs cases ; value : coût × 3^(étoile − 1). Renvoie { carry, spot, bait, cell } : le porteur, l'appât et
-  // leurs cases, que formation pose avant les autres ; null sans porteur à distance, sans appât ou sans case pour l'un des deux.
-  function guard(units, taken, zone, value) {
+  // retournerait vers lui). Le porteur du fond avance d'une rangée, dans sa zone d'abord, hors de la colonne 4 s'il le peut.
+  // Appât, parmi les Pokémon possédés : un Pokémon déjà plus au fond que le porteur, dans la formation ou sur le plateau (du
+  // bon côté, il ne bouge pas ; de l'autre, il y vient), sinon le tank de moindre valeur (unitValue) quand il en reste un
+  // devant, sinon l'unité de mêlée de plus grande valeur quand il en reste une devant, sinon l'unité à distance de plus grande
+  // valeur. Ni Ramoloss (son mur couvre l'avant) ni un assassin (il quitte sa case). units : posées sans parade, sans Mew ;
+  // taken : leurs cases ; zone : CARRY_ZONES du côté du porteur ; data : lu par unitValue. Renvoie { carry, spot, bait, cell } :
+  // le porteur, l'appât et leurs cases, que formation pose avant les autres ; null sans porteur à distance, sans appât ou
+  // sans case pour l'un des deux.
+  function guard(units, taken, zone, data) {
     const carry = units.find(u => u.role === 'carry' && u.row > 0);
     if (!carry) return null;
     const free = (row, cols) => cols.map(c => cellAt(row, c)).filter(c => !taken.has(c) || c === carry.cell);
@@ -1888,15 +1898,18 @@ const KT = (() => {
     const side = Math.sign(colOf(spot) - 3);
     const covers = c => colOf(c) === 3 || (side !== 0 && Math.sign(colOf(c) - 3) === side);
     const owned = units.filter(u => u !== carry && u.from !== null && !OPENERS.has(u.base));
-    const pool = owned.filter(u => !ALLY_SHIELD.has(u.base)).sort((x, y) => value(y) - value(x));
+    const pool = owned.filter(u => !ALLY_SHIELD.has(u.base)).sort((x, y) => unitValue(data, y) - unitValue(data, x));
     const deeper = pool.filter(u => rowOf(u.cell) > rowOf(spot));
     const kept = pool.find(u => u.cell !== u.from && held(u, c => rowOf(c) > rowOf(spot) && covers(c)));
+    // set : appât déjà du bon côté, qui garde sa case.
     const set = deeper.find(u => covers(u.cell)) ?? kept;
     const front = pool.filter(u => rowOf(u.cell) === 0);
-    const tanks = front.filter(u => u.role === 'tank');
+    // Ramoloss compte parmi ceux qui restent devant.
     const stays = owned.filter(u => rowOf(u.cell) === 0);
-    const holds = stays.length;
-    const bait = set ?? deeper[0] ?? (stays.filter(u => u.role === 'tank').length > 1 ? tanks.at(-1) : null) ?? (holds > 1 ? front.find(u => u.role !== 'tank') : null) ?? pool.find(u => rowOf(u.cell) > 0);
+    const spareTank = stays.filter(u => u.role === 'tank').length > 1 ? front.filter(u => u.role === 'tank').at(-1) : null;
+    const melee = stays.length > 1 ? front.find(u => u.role !== 'tank') : null;
+    const ranged = pool.find(u => rowOf(u.cell) > 0);
+    const bait = set ?? deeper[0] ?? spareTank ?? melee ?? ranged;
     if (!bait) return null;
     if (set) return { carry, spot, bait, cell: bait === kept ? kept.from : bait.cell };
     const cells = free(3, CENTER_OUT).filter(covers);
@@ -1966,8 +1979,8 @@ const KT = (() => {
     const stops = stats ? nextStops(stats.stops, game.floor, 3, mode) : [];
     const eco = economy(game, stops);
     const same = previous?.run === run ? previous : null;
-    const target = stats && data ? targetComp(stats, data, game, same?.key ?? null, same?.fillers ?? []) : null;
-    const next = target ? nextComp(stats, data, game, target, same?.next ?? null) : null;
+    const target = stats && data ? targetComp(stats, data, game, same) : null;
+    const next = target ? nextComp(stats, data, game, target, same) : null;
     const spent = spend(game, target, next, data, eco, names);
     const choice = offerChoiceMarks(data, game, eco, names);
     const profiles = target ? lineProfiles(stats, data) : null;

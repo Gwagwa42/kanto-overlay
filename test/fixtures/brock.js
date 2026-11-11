@@ -26,11 +26,13 @@ const ownedGame = (stars, board = {}) => ({
   board, bench: Object.keys(stars).filter(id => !Object.values(board).includes(id)),
   units: Object.fromEntries(Object.entries(stars).map(([line, star]) => [line, { id: line, line, star }])),
 });
-// Étage 5, niveau 4 : trio Abra + Onix + Nosferapti à trouver (twoWindows), Abo ★ pour seul complément ; Chenipan et
-// Roucool ne servent que la compo des étages 19–27.
+// Partie de graine 7 (runSeed) à l'étage 10, niveau 3, sans unité ni boutique ; le sac reste celui de la sauvegarde.
+const EMPTY10 = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
+// Même partie à l'étage 5, niveau 4 : trio Abra + Onix + Nosferapti à trouver (twoWindows), Abo ★ pour seul complément ;
+// Chenipan et Roucool ne servent que la compo des étages 19–27.
 const NEXT_SHOP = {
-  ...save, round: 1004, level: 4, xp: 0, units: { e: { id: 'e', line: 'ekans', star: 1 } }, board: {}, bench: ['e'],
-  shop: ['caterpie', 'pidgey', 'ekans', null, null], runSeed: 7,
+  ...EMPTY10, round: 1004, level: 4, xp: 0, units: { e: { id: 'e', line: 'ekans', star: 1 } }, bench: ['e'],
+  shop: ['caterpie', 'pidgey', 'ekans', null, null],
 };
 
-module.exports = { brockStop, BROCK, brockCore, brockStats, twoWindows, brockSave, ownedGame, NEXT_SHOP };
+module.exports = { brockStop, BROCK, brockCore, brockStats, twoWindows, brockSave, ownedGame, EMPTY10, NEXT_SHOP };
