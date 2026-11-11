@@ -206,7 +206,7 @@ test('stratégie : compo réactive ou stable (combats vus d’avance, inertie)',
   const cores = [brockCore(['abra', 'onix', 'zubat']), brockCore(['pidgey', 'rattata', 'spearow'], 40)];
   const game = comp => KT.readGame({ ...save, round: 1009, level: 6, units: {}, board: {}, bench: [], shop: [] }, strategy({ comp }));
   // Écart de 40 points : gardé avec une inertie de 45, pas de 30.
-  const key = comp => KT.targetComp(brockStats(cores), data, game(comp), 'pidgey+rattata+spearow').key;
+  const key = comp => KT.targetComp(brockStats(cores), data, game(comp), { key: 'pidgey+rattata+spearow' }).key;
   assert.deepEqual([key('normal'), key('stable')], ['abra+onix+zubat', 'pidgey+rattata+spearow']);
 });
 
@@ -241,8 +241,8 @@ test('compo cible : inertie de 30 points', () => {
   const game = readGame({ ...save, round: 1009, level: 6, units: {}, board: {}, bench: [], shop: [] });
   const t = lo => brockStats(cores(lo));
   assert.equal(KT.targetComp(t(51), data, game, null).key, 'abra+onix+zubat');
-  assert.equal(KT.targetComp(t(51), data, game, 'pidgey+rattata+spearow').key, 'pidgey+rattata+spearow');
-  assert.equal(KT.targetComp(t(49), data, game, 'pidgey+rattata+spearow').key, 'abra+onix+zubat');
+  assert.equal(KT.targetComp(t(51), data, game, { key: 'pidgey+rattata+spearow' }).key, 'pidgey+rattata+spearow');
+  assert.equal(KT.targetComp(t(49), data, game, { key: 'pidgey+rattata+spearow' }).key, 'abra+onix+zubat');
 });
 
 test('compo cible : −10 points par lignée du trio à trouver dont le coût ne sort pas à ce niveau', () => {
@@ -436,7 +436,7 @@ test('compo cible : un trio monté en ★★ l’emporte sur l’inertie d’un 
   ];
   const units = Object.fromEntries(['pidgey', 'rattata', 'spearow'].map(line => [line, { id: line, line, star: 2 }]));
   const game = readGame({ ...save, round: 1009, level: 3, units, board: { 0: 'pidgey', 1: 'rattata', 2: 'spearow' }, bench: [], shop: [] });
-  assert.equal(KT.targetComp(brockStats(cores), data, game, 'abra+onix+zubat').key, 'pidgey+rattata+spearow');
+  assert.equal(KT.targetComp(brockStats(cores), data, game, { key: 'abra+onix+zubat' }).key, 'pidgey+rattata+spearow');
 });
 
 test('achat d’une carte ★ : les autres pastilles de la boutique ne changent pas', () => {

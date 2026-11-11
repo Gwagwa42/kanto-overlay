@@ -928,31 +928,32 @@ const KT = (() => {
     return { fillers, upgrades: upgrades.slice(0, replaced.length), replaced };
   }
 
-  // Compo cible : le meilleur trio et ses compléments (fillersOf). previousKey, previousFillers : trio et compléments du
-  // conseil précédent de la même partie. flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★
-  // (flatThirdStar) ; strength : lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
-  function targetComp(stats, data, game, previousKey, previousFillers = []) {
+  // Compo cible : le meilleur trio et ses compléments (fillersOf). previous : { key, fillers } du conseil précédent de la même
+  // partie, ou null. flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★ (flatThirdStar) ; strength :
+  // lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
+  function targetComp(stats, data, game, previous) {
     const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode);
     const coresByStop = coresAt(stats, stops);
     // En campagne, sans trio noté sur ces combats (aventure sans table d'arrêts, Canela aux manches sans statistiques), la
     // compo se fait sans trio : tes meilleures unités, puis la boutique.
-    const best = bestCore(coresByStop, data, game, stops, previousKey)
+    const best = bestCore(coresByStop, data, game, stops, previous?.key)
       ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
     if (!best) return null;
     const strength = lineStrength(coresByStop, stops);
     // Toutes les variantes du prochain combat (champions possibles d'une manche), pondérées par leur part. Sans trio d'au moins
     // MIN_FIGHTS combats sur ce combat, la carte est vide : rien ne change.
     const nextFight = lineStrength(coresByStop, stops.filter(st => st.floor === stops[0].floor));
-    const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), { strength, nextFight, previous: previousFillers });
+    const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), { strength, nextFight, previous: previous?.fillers ?? [] });
     if (!best.core.length && !fillers.length) return null;
     const flat = best.core.filter(id => flatThirdStar(stats, id)).map(baseLine);
     return { ...best, fillers, upgrades, replaced, flat, strength };
   }
 
   // Trio des horizon combats suivants (10 à 18 en normal), à préparer avec le surplus ; null s'il est déjà la compo cible.
-  function nextComp(stats, data, game, target, previousKey) {
+  // previous : { next } du conseil précédent de la même partie, ou null.
+  function nextComp(stats, data, game, target, previous) {
     const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode, game.mode.horizon);
-    const next = bestCore(coresAt(stats, stops), data, game, stops, previousKey);
+    const next = bestCore(coresAt(stats, stops), data, game, stops, previous?.next);
     return next && next.key !== target.key ? next : null;
   }
 
@@ -1090,7 +1091,7 @@ const KT = (() => {
     let reroll = null;
     if (target) {
       left = targetOptMarks(shop, left);
-      reroll = rerollMark(game, target, data, eco, names, left);
+      reroll = rerollMark(shop, data, left);
       left = restMarks(shop, left, xp.cost, reroll?.level === 'do' ? REROLL_COST : 0);
     }
     return { shop: shop.marks.map(m => m ?? null), xp: xp.spare ? spareXp(game, eco, left, reroll) : xp.mark, reroll, short: stars.short };
@@ -1106,12 +1107,14 @@ const KT = (() => {
       && ((core.includes(base) && bestStar(game, base) < coreStar(base)) || ones(game, base) === 2 || copies(game, base, 2) === 2));
   }
 
-  // left : or restant après les achats conseillés. Hors tout jouer, le niveau visé passe avant l'actualisation, et seules
+  // Marque de l'actualisation, renvoyée sans toucher shop.marks ; shop : contexte de spend, avec une compo cible. left : or
+  // restant après les achats conseillés. Hors tout jouer, le niveau visé passe avant l'actualisation, et seules
   // les lignées trouvables à ce niveau la justifient ; au niveau maximal, où l'or n'a plus d'autre emploi, toute lignée qui
   // sort en boutique. Une lignée qui ne devient trouvable qu'à un niveau plus haut est annoncée ; un coût 1 ou 2, qui sort
   // de moins en moins, ne donne aucun conseil, ni une lignée de coût inconnu.
-  function rerollMark(game, target, data, eco, names, left) {
-    const wanted = target ? seekLines(game, target) : [];
+  function rerollMark(shop, data, left) {
+    const { game, target, eco, names } = shop;
+    const wanted = seekLines(game, target);
     if (!wanted.length) return null;
     if (eco.allIn) return left >= REROLL_COST ? mark('do', 'Actualise', 'Actualise', 'tout jouer : chercher les copies de la compo') : null;
     const seek = wanted.filter(base => lineInfo(data, base));
@@ -1974,8 +1977,8 @@ const KT = (() => {
     const stops = stats ? nextStops(stats.stops, game.floor, 3, mode) : [];
     const eco = economy(game, stops);
     const same = previous?.run === run ? previous : null;
-    const target = stats && data ? targetComp(stats, data, game, same?.key ?? null, same?.fillers ?? []) : null;
-    const next = target ? nextComp(stats, data, game, target, same?.next ?? null) : null;
+    const target = stats && data ? targetComp(stats, data, game, same) : null;
+    const next = target ? nextComp(stats, data, game, target, same) : null;
     const spent = spend(game, target, next, data, eco, names);
     const choice = offerChoiceMarks(data, game, eco, names);
     const profiles = target ? lineProfiles(stats, data) : null;
