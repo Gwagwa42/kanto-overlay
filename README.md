@@ -49,12 +49,17 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
   niveau. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
   Le reste du plateau est rempli par tes unités les mieux notées, puis par la boutique pour les places restantes (★ « place libre »).
   La note d'une unité est sa puissance, `(1 + 0,35 × (coût − 1))` × 1, 1,9 ou 3,6 selon l'étoile, plus 0,25 par type renforcé et
-  0,5 par seuil de type franchi. Le coût gagne ou perd un cran, un seul, selon l'écart de victoire de la lignée dans le mode (champ
+  0,5 par seuil de type franchi. Deux copies de ta meilleure étoile comptent pour l'étoile suivante, que la 3ᵉ copie donnera :
+  deux Ponyta ★ ne sont pas remplacés par un Aspicot de la boutique. Le coût gagne ou perd un cran, un seul, selon l'écart de victoire de la lignée dans le mode (champ
   `d` de l'API : taux de victoire moins le taux attendu sur les mêmes combats), rétréci par 400 combats fictifs : un cran dès
   2,5 points. Sur les 85 lignées de base (novembre 2026), 3 gagnent un coût (Mystherbe, Nidoran♀, Carapuce) et 18 en perdent un
   (dont Salamèche, Pikachu, Magmar, Roucool, Abra). On lit l'écart de la forme possédée, rétréci vers celui de sa lignée de
-  base pour une forme ancrée, et celui de la lignée de base pour une carte de boutique. À égalité, l'unité possédée, la shiny,
-  puis la lignée qui gagne le plus dans les trios de ces combats. Une carte de boutique mieux notée qu'un de tes compléments est conseillée en ◆ (« plus fort que Rattata ») : elle
+  base pour une forme ancrée, et celui de la lignée de base pour une carte de boutique. La force de la lignée sur le prochain
+  combat (victoires de ses trios d'au moins 20 combats moins celles du combat, sur toutes ses variantes à leur part, bornées
+  à 20 points) ajoute 0,01 par point : ±0,2 par lignée, 0,4 au plus entre deux, à peine plus qu'un cran de coût. Un complément du conseil précédent, dans la
+  même partie, garde 0,1 : il faut 10 points d'écart sur le prochain combat pour le remplacer, sinon le plan, les objets visés
+  et le Planificateur changeraient à chaque combat. À égalité, l'unité possédée, la shiny, puis la lignée qui gagne le plus
+  dans les trios de ces combats. Une carte de boutique mieux notée qu'un de tes compléments est conseillée en ◆ (« plus fort que Rattata ») : elle
   n'entre dans la compo qu'une fois achetée, pour que le plan ne change pas à chaque actualisation. Un complément possédé reçoit
   des objets comme les autres Pokémon de la compo.
 - **Compo suivante** : le même calcul sur les 9 combats d'après (« Ensuite · étages 80–100 » sous la compo cible), affiché quand
@@ -102,8 +107,8 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
     sont donnés en paire, avec l'ordre de pose quand il compte. Un composant dont la stat d'attaque ne sert pas le Pokémon ne
     se pose pas seul : il attend au sac l'autre composant de la recette (« Garde Protéine — pour Goupix, avec Calcium : Orbe
     Vie »). Un objet complet idéal de plusieurs Pokémon va à celui qui le
-    classe le plus haut ; un composant, au premier que sa stat sert dans l'ordre porteur, tanks, attaquants (par étoiles, shiny, puis force de la
-    lignée sur les combats de la compo cible). 3 objets au plus.
+    classe le plus haut ; un composant, au premier que sa stat sert dans l'ordre porteur, tanks, attaquants (par étoiles, shiny, force de la
+    lignée sur les combats de la compo cible, puis coût). 3 objets au plus.
     Un objet idéal qu'un Pokémon de la compo ne peut pas recevoir attend au sac pour lui, avant toute lignée à venir, avec la
     raison : plus de place, après l'Aimant, composant seul à fusionner d'abord, bloqué par un composant seul hors de ses
     recettes, ou à poser avec l'autre composant. Le reste
@@ -125,10 +130,10 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
   rangée pleine déborde sur celle de derrière, puis sur celle de devant.
   - Colonnes : à l'avant, depuis le centre, tanks d'abord. Derrière, le porteur à distance prend les colonnes de la zone choisie
     (option Porteur à distance du menu ⚙ : coin gauche, centre ou coin droit ; aucune statistique publique ne départage ces
-    placements), puis les autres une colonne sur deux depuis cette zone. Une unité à distance évite la colonne d'une autre,
-    quelle que soit sa rangée : sur deux rangées voisines, deux cases de la même colonne se touchent. Posées depuis le banc,
-    4 unités à distance ne se touchent pas (3 avec la zone centre) ; au-delà, ou autour d'une unité qui garde sa case, elles
-    peuvent se toucher.
+    placements), puis les autres une colonne sur deux depuis cette zone. Une unité à distance évite la colonne de tout Pokémon
+    déjà posé derrière l'avant, quelle que soit sa rangée : sur deux rangées voisines, deux cases de la même colonne se touchent.
+    Posées depuis le banc, 4 unités à distance ne se touchent pas (3 avec la zone centre, moins si un Pokémon de mêlée déborde
+    derrière l'avant ou sert d'appât au fond) ; au-delà, ou autour d'une unité qui garde sa case, elles peuvent se toucher.
   - Capacités qui dépendent des voisins (code du jeu ; deux cases sont collées quand leurs hexagones se touchent) :
     - Mew (Métronome) copie la capacité de l'allié collé qui vaut le plus (coût × 3 par étoile au-delà de la première) ; il
       se pose donc sur une case collée au Pokémon de plus grande valeur de la compo, sur sa rangée si elle le permet. Abra
@@ -154,10 +159,12 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
     son voisin). L'appât est un Pokémon que tu possèdes : celui qui est déjà plus au fond que le porteur (de l'autre côté, il est ramené du sien), sinon
     le tank de moindre valeur s'il en reste un devant, sinon l'unité de mêlée de plus grande valeur s'il en reste une devant,
     sinon l'unité à distance de plus grande valeur ; jamais Ramoloss ni un de tes assassins. La parade prime sur la zone du
-    porteur et sur une case déjà occupée ; une parade déjà posée sur le plateau ne donne aucun déplacement. Sans porteur à
+    porteur et sur une case déjà occupée ; une parade déjà posée sur le plateau ne donne aucun déplacement. Les autres
+    Pokémon se placent ensuite autour du porteur et de l'appât : celui qui débordait derrière un avant plein y revient quand
+    l'appât libère sa case, et une unité à distance plus au fond que le porteur évite les cases qui le touchent. Sans porteur à
     distance, sans appât ou sans case libre, la formation ne change pas et le panneau le dit. Limites : contre Nosferapti,
     le porteur reste exposé s'il est le plus au fond de la colonne visée ; un porteur en colonne 4 touche son appât ; Mew,
-    placé après les autres, n'est ni couvert ni appât ; Taupiqueur (PV max les plus bas) et Roucool (plus grande valeur)
+    placé après les autres, collé à son modèle, n'est ni couvert ni appât (porteur, il n'a pas de parade) ; Taupiqueur (PV max les plus bas) et Roucool (plus grande valeur)
     visent sans regarder les cases.
   - Hors des cas ci-dessus, un Pokémon déjà sur sa rangée garde sa case ; le porteur à distance, seulement dans les colonnes de sa zone. Les déplacements
     sont listés dans l'ordre où les faire : d'abord ceux qui libèrent une case, puis les poses, en remplaçant un Pokémon hors

@@ -13,6 +13,7 @@ const data = require('./fixtures/data.json');
 const lang = require('./fixtures/lang.json');
 const save = require('./fixtures/save-tower.json');
 const ids = require('./fixtures/ids.json');
+const { brockStop, BROCK, brockCore, brockStats, twoWindows, brockSave, ownedGame, NEXT_SHOP } = require('./fixtures/brock.js');
 
 const names = KT.namer(lang);
 // Étage 57, 38 pièces, niveau 8 : scénario commun avec la maquette et les pages d'aperçu.
@@ -25,20 +26,11 @@ const T = KT.TOWER_MODE;
 const floorAt = raw => KT.floorFromSave(raw, T);
 const readGame = s => KT.readGame(s, T);
 
-// Combat de test : Pierre à l'étage 10, 50 % de victoires ; trio noté contre lui (50 combats, 90 %), de borne basse lo.
-const BROCK = [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }];
-const brockCore = (core, lo = 80) => ({ stop: BROCK[0].stop, core, n: 50, win: 90, lo });
-// Statistiques de la Tour réduites au combat contre Pierre et à ces trios.
-const brockStats = (cores, extra = {}) => ({ ...torre, stops: BROCK, cores, ...extra });
-// Conseils à l'étage 10 pour une compo réduite à ce trio : niveau 3, boutique, plateau et sac vides, sauf ce que game précise.
-const brockAdvice = (core, game, extra = {}) => advise({ ...save, round: 1009, level: 3, shop: [], board: {}, items: [], ...game },
-  { stats: brockStats([brockCore(core)]), ...extra });
-// Trio et unités possédées, boutique vide : le porteur est l'attaquant possédé du trio le plus étoilé. stars : lignée → étoile de
-// l'unité possédée, qui prend la lignée pour identifiant ; hors du plateau, elle est au banc.
-const trioAdvice = (core, stars, { board = {}, level = 3, side = 'left', lines = data.lines, dive = false } = {}) => brockAdvice(core, {
-  level, board, bench: Object.keys(stars).filter(id => !Object.values(board).includes(id)),
-  units: Object.fromEntries(Object.entries(stars).map(([line, star]) => [line, { id: line, line, star }])),
-}, { side, dive, data: { ...data, lines } });
+// Conseils à l'étage 10 (brockSave) pour une compo réduite à ce trio.
+const brockAdvice = (core, game, extra = {}) => advise(brockSave(game), { stats: brockStats([brockCore(core)]), ...extra });
+// Trio et unités possédées (ownedGame), boutique vide : le porteur est l'attaquant possédé du trio le plus étoilé.
+const trioAdvice = (core, stars, { board = {}, level = 3, side = 'left', lines = data.lines, dive = false } = {}) => brockAdvice(core,
+  { level, ...ownedGame(stars, board) }, { side, dive, data: { ...data, lines } });
 // Code KT1 → cellule de chaque lignée.
 const cellsOf = code => Object.fromEntries(code.split(';').slice(4).map(u => u.split(':')).map(([line, , cell]) => [line, Number(cell)]));
 
@@ -347,11 +339,12 @@ test('compléments : l’écart de victoire rétréci (400 combats fictifs) déc
   assert.deepEqual(comp([stat('caterpie', -20, 4000), stat('caterpie-a1', 30, 40), weak], own(['c', 'caterpie-a1', 1], ['v', 'venonat', 1])), [['venonat'], []]);
   assert.deepEqual(comp([stat('caterpie', 6, 4000), weak], own(['c', 'caterpie-a1', 1], ['v', 'venonat', 1])), [['caterpie'], []]);
   // Deux copies de même étoile, ancrée et non : la note lit la forme de la copie que la formation pose (la shiny, sinon la
-  // forme non ancrée par l'identifiant), quel que soit l'ordre des copies sur le plateau.
-  const both = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1], ['v', 'venonat', 1]];
+  // forme non ancrée par l'identifiant), quel que soit l'ordre des copies sur le plateau. Les deux copies valent une ★★ : face
+  // à Mimitoss ★★ faible (coût 1 : 1,9), Chenipan posé faible (0,65 × 1,9) perd, Chenipan ancré fort (1,35 × 1,9) gagne.
+  const both = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1], ['v', 'venonat', 2]];
   assert.deepEqual(comp(anchored, own(...both)), [['venonat'], []]);
   assert.deepEqual(comp(anchored, own(...[...both].reverse())), [['venonat'], []]);
-  const shinyAnchored = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1, true], ['v', 'venonat', 1]];
+  const shinyAnchored = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1, true], ['v', 'venonat', 2]];
   assert.deepEqual(comp(anchored, own(...shinyAnchored)), [['caterpie'], []]);
   assert.deepEqual(comp(anchored, own(...[...shinyAnchored].reverse())), [['caterpie'], []]);
   // Une carte de boutique est notée sur sa lignée de base : Chenipan fort est conseillé à la place de Mimitoss possédé.
@@ -373,6 +366,66 @@ test('compléments : à l’étage 72, les unités fortes possédées passent av
   assert.deepEqual(a.shop.map(m => m.why), ['hors compo cible', 'hors compo cible', 'complément de la compo ; l’or va d’abord à l’XP',
     'hors compo cible', 'hors compo cible']);
   assert.deepEqual([a.target.upgrades, a.target.replaced], [[], []]);
+});
+
+// Prochain combat à l'étage 10, puis l'étage 11, tous deux à 50 % : le trio Abra + Onix + Nosferapti les gagne ; Rattata
+// figure dans un trio de l'étage 10 (n combats), Magicarpe dans un trio de l'étage 11, chacun à tant de points du combat.
+const nextFight = (rattata, n = 50) => ({
+  ...torre, lines: [],
+  stops: [10, 11].map(brockStop),
+  cores: [
+    ...[10, 11].map(f => ({ stop: `${f}:brock`, core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 })),
+    { stop: '10:brock', core: ['abra', 'onix', 'rattata'], n, win: 50 + rattata, lo: 10 },
+    { stop: '11:brock', core: ['abra', 'onix', 'magikarp'], n: 50, win: 80, lo: 10 },
+  ],
+});
+// Niveau 4 : le trio à trouver et une place, pour Rattata ★ ou Magicarpe ★ (coût 1, aucun type du trio), tous deux au banc.
+const PAIR = {
+  ...save, round: 1009, level: 4, xp: 0, board: {}, bench: ['r', 'm'], shop: [], items: [], runSeed: 7,
+  units: { r: { id: 'r', line: 'rattata', star: 1 }, m: { id: 'm', line: 'magikarp', star: 1 } },
+};
+const posed = a => a.moves.map(m => m.title).filter(t => /Rattata|Magicarpe/.test(t));
+
+test('compléments : à puissance égale, la lignée la plus forte sur le prochain combat est posée', () => {
+  // Sur les deux combats, Magicarpe (+15) devance Rattata (+5) ; sur le prochain, Rattata (+10) devance Magicarpe (0).
+  const a = advise(PAIR, { stats: nextFight(10) });
+  assert.deepEqual([a.target.fillers, posed(a)], [['rattata'], ['Pose Rattata']]);
+  // Trio de Rattata sous 20 combats : le prochain combat n'a rien à dire, la fenêtre départage.
+  const few = advise(PAIR, { stats: nextFight(10, 19) });
+  assert.deepEqual([few.target.fillers, posed(few)], [['magikarp'], ['Pose Magicarpe']]);
+});
+
+test('compléments : celui du conseil précédent reste sous 10 points d’écart sur le prochain combat', () => {
+  const previous = { key: 'abra+onix+zubat', run: 7, next: null, fillers: ['magikarp'] };
+  assert.deepEqual(advise(PAIR, { stats: nextFight(5) }).target.fillers, ['rattata']);
+  assert.deepEqual(advise(PAIR, { stats: nextFight(5), previous }).target.fillers, ['magikarp']);
+  assert.deepEqual(advise(PAIR, { stats: nextFight(15), previous }).target.fillers, ['rattata']);
+  // Autre partie : pas d'inertie.
+  assert.deepEqual(advise(PAIR, { stats: nextFight(5), previous: { ...previous, run: 8 } }).target.fillers, ['rattata']);
+});
+
+test('compléments : toutes les variantes du prochain combat comptent', () => {
+  // Étage 10 à deux variantes (Pierre, Ondine) : Rattata ne figure que dans un trio contre Ondine (+20), soit +10 sur le combat.
+  const variants = nextFight(0);
+  const stats = {
+    ...variants, stops: [variants.stops[0], { ...variants.stops[0], stop: '10:misty' }, variants.stops[1]],
+    cores: [...variants.cores, { stop: '10:misty', core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 },
+      { stop: '10:misty', core: ['abra', 'onix', 'rattata'], n: 50, win: 70, lo: 10 }],
+  };
+  assert.deepEqual(advise(PAIR, { stats }).target.fillers, ['rattata']);
+});
+
+test('compléments : conseil précédent gardé pour l’inertie tant qu’il ne change pas', () => {
+  const a = advise(PAIR, { stats: nextFight(10) });
+  const kept = KT.rememberedTarget(a, null);
+  assert.deepEqual(kept, { key: 'abra+onix+zubat', run: 7, next: null, fillers: ['rattata'] });
+  assert.equal(KT.rememberedTarget(a, kept), kept);
+  assert.equal(KT.rememberedTarget(null, kept), kept);
+  // Compléments changés : nouveau conseil, que le suivant relit.
+  assert.deepEqual(KT.rememberedTarget(a, { ...kept, fillers: ['magikarp'] }).fillers, ['rattata']);
+  // Rattata faible sur le prochain combat (−5) : gardé par l'inertie du conseil retenu.
+  assert.deepEqual(advise(PAIR, { stats: nextFight(-5), previous: kept }).target.fillers, ['rattata']);
+  assert.deepEqual(advise(PAIR, { stats: nextFight(-5) }).target.fillers, ['magikarp']);
 });
 
 test('compo cible : un trio monté en ★★ l’emporte sur l’inertie d’un trio non possédé', () => {
@@ -600,14 +653,6 @@ test('vendre : unité du banc hors compo et sans paire, banc presque plein', () 
   assert.deepEqual([brief(sold), sold.why], ['no Vends', 'il manque de l’or pour un achat conseillé']);
 });
 
-// Combats aux étages 10 à 27 : la compo cible se joue sur 10–18, la compo suivante sur 19–27.
-const twoWindows = later => {
-  const stops = Array.from({ length: 18 }, (_, i) => ({ stop: `${10 + i}:brock`, n: 100, win: 50, lo: 45, first: 50, tries: 2 }));
-  const cores = stops.flatMap((s, i) => (i < 9
-    ? [{ stop: s.stop, core: ['abra', 'onix', 'zubat'], n: 50, win: 90, lo: 80 }]
-    : later.map(([core, lo]) => ({ stop: s.stop, core, n: 50, win: 90, lo }))));
-  return { ...torre, stops, cores };
-};
 const EMPTY10 = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
 
 test('compo suivante : trio des combats 10 à 18, absent s’il est déjà la compo cible', () => {
@@ -631,13 +676,9 @@ test('compo suivante : inertie de 30 points dans la même partie', () => {
 });
 
 test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamais sous le palier ni en tout jouer', () => {
-  // Étage 5 (aucun niveau visé), niveau 4 : trio Abra + Onix + Nosferapti à trouver, Abo ★ possédé pour seul complément ;
-  // Chenipan et Roucool ne servent que la compo des étages 19–27.
+  // Étage 5, aucun niveau visé (NEXT_SHOP).
   const t = twoWindows([[['caterpie', 'pidgey', 'rattata'], 80]]);
-  const base = {
-    ...EMPTY10, round: 1004, level: 4, xp: 0, units: { e: { id: 'e', line: 'ekans', star: 1 } }, bench: ['e'],
-    shop: ['caterpie', 'pidgey', 'ekans', null, null],
-  };
+  const base = NEXT_SHOP;
   const at = (gold, extra = {}) => advise({ ...base, gold, ...extra }, { stats: t });
   // 32 pièces : Abo (2, compo cible) passe avant Chenipan (1) malgré sa place ; Chenipan ferait passer sous 30.
   const a = at(32);
@@ -653,8 +694,9 @@ test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamai
   assert.deepEqual([...c.shop.slice(0, 3).map(brief), brief(c.reroll)], ['opt Si l’or', 'no Ignore', 'opt Si l’or', 'do Actualise']);
   assert.equal(c.shop[1].why, 'compo des étages 19–27 ; l’or va d’abord à l’actualisation pour la compo cible');
   assert.equal(at(60, { hp: 30 }).shop[0].why, 'tout jouer : l’or va à la compo cible');
-  // 3ᵉ copie d'une lignée de la compo suivante : même motif, même règle d'or.
-  const third = { units: { ...base.units, x: { id: 'x', line: 'caterpie', star: 1 }, y: { id: 'y', line: 'caterpie', star: 1 } }, bench: ['e', 'x', 'y'] };
+  // 3ᵉ copie d'une lignée de la compo suivante : même motif, même règle d'or. Abo ★★ reste le complément, devant les deux
+  // Chenipan qui valent une ★★ de coût 1.
+  const third = { units: { e: { id: 'e', line: 'ekans', star: 2 }, x: { id: 'x', line: 'caterpie', star: 1 }, y: { id: 'y', line: 'caterpie', star: 1 } }, bench: ['e', 'x', 'y'] };
   assert.equal(at(60, third).shop[0].why, 'prépare la compo des étages 19–27');
   assert.equal(brief(at(60, { ...third, hp: 30 }).shop[0]), 'no Ignore');
   // Sous le niveau visé (étage 10, niveau 5 visé), l'XP passe avant : Chenipan attend.
@@ -1225,12 +1267,13 @@ test('parade aux assassins adverses : la parade prime sur la case gardée et sur
   // L'appât ne touche pas le porteur : l'assassin arrivé sur lui ne se retourne pas vers son voisin.
   const cells = cellsOf(dive.code);
   assert.equal(KT.touching(cells.abra, cells.onix), false);
-  // Porteur de portée 3 en colonne 4 : Abo peut entrer des deux côtés, l'appât tient la colonne 4 même s'il le touche.
+  // Porteur de portée 3 en colonne 4 : Abo peut entrer des deux côtés, l'appât tient la colonne 4 même s'il le touche. Onix
+  // parti au fond, Ronflex prend le centre de l'avant.
   const mid = trioAdvice(['vulpix', 'onix', 'snorlax'], { vulpix: 2, onix: 1, snorlax: 1 }, { side: 'center', dive: true });
-  assert.deepEqual(cellsOf(mid.code), { snorlax: 2, vulpix: 17, onix: 24 });
-  // Coin droit : le porteur avance dans sa zone (colonne 7), l'appât reste dans sa moitié.
+  assert.deepEqual(cellsOf(mid.code), { snorlax: 3, vulpix: 17, onix: 24 });
+  // Coin droit : le porteur avance dans sa zone (colonne 7), l'appât reste dans sa moitié ; Ronflex prend le centre.
   const right = trioAdvice(['abra', 'onix', 'snorlax'], owned, { side: 'right', dive: true });
-  assert.deepEqual(cellsOf(right.code), { snorlax: 2, abra: 20, onix: 24 });
+  assert.deepEqual(cellsOf(right.code), { snorlax: 3, abra: 20, onix: 24 });
 });
 
 test('parade aux assassins adverses : un Pokémon déjà plus au fond sert d’appât, sans déplacement de plus', () => {
@@ -1276,6 +1319,29 @@ test('parade aux assassins adverses : sans porteur à distance ou sans appât, f
   assert.equal(trioAdvice(...none, { dive: true }).guard, null);
 });
 
+test('parade aux assassins adverses : l’assassin débordé derrière l’avant y revient quand l’appât libère sa case', () => {
+  // Niveau 9, huit Pokémon de mêlée pour les 7 cases de l'avant : Nosferapti, posé en dernier, déborde en 2ᵉ rangée.
+  const owned = { abra: 2, onix: 1, snorlax: 1, rattata: 1, machop: 1, growlithe: 1, dratini: 1, ponyta: 1, zubat: 1 };
+  const plain = trioAdvice(['abra', 'onix', 'snorlax'], owned, { level: 9 });
+  assert.equal(rowOfLine(plain.code, 'zubat'), 1);
+  // Machoc part au fond : Nosferapti reprend une case du bord de l'avant.
+  const dive = trioAdvice(['abra', 'onix', 'snorlax'], owned, { level: 9, dive: true });
+  assert.deepEqual(dive.guard, { bait: 'machop', carry: 'abra' });
+  assert.deepEqual([cellsOf(dive.code).zubat, cellsOf(dive.code).machop], [6, 24]);
+});
+
+test('parade aux assassins adverses : Mew, posé après, ni appât ni couvert', () => {
+  // Abra porteur, Onix appât au fond : Mew copie Ronflex, resté à l'avant, plutôt qu'Onix parti.
+  const team = { mew: 1, abra: 2, onix: 1, snorlax: 1 };
+  const dive = trioAdvice(['mew', 'abra', 'onix'], team, { level: 4, dive: true });
+  assert.deepEqual(dive.guard, { bait: 'onix', carry: 'abra' });
+  assert.match(said(dive).find(m => m.startsWith('Pose Mew')), /collé à Ronflex/);
+  assert.ok(rowOfLine(dive.code, 'abra') < diveTarget(dive.code));
+  // Mew ★★ porteur, en 2ᵉ rangée : Abra (portée 4) reste le Pokémon du fond, pas de parade.
+  const carried = trioAdvice(['mew', 'abra', 'onix'], { ...team, mew: 2, abra: 1 }, { level: 4, dive: true });
+  assert.deepEqual([carried.guard, rowOfLine(carried.code, 'mew')], [null, 1]);
+});
+
 test('parade aux assassins adverses : le porteur n’est jamais au fond, niveaux 3 à 7, pour chaque zone', () => {
   // Abra ★★ porteur, deux tanks du trio, puis des compléments de mêlée et à distance selon le niveau.
   const owned = { abra: 2, onix: 1, snorlax: 1, pikachu: 1, vulpix: 1, geodude: 1, rattata: 1 };
@@ -1288,6 +1354,15 @@ test('parade aux assassins adverses : le porteur n’est jamais au fond, niveaux
       assert.equal(new Set(cells).size, cells.length, `${side} ${level}`);
     }
   }
+});
+
+test('parade aux assassins adverses : un Pokémon posé autour plus au fond que le porteur ne le touche pas', () => {
+  // Centre, niveau 5 : Abra avance en 3ᵉ rangée colonne 5 et libère la colonne 4 du fond ; Osselait (portée 4) ne la prend
+  // pas, collée à Abra, l'assassin arrivé sur lui se retournerait vers le porteur.
+  const a = trioAdvice(['abra', 'onix', 'snorlax'], { abra: 2, onix: 1, snorlax: 1, pikachu: 1, cubone: 1 }, { level: 5, side: 'center', dive: true });
+  const cells = cellsOf(a.code);
+  const deeper = Object.entries(cells).filter(([line, c]) => line !== 'abra' && Math.floor(c / 7) > Math.floor(cells.abra / 7));
+  assert.deepEqual([cells.abra, deeper.some(([, c]) => KT.touching(c, cells.abra))], [18, false]);
 });
 
 test('formation : cases collées sur le plateau en hexagones, rangées impaires décalées vers la droite', () => {
@@ -1538,6 +1613,16 @@ test('options du panneau : valeurs inconnues ramenées aux défauts, valeurs con
   const ok = { theme: 'light', width: 'compact', text: 'small', alpha: '85', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true }, pace: 'late', allIn: 'bold', comp: 'stable', owned: 'high' };
   KT.checkUi(ok);
   assert.deepEqual(ok, { theme: 'light', width: 'compact', text: 'small', alpha: '85', side: 'center', tab: 'boss', pins: { do: true, opt: false, no: true }, pace: 'late', allIn: 'bold', comp: 'stable', owned: 'high' });
+  // Compléments du conseil précédent : tableau de lignées, sinon vidé ; conseil d'une version antérieure (clé seule) gardé.
+  const target = fillers => {
+    const t = { target: { key: 'abra+onix+zubat', run: 7, next: null, fillers } };
+    KT.checkUi(t);
+    return t.target.fillers;
+  };
+  assert.deepEqual([target(['rattata']), target('rattata'), target([3]), target(undefined)], [['rattata'], [], [], []]);
+  const old = { target: 'abra+onix+zubat' };
+  KT.checkUi(old);
+  assert.equal(old.target, 'abra+onix+zubat');
   // Compteur de l'onglet Tour : conseils ★ et ◆ plus bénédictions inconnues, nom accessible accordé.
   const a = advise(S57);
   const count = n => KT.tabsHtml({ advice: n }, { tab: 'tour' }).match(/aria-label="Tour (\d+) conseils?"/)?.[1];

@@ -13,8 +13,9 @@ const modes = require(`${root}test/fixtures/campana.json`).modes;
 const data = require(`${root}test/fixtures/data.json`);
 const lang = require(`${root}test/fixtures/lang.json`);
 
-// Scénario commun avec les tests et la maquette.
+// Scénario et statistiques réduites communs avec les tests et la maquette.
 const S57 = require(`${root}test/fixtures/s57.js`);
+const { brockCore, brockStats, twoWindows, brockSave, ownedGame, NEXT_SHOP } = require(`${root}test/fixtures/brock.js`);
 const MODALS = { ...S57, itemReward: ['protein', 'carbos', 'zinc'], tower: { boons: ['nugget'], offer: { ids: ['nugget', 'leftovers', 'flute'] } } };
 
 // Maquette 2026-11-06-shiny : Minidraco shiny dans la compo, Rattata shiny sur un banc plein (pas de « Vends » avant l'étage 121).
@@ -33,6 +34,10 @@ const SHINY = {
 // sans table d'arrêts : compo sans trio.
 const CAMP = { ...S57, mode: 'campaign', round: 14, league: 3, gymOrder: ['sabrina', 'koga'], level: 6, gold: 47, tower: undefined };
 const SAVE_KANTO = 'kanto-tactics-save';
+// 33 pièces : Abo, puis Chenipan pour la compo des étages 19–27 (test « boutique : ◆ pour la compo suivante… »).
+const PREPARE = { ...NEXT_SHOP, gold: 33, items: [] };
+// Abra ★★ porteur à distance, Onix et Racaillou au banc (test « parade aux assassins adverses : porteur du fond avancé… »).
+const PARADE = brockSave(ownedGame({ abra: 2, onix: 1, geodude: 1 }));
 
 const STATES = {
   conseils: { save: S57, api: 'ok', tip: true },
@@ -41,12 +46,15 @@ const STATES = {
   'campagne-regles': { save: CAMP, key: SAVE_KANTO, api: 'ok', ui: { tab: 'rules' } },
   'aventure-sans-stats': { save: { ...CAMP, league: 1, gymOrder: [] }, key: 'kanto-tactics-save-adv-safari', api: 'ok', ui: { tab: 'compo' } },
   // Leveinard et Lokhlass, de la compo suivante, en boutique : avec des places libres, ce sont des compléments de la compo cible
-  // (★ « place libre »). Le ◆ « prépare la compo » n'a pas de scénario sur ces données : sans place libre, les cartes de la compo
-  // suivante y deviennent des cartes plus fortes de la compo cible ; le test « boutique : ◆ pour la compo suivante… » le couvre.
+  // (★ « place libre »). Sans place libre, les cartes de la compo suivante y deviennent des cartes plus fortes de la compo cible :
+  // le ◆ « prépare la compo » se montre sur des statistiques réduites (prepare).
   'compo-suivante': { save: { ...S57, gold: 40, shop: ['chansey', 'lapras', 'magmar', 'rattata', 'ekans'] }, api: 'ok', tip: true, ui: { tab: 'compo' } },
   shiny: { save: SHINY, api: 'ok', ui: { tab: 'compo' } },
+  prepare: { save: PREPARE, stats: twoWindows([[['caterpie', 'pidgey', 'rattata'], 80]]), api: 'ok', tip: true },
   // Assassins adverses cochés pour l'étage 57 (sauvegarde sans runSeed) ; porteur de mêlée : pas de parade.
   assassins: { save: S57, api: 'ok', ui: { tab: 'compo', dive: 'kanto-tactics-save-tower::57' } },
+  // Parade posée : Abra en 3ᵉ rangée, Racaillou appât au fond.
+  parade: { save: PARADE, stats: brockStats([brockCore(['abra', 'onix', 'geodude'])]), api: 'ok', ui: { tab: 'compo', dive: 'kanto-tactics-save-tower::10' } },
   // Onglets, menu ⚙ et panneau replié (maquette 2026-11-09-refonte).
   'onglet-boss': { save: S57, api: 'ok', ui: { tab: 'boss' } },
   'onglet-regles': { save: S57, api: 'ok', ui: { tab: 'rules' } },
@@ -66,11 +74,12 @@ const STATES = {
 };
 
 // Seules les données lues par ces états restent dans la page, qui porte déjà les 160 Ko du script : le mode de la partie,
-// l'autre réduit à un arrêt (campana.json est refusé sans la Tour).
-function slim(s, key) {
+// l'autre réduit à un arrêt (campana.json est refusé sans la Tour). stats : statistiques réduites de la Tour qui remplacent
+// celles de l'API.
+function slim(s, key, stats = null) {
   const camp = key !== undefined;
   const mode = camp ? KT.latestSave({ length: 1, key: () => key, getItem: () => JSON.stringify(s) }).mode : KT.TOWER_MODE;
-  const stats = modes[mode.stats];
+  stats ??= modes[mode.stats];
   const floor = mode.floorOf(s.round);
   // Compo cible et compo suivante : les 18 prochains combats ; les 6 meilleurs trios de chaque combat gardent leurs
   // statistiques sur tous ces combats, pour un score identique à celui des données complètes. Tour : boss des étages 196 à 200.
@@ -84,7 +93,7 @@ function slim(s, key) {
   const boss = KT.nextBossStop(stats.stops, floor, mode)?.stop;
   const cores = [...played.filter(c => best.has(`${c.core}`)),
     ...(camp ? [boss] : ['60:zapdos', '200:mewtwo2']).flatMap(st => KT.topCores(stats.cores, st))];
-  const lines = new Set([...cores.flatMap(c => c.core), ...s.shop, ...Object.values(s.units).map(u => u.line)].map(KT.baseLine));
+  const lines = new Set([...cores.flatMap(c => c.core), ...s.shop.filter(Boolean), ...Object.values(s.units).map(u => u.line)].map(KT.baseLine));
   const slimmed = {
     rules: stats.rules, from: stats.from, to: stats.to, stops, cores: [...new Map(cores.map(c => [`${c.stop}|${c.core}`, c])).values()],
     lines: stats.lines.filter(l => lines.has(KT.baseLine(l.line))),
@@ -132,26 +141,27 @@ const STYLE = `body{margin:0;min-height:100vh;background:#2b3a2a;color:#eef1ff;f
 // les données (quelques dizaines de Ko) : render-html.sh la rend telle quelle. Les pastilles, posées sur le jeu, n'y sont pas ; le
 // thème « auto » suit le système par une ligne de script.
 const FAILED = { error: ['stats', 'data', 'lang'], partial: ['data'] };
-const FILES = { stats: 'campana.json', data: 'data.json', lang: 'lang.json' };
+// Résultats du chargement simulé, au format de Promise.allSettled sur loadJson ; pending : aucune source n'a répondu.
+function settled(s) {
+  if (s.api === 'pending') return {};
+  const json = { stats: { v: 1, modes: s.stats ? { torre: s.stats } : modes }, data, lang };
+  return KT.sourcesState(KT.SOURCE_FILES.map(([key]) => (FAILED[s.api]?.includes(key)
+    ? { status: 'rejected', reason: new Error('HTTP 429') }
+    : { status: 'fulfilled', value: { json: json[key], at: Date.now(), stale: false } })));
+}
 function panelPage(name, s) {
   const ui = { ...KT.UI_DEFAULTS, ...s.ui };
   KT.checkUi(ui);
   const raw = s.save ? JSON.stringify(s.save) : null;
   const found = raw && KT.latestSave({ length: 1, key: () => s.key ?? 'kanto-tactics-save-tower', getItem: () => raw });
   const start = { mode: KT.TOWER_MODE, saveKey: undefined, lastAuto: undefined, floor: null, source: 'manuel' };
-  const failed = FAILED[s.api] ?? [];
-  const loaded = k => s.api !== 'pending' && !failed.includes(k);
   const fights = s.fights ?? [];
   const state = {
-    ...KT.pollState(start, found, null, ui, fights), fights, lastRaw: raw, stats: loaded('stats') ? { torre: modes.torre, camp: modes.camp } : null,
-    campBroken: false, data: loaded('data') ? data : null, lang: loaded('lang') ? lang : null, failed, stale: null, uncached: false,
-    error: failed.length ? failed.map(k => `${FILES[k]} : HTTP 429`).join(' ; ') : null, copied: null,
+    ...KT.pollState(start, found, null, ui, fights), fights, lastRaw: raw, stats: null, campBroken: false, data: null, lang: null,
+    failed: [], stale: null, uncached: false, error: null, ...settled(s), copied: null,
   };
   const stats = KT.modeStats(state);
-  // Même condition que compute dans mount.
-  state.advice = KT.onSaveFloor(state) && (state.stats || state.error)
-    ? KT.advise({ stats, data: state.data, lang: state.lang, save: state.save, previous: null, side: ui.side, mode: state.mode, dive: KT.diveOn(ui, state) })
-    : null;
+  state.advice = KT.adviceOf(state, ui);
   // Plan collé dans le Planificateur : le statut du panneau synchronisé.
   state.planner = { code: state.advice?.code ?? null, error: null };
   const look = { scheme: ui.theme === 'auto' ? 'dark' : ui.theme, width: ui.width, text: ui.text, alpha: ui.alpha };
@@ -170,7 +180,7 @@ ${auto}</body></html>`;
 
 mkdirSync(`${root}build`, { recursive: true });
 for (const [name, s] of Object.entries(STATES)) {
-  const api = slim(s.save ?? S57, s.key);
+  const api = slim(s.save ?? S57, s.key, s.stats);
   const payload = { [KT.SOURCES.stats]: { v: 1, modes: api.modes }, [KT.SOURCES.data]: api.data, [KT.SOURCES.lang]: api.lang };
   const stub = `
 const store = new Map(${JSON.stringify([...(s.save ? [[s.key ?? 'kanto-tactics-save-tower', JSON.stringify(s.save)]] : []), ...(s.ui ? [[KT.UI_KEY, JSON.stringify(s.ui)]] : []), ...(s.fights ? [[KT.JOURNAL_KEY, JSON.stringify(s.fights)]] : [])])});
