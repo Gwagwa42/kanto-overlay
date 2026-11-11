@@ -1755,8 +1755,11 @@ const KT = (() => {
       const free = zonesOf(u).map(cells => cells.filter(c => !taken.has(c))).find(cells => cells.length);
       put(u, (u.row > 0 ? free.find(c => spaced(c) && apart(c)) ?? free.find(spaced) : undefined) ?? free[0]);
     };
-    return { taken, put, spaced, place };
+    return { taken, put, spaced, place, zonesOf };
   }
+
+  // Valeur d'une unité de la formation : son coût × 3^(étoile − 1), le prix des copies qu'elle a fusionnées.
+  const unitValue = (data, u) => lineInfo(data, u.base).c * 3 ** (u.star - 1);
 
   // Grolem avant les assassins : ceux-ci quittent leur case, le bord compte moins pour eux.
   const frontRank = u => {
@@ -1821,11 +1824,10 @@ const KT = (() => {
       if (onEdge) return [cells[0].filter(c => EDGE_COLS.includes(colOf(c))), ...cells];
       return shield ? [cells[0].filter(c => c !== center), ...cells] : cells;
     };
-    const value = u => lineInfo(data, u.base).c * 3 ** (u.star - 1);
     const mimic = units.find(u => moveKind(data, u.base, u.star) === 'metronome');
     const others = units.filter(u => u !== mimic);
     let board = arrange(others, zones);
-    const parade = dive ? guard(others, board.taken, zone, value) : null;
+    const parade = dive ? guard(others, board.taken, zone, data) : null;
     if (parade) {
       const pinned = new Map([[parade.carry, parade.spot], [parade.bait, parade.cell]]);
       // Comme guard pour sa case : plus au fond que le porteur, une unité à distance ne le touche pas si elle peut (l'assassin arrivé
@@ -1835,20 +1837,21 @@ const KT = (() => {
       parade.carry.guarded = true;
       parade.bait.bait = true;
     }
-    if (mimic) placeMimic(mimic, others, board, zones(mimic), data, value);
+    if (mimic) placeMimic(mimic, others, board, data);
     // Doc de l'API : unités triées par cellule.
     return units.sort((a, b) => a.cell - b.cell);
   }
 
-  // Mew, posé après les autres sur board : une case collée à l'allié qu'il copiera (copies : sa lignée), sur sa rangée, sinon
-  // derrière, sinon devant (cells : ses listes, zones) ; sans allié à copier ni case libre collée, il se place comme les autres.
-  // Modèles par valeur décroissante, capacité connue (les lignées v41 hors de data.json n'en ont pas) et copiable : le premier
-  // qui a une case libre collée. Les modèles mieux classés n'en ont aucune : Mew ne les touchera pas.
-  function placeMimic(mimic, units, board, cells, data, value) {
+  // Mew, posé après les autres unités (units) sur board : une case collée à l'allié qu'il copiera (copies : sa lignée), dans
+  // ses listes de board.zonesOf (sa rangée, puis derrière, puis devant) ; sans allié à copier ni case libre collée, il se place
+  // comme les autres. Modèles par valeur décroissante (unitValue), capacité connue (les lignées v41 hors de data.json n'en ont
+  // pas) et copiable : le premier qui a une case libre collée. Les modèles mieux classés n'en ont aucune : Mew ne les touchera pas.
+  function placeMimic(mimic, units, board, data) {
+    const cells = board.zonesOf(mimic);
     const kind = u => moveKind(data, u.base, mimic.star);
     const near = model => cells.map(list => list.filter(c => !board.taken.has(c) && touching(c, model.cell))).find(list => list.length);
     const model = units.filter(u => kind(u) && !UNCOPIED.has(kind(u)))
-      .sort((a, b) => value(b) - value(a) || a.cell - b.cell).find(near);
+      .sort((a, b) => unitValue(data, b) - unitValue(data, a) || a.cell - b.cell).find(near);
     const keep = list => list.includes(mimic.from) && !board.taken.has(mimic.from) && board.spaced(mimic.from);
     if (model) {
       const list = near(model);
@@ -1863,13 +1866,14 @@ const KT = (() => {
   // où il entre, la colonne 4 comptant dans les deux) ; Nosferapti (flyover) vise le plus au fond de la colonne la plus proche
   // de la sienne. Un appât strictement plus au fond que le porteur à distance, dans chaque moitié où se trouve le porteur,
   // prend donc l'assaut : au fond, colonne 4 d'abord puis du côté du porteur, si possible sans le toucher (l'assassin se
-  // retournerait vers lui). Le porteur du fond avance d'une rangée, dans sa zone d'abord, hors de la colonne 4 s'il le peut. Appât, parmi les Pokémon possédés :
-  // un Pokémon déjà plus au fond que le porteur, dans la formation ou sur le plateau (du bon côté, il ne bouge pas ; de l'autre, il y vient), sinon le tank de moindre valeur quand il en
-  // reste un devant, sinon l'unité de mêlée de plus grande valeur quand il en reste une devant, sinon l'unité à distance de
-  // plus grande valeur. Ni Ramoloss (son mur couvre l'avant) ni un assassin (il quitte sa case). units : posées sans parade,
-  // sans Mew ; taken : leurs cases ; value : coût × 3^(étoile − 1). Renvoie { carry, spot, bait, cell } : le porteur, l'appât et
-  // leurs cases, que formation pose avant les autres ; null sans porteur à distance, sans appât ou sans case pour l'un des deux.
-  function guard(units, taken, zone, value) {
+  // retournerait vers lui). Le porteur du fond avance d'une rangée, dans sa zone d'abord, hors de la colonne 4 s'il le peut.
+  // Appât, parmi les Pokémon possédés : un Pokémon déjà plus au fond que le porteur, dans la formation ou sur le plateau (du
+  // bon côté, il ne bouge pas ; de l'autre, il y vient), sinon le tank de moindre valeur (unitValue) quand il en reste un
+  // devant, sinon l'unité de mêlée de plus grande valeur quand il en reste une devant, sinon l'unité à distance de plus grande
+  // valeur. Ni Ramoloss (son mur couvre l'avant) ni un assassin (il quitte sa case). units : posées sans parade, sans Mew ;
+  // taken : leurs cases. Renvoie { carry, spot, bait, cell } : le porteur, l'appât et leurs cases, que formation pose avant
+  // les autres ; null sans porteur à distance, sans appât ou sans case pour l'un des deux.
+  function guard(units, taken, zone, data) {
     const carry = units.find(u => u.role === 'carry' && u.row > 0);
     if (!carry) return null;
     const free = (row, cols) => cols.map(c => cellAt(row, c)).filter(c => !taken.has(c) || c === carry.cell);
@@ -1888,15 +1892,19 @@ const KT = (() => {
     const side = Math.sign(colOf(spot) - 3);
     const covers = c => colOf(c) === 3 || (side !== 0 && Math.sign(colOf(c) - 3) === side);
     const owned = units.filter(u => u !== carry && u.from !== null && !OPENERS.has(u.base));
-    const pool = owned.filter(u => !ALLY_SHIELD.has(u.base)).sort((x, y) => value(y) - value(x));
+    const pool = owned.filter(u => !ALLY_SHIELD.has(u.base)).sort((x, y) => unitValue(data, y) - unitValue(data, x));
     const deeper = pool.filter(u => rowOf(u.cell) > rowOf(spot));
     const kept = pool.find(u => u.cell !== u.from && held(u, c => rowOf(c) > rowOf(spot) && covers(c)));
+    // set : appât déjà du bon côté, qui garde sa case.
     const set = deeper.find(u => covers(u.cell)) ?? kept;
+    const deep = set ?? deeper[0];
     const front = pool.filter(u => rowOf(u.cell) === 0);
-    const tanks = front.filter(u => u.role === 'tank');
+    // Ramoloss compte parmi ceux qui restent devant.
     const stays = owned.filter(u => rowOf(u.cell) === 0);
-    const holds = stays.length;
-    const bait = set ?? deeper[0] ?? (stays.filter(u => u.role === 'tank').length > 1 ? tanks.at(-1) : null) ?? (holds > 1 ? front.find(u => u.role !== 'tank') : null) ?? pool.find(u => rowOf(u.cell) > 0);
+    const spareTank = stays.filter(u => u.role === 'tank').length > 1 ? front.filter(u => u.role === 'tank').at(-1) : null;
+    const melee = stays.length > 1 ? front.find(u => u.role !== 'tank') : null;
+    const ranged = pool.find(u => rowOf(u.cell) > 0);
+    const bait = deep ?? spareTank ?? melee ?? ranged;
     if (!bait) return null;
     if (set) return { carry, spot, bait, cell: bait === kept ? kept.from : bait.cell };
     const cells = free(3, CENTER_OUT).filter(covers);
