@@ -13,7 +13,7 @@ const data = require('./fixtures/data.json');
 const lang = require('./fixtures/lang.json');
 const save = require('./fixtures/save-tower.json');
 const ids = require('./fixtures/ids.json');
-const { brockStop, BROCK, brockCore, brockStats, twoWindows, brockSave, ownedGame, NEXT_SHOP } = require('./fixtures/brock.js');
+const { brockStop, BROCK, brockCore, brockStats, twoWindows, brockSave, ownedGame, EMPTY10, NEXT_SHOP } = require('./fixtures/brock.js');
 
 const names = KT.namer(lang);
 // Étage 57, 38 pièces, niveau 8 : scénario commun avec la maquette et les pages d'aperçu.
@@ -652,8 +652,6 @@ test('vendre : unité du banc hors compo et sans paire, banc presque plein', () 
   const sold = advise({ ...kept, gold: 3 }).bench[3];
   assert.deepEqual([brief(sold), sold.why], ['no Vends', 'il manque de l’or pour un achat conseillé']);
 });
-
-const EMPTY10 = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
 
 test('compo suivante : trio des combats 10 à 18, absent s’il est déjà la compo cible', () => {
   const a = advise(S57);

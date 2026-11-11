@@ -4,13 +4,14 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const KT = require('../kanto-overlay.user.js');
 const { adviseOn } = require('./helpers.js');
+const { brockCore, brockStats } = require('./fixtures/brock.js');
 const { modes } = require('./fixtures/campana.json');
 const tower = require('./fixtures/save-tower.json');
 const kanto = require('./fixtures/save-kanto.json');
 
 const T = KT.TOWER_MODE;
 // Combat de test : Pierre à l'étage 10, 50 % de victoires ; un trio noté contre lui.
-const stats = { ...modes.torre, stops: [{ stop: '10:brock', n: 100, win: 50, lo: 45, first: 50, tries: 2 }], cores: [{ stop: '10:brock', core: ['squirtle', 'oddish', 'horsea'], n: 50, win: 90, lo: 80 }] };
+const stats = brockStats([brockCore(['squirtle', 'oddish', 'horsea'])]);
 const S10 = { ...tower, round: 1009, attempts: 0, runSeed: 7, streak: 2 };
 const advice = adviseOn(S10, { mode: T, stats });
 const after = change => JSON.stringify({ ...S10, ...change });
