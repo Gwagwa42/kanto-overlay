@@ -633,6 +633,8 @@ const KT = (() => {
   const shinyLine = (game, base) => unitsOf(game, base).some(u => u.shiny && u.star === bestStar(game, base));
   const copies = (game, base, star) => unitsOf(game, base).filter(u => u.star === star).length;
   const ones = (game, base) => copies(game, base, 1);
+  // Deux copies de cette étoile, sous ★★★ : la 3ᵉ les fusionne en une copie de l'étoile suivante.
+  const pairAt = (game, base, star) => star < 3 && copies(game, base, star) === 2;
   const pathCount = (boons, path) => boons.filter(b => boonPath(b) === path).length;
 
   function goldFloor(boons, mode) {
@@ -900,7 +902,7 @@ const KT = (() => {
     const shift = new Map([...mine, ...cards].map(b => [b, costShift(stats, form(b))]));
     const star = b => {
       const best = Math.max(1, bestStar(game, b));
-      return best < 3 && copies(game, b, best) === 2 ? best + 1 : best;
+      return pairAt(game, b, best) ? best + 1 : best;
     };
     // Meilleures lignées de chaque liste, une liste après l'autre, jusqu'au niveau.
     const fill = pools => {
@@ -980,7 +982,7 @@ const KT = (() => {
     const later = nextBases(next);
     const upgrades = target?.upgrades ?? [];
     return game.shop.map((base, i) => base && {
-      base, name: names.line(base), cost: lineInfo(data, base)?.c, triple: ones(game, base) === 2,
+      base, name: names.line(base), cost: lineInfo(data, base)?.c, triple: pairAt(game, base, 1),
       inTarget: wanted.includes(base) || upgrades.includes(base), inCore: core.includes(base), inNext: later.includes(base), shiny: game.shopShiny[i],
       // Lignée de la compo pas encore possédée : elle remplit une place libre du plateau.
       fills: wanted.includes(base) && bestStar(game, base) === 0, upgrade: upgrades.includes(base),
@@ -1104,7 +1106,7 @@ const KT = (() => {
     const top = game.level >= maxLevel(game.floor, game.mode);
     const coreStar = base => (top && !target.flat.includes(base) ? 3 : 2);
     return targetBases(target).filter(base => bestStar(game, base) < 3
-      && ((core.includes(base) && bestStar(game, base) < coreStar(base)) || ones(game, base) === 2 || copies(game, base, 2) === 2));
+      && ((core.includes(base) && bestStar(game, base) < coreStar(base)) || pairAt(game, base, 1) || pairAt(game, base, 2)));
   }
 
   // Marque de l'actualisation, renvoyée sans toucher shop.marks ; shop : contexte de spend, avec une compo cible. left : or
