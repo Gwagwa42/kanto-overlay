@@ -989,7 +989,7 @@ const KT = (() => {
     }).map(c => c && { ...c, stronger: c.upgrade ? `plus fort que ${target.replaced.map(names.line).join(', ')}` : '' });
   }
 
-  // Les fonctions de marques de la boutique lisent shop = { cards, marks, game, target, next, eco, names } (spend) et
+  // Les fonctions de marques de la boutique lisent shop = { cards, marks, game, target, next, data, eco, names } (spend) et
   // remplissent marks, une case par carte ; left : or restant, qu'elles renvoient diminué de ce qu'elles engagent.
   const keepFloor = eco => `garde ${eco.floor} pièces pour les intérêts`;
 
@@ -1085,7 +1085,7 @@ const KT = (() => {
   // (déclenche « Vends »).
   function spend(game, target, next, data, eco, names) {
     const cards = shopCards(game, target, next, data, names);
-    const shop = { cards, marks: cards.map(() => undefined), game, target, next, eco, names };
+    const shop = { cards, marks: cards.map(() => undefined), game, target, next, data, eco, names };
     const stars = starMarks(shop, game.gold);
     let left = stars.short ? stars.left : freeSlotMarks(shop, stars.left);
     const xp = xpMark(game, eco, left);
@@ -1093,7 +1093,7 @@ const KT = (() => {
     let reroll = null;
     if (target) {
       left = targetOptMarks(shop, left);
-      reroll = rerollMark(shop, data, left);
+      reroll = rerollMark(shop, left);
       left = restMarks(shop, left, xp.cost, reroll?.level === 'do' ? REROLL_COST : 0);
     }
     return { shop: shop.marks.map(m => m ?? null), xp: xp.spare ? spareXp(game, eco, left, reroll) : xp.mark, reroll, short: stars.short };
@@ -1114,8 +1114,8 @@ const KT = (() => {
   // les lignées trouvables à ce niveau la justifient ; au niveau maximal, où l'or n'a plus d'autre emploi, toute lignée qui
   // sort en boutique. Une lignée qui ne devient trouvable qu'à un niveau plus haut est annoncée ; un coût 1 ou 2, qui sort
   // de moins en moins, ne donne aucun conseil, ni une lignée de coût inconnu.
-  function rerollMark(shop, data, left) {
-    const { game, target, eco, names } = shop;
+  function rerollMark(shop, left) {
+    const { game, target, data, eco, names } = shop;
     const wanted = seekLines(game, target);
     if (!wanted.length) return null;
     if (eco.allIn) return left >= REROLL_COST ? mark('do', 'Actualise', 'Actualise', 'tout jouer : chercher les copies de la compo') : null;
@@ -1876,8 +1876,9 @@ const KT = (() => {
   // bon côté, il ne bouge pas ; de l'autre, il y vient), sinon le tank de moindre valeur (unitValue) quand il en reste un
   // devant, sinon l'unité de mêlée de plus grande valeur quand il en reste une devant, sinon l'unité à distance de plus grande
   // valeur. Ni Ramoloss (son mur couvre l'avant) ni un assassin (il quitte sa case). units : posées sans parade, sans Mew ;
-  // taken : leurs cases. Renvoie { carry, spot, bait, cell } : le porteur, l'appât et leurs cases, que formation pose avant
-  // les autres ; null sans porteur à distance, sans appât ou sans case pour l'un des deux.
+  // taken : leurs cases ; zone : CARRY_ZONES du côté du porteur ; data : lu par unitValue. Renvoie { carry, spot, bait, cell } :
+  // le porteur, l'appât et leurs cases, que formation pose avant les autres ; null sans porteur à distance, sans appât ou
+  // sans case pour l'un des deux.
   function guard(units, taken, zone, data) {
     const carry = units.find(u => u.role === 'carry' && u.row > 0);
     if (!carry) return null;
@@ -1902,14 +1903,13 @@ const KT = (() => {
     const kept = pool.find(u => u.cell !== u.from && held(u, c => rowOf(c) > rowOf(spot) && covers(c)));
     // set : appât déjà du bon côté, qui garde sa case.
     const set = deeper.find(u => covers(u.cell)) ?? kept;
-    const deep = set ?? deeper[0];
     const front = pool.filter(u => rowOf(u.cell) === 0);
     // Ramoloss compte parmi ceux qui restent devant.
     const stays = owned.filter(u => rowOf(u.cell) === 0);
     const spareTank = stays.filter(u => u.role === 'tank').length > 1 ? front.filter(u => u.role === 'tank').at(-1) : null;
     const melee = stays.length > 1 ? front.find(u => u.role !== 'tank') : null;
     const ranged = pool.find(u => rowOf(u.cell) > 0);
-    const bait = deep ?? spareTank ?? melee ?? ranged;
+    const bait = set ?? deeper[0] ?? spareTank ?? melee ?? ranged;
     if (!bait) return null;
     if (set) return { carry, spot, bait, cell: bait === kept ? kept.from : bait.cell };
     const cells = free(3, CENTER_OUT).filter(covers);

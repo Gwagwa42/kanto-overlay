@@ -271,13 +271,12 @@ test('compo cible : inertie seulement dans la même partie (runSeed)', () => {
     brockCore(['abra', 'onix', 'zubat']),
     brockCore(['pidgey', 'rattata', 'spearow'], 60),
   ];
-  const s = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
-  const at = previous => advise(s, { stats: brockStats(cores), previous }).target.key;
+  const at = previous => advise(EMPTY10, { stats: brockStats(cores), previous }).target.key;
   assert.equal(at({ key: 'pidgey+rattata+spearow', run: 7 }), 'pidgey+rattata+spearow');
   assert.equal(at({ key: 'pidgey+rattata+spearow', run: 8 }), 'abra+onix+zubat');
   // Valeur des versions précédentes (clé seule) : rattachée à aucune partie.
   assert.equal(at('pidgey+rattata+spearow'), 'abra+onix+zubat');
-  assert.equal(advise(s).run, 7);
+  assert.equal(advise(EMPTY10).run, 7);
 });
 
 test('compléments : possédés par puissance (coût, étoiles) et types, boutique pour les places libres, carte plus forte à part', () => {
@@ -381,7 +380,7 @@ const nextFight = (rattata, n = 50) => ({
 });
 // Niveau 4 : le trio à trouver et une place, pour Rattata ★ ou Magicarpe ★ (coût 1, aucun type du trio), tous deux au banc.
 const PAIR = {
-  ...save, round: 1009, level: 4, xp: 0, board: {}, bench: ['r', 'm'], shop: [], items: [], runSeed: 7,
+  ...EMPTY10, level: 4, xp: 0, bench: ['r', 'm'], items: [],
   units: { r: { id: 'r', line: 'rattata', star: 1 }, m: { id: 'm', line: 'magikarp', star: 1 } },
 };
 const posed = a => a.moves.map(m => m.title).filter(t => /Rattata|Magicarpe/.test(t));
