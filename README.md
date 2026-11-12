@@ -92,8 +92,10 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
      pas d'autre emploi. Seule exception, le trio ne cherche plus la ★★★ d'une forme qu'elle affaiblit nettement dans le mode
      (intervalles à 95 % disjoints : 16 formes en novembre 2026, dont Hypotrempe, Ptitard, Psykokwak, Kabuto, Rhinocorne) ;
      deux copies ★★ font encore chercher la troisième. Sous 10 %, le premier niveau qui les donne est annoncé (« Kabuto : 4 %
-     par actualisation au niveau 7 ; à chercher au niveau 9 ») ; sans un tel niveau, aucun conseil. Avec la Boîte Jetons,
-     l'actualisation gratuite de chaque étage est toujours conseillée, après les achats.
+     par actualisation au niveau 7 ; à chercher au niveau 9 (Kabuto : 12 % par actualisation au niveau 9) ») ; sans un tel
+     niveau, aucun conseil : le niveau maximal n'est pas annoncé pour une chance plus basse. Avec la Boîte Jetons,
+     l'actualisation gratuite de chaque étage est toujours conseillée, après les achats ; l'or d'une actualisation payante
+     qui la suivrait reste réservé.
   5. Les ◆ de la compo suivante.
   6. L'XP avec ce qui reste, jusqu'au niveau maximal (9, puis 10 à partir de l'étage 60).
 - **Profil de chaque lignée** : tank ou attaquant, et les stats d'attaque qui la servent.
