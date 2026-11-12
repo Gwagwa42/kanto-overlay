@@ -168,15 +168,15 @@ test('stratégie : préréglages normaux = règles par défaut du mode', () => {
 test('stratégie : niveaux visés plus tôt ou plus tard, repartis des règles du mode', () => {
   const at = (mode, pace) => strategy({ pace }, mode).levelGoals.map(([from]) => from);
   // Niveau 10 : pas avant l'étage 60, où le jeu l'autorise.
-  assert.deepEqual(at(T, 'early'), [5, 9, 15, 23, 34, 60]);
-  assert.deepEqual(at(T, 'late'), [8, 15, 25, 38, 56, 81]);
+  assert.deepEqual(at(T, 'early'), [4, 8, 16, 22, 33, 60]);
+  assert.deepEqual(at(T, 'late'), [6, 14, 26, 36, 55, 75]);
   // Un nouveau choix remplace le précédent au lieu de s'y ajouter.
-  assert.deepEqual(at(strategy({ pace: 'late' }), 'early'), [5, 9, 15, 23, 34, 60]);
+  assert.deepEqual(at(strategy({ pace: 'late' }), 'early'), [4, 8, 16, 22, 33, 60]);
   const camp = KT.modeContext(KT.CAMPAIGN, {}, 'kanto');
   assert.deepEqual(at(camp, 'early'), [3, 6, 9, 12, 18, 23]);
   assert.deepEqual(at(camp, 'late'), [5, 10, 15, 20, 30, 38]);
-  assert.ok(KT.goldRules(strategy({ pace: 'early' })).some(r => r.includes('(5 dès l’étage 5, 6 dès l’étage 9, 7 dès l’étage 15,')));
-  // Étage 40, niveau 7 : niveau 8 visé en normal (dès 30), 9 plus tôt (dès 34).
+  assert.ok(KT.goldRules(strategy({ pace: 'early' })).some(r => r.includes('(5 dès l’étage 4, 6 dès l’étage 8, 7 dès l’étage 16,')));
+  // Étage 40, niveau 7 : niveau 8 visé en normal (dès 29), 9 plus tôt (dès 33).
   const xp = pace => why(advise({ ...S57, round: 1039, level: 7, xp: 0, gold: 60 }, { mode: strategy({ pace }) }).xp);
   assert.match(xp('normal'), /niveau 8 visé à cet étage/);
   assert.match(xp('early'), /niveau 9 visé à cet étage/);
@@ -514,7 +514,8 @@ test('boutique sans statistiques : seules les 3ᵉ copies sont marquées', () =>
 const why = m => m && `${brief(m)} : ${m.why}`;
 
 test('XP : niveau visé par étage, sans passer sous le palier ; niveau entier en tout jouer', () => {
-  assert.deepEqual([5, 6, 11, 12, 20, 29, 30, 44, 45, 64, 65].map(f => KT.levelGoal(f, T)), [0, 5, 5, 6, 7, 7, 8, 8, 9, 9, 10]);
+  // Un étage avant chaque saut de la puissance adverse (table ry du jeu).
+  assert.deepEqual([4, 5, 10, 11, 20, 21, 28, 29, 43, 44, 59, 60].map(f => KT.levelGoal(f, T)), [0, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10]);
   // Le niveau visé ne dépasse jamais le niveau ouvert (9, puis 10 à l'étage 60) : sinon ni XP ni actualisation ne seraient conseillées.
   for (let floor = 1; floor <= 200; floor++) assert.ok(KT.levelGoal(floor, T) <= (floor >= 60 ? 10 : 9), `étage ${floor}`);
   // S57 : niveau 8 à l'étage 57, niveau 9 visé. Les ★ (13) laissent 25 pièces sur 38.
@@ -541,10 +542,51 @@ test('actualiser : après le niveau visé, pour une lignée trouvable, sans pass
   assert.equal(why(advise(S57).reroll), 'no Garde l’or : d’abord le niveau 9');
   // Niveau 9, le maximum à l'étage 57 : trio cherché jusqu'à ★★★. Sur 46 pièces, les ★ (13) et Rattata ◆ (1) laissent 32.
   const nine = gold => advise({ ...S57, level: 9, gold }).reroll;
-  assert.equal(why(nine(46)), 'do Actualise : cherche Ptéra (coût 4 : 36 %), Minidraco (coût 4 : 36 %), Caninos (coût 4 : 36 %) au niveau 9');
+  assert.equal(why(nine(46)), 'do Actualise : cherche Ptéra, Minidraco, Caninos : 35 % par actualisation au niveau 9');
   assert.equal(why(nine(45)), 'no Garde l’or : tu passerais sous 30 pièces');
   assert.equal(why(advise({ ...S57, gold: 31, round: 1059 }).reroll), 'do Actualise : tout jouer : chercher les copies de la compo');
   assert.equal(advise({ ...S57, gold: 9, round: 1059 }).reroll, null);
+});
+
+test('actualiser : chance de voir une copie cherchée, réserve de la lignée et repêchage', () => {
+  const chance = (stars, extra = {}, mode = T) => KT.rerollChance(KT.readGame({ ...save, ...ownedGame(stars), ...extra }, mode), data, 7, ['onix']);
+  const near = (x, y) => assert.ok(Math.abs(x - y) < 0.05, `${x} ≠ ${y}`);
+  // Niveau 7, Onix (coût 3 : 34 % par case) à une copie : 19 exemplaires sur les 399 des 20 lignées de coût 3, soit
+  // 1 − (1 − 0,34 × 19/399)^5 = 7,85 % hors repêchage. Repêchage : 15 % pour une lignée parmi les 4 possédées.
+  const four = { onix: 1, rattata: 1, abra: 1, zubat: 1 };
+  near(chance(four), 100 * (1 - (1 - 0.34 * 19 / 399) ** 5 * (1 - 0.15 / 4)));
+  // Seule lignée possédée : le repêchage la donne à coup sûr quand il a lieu.
+  near(chance({ onix: 1 }), 100 * (1 - (1 - 0.34 * 19 / 399) ** 5 * 0.85));
+  // Voie Élevage complète : repêchage à 35 %.
+  near(chance(four, { tower: { ...save.tower, boons: ['moonstone', 'candy', 'expshare'] } }), 100 * (1 - (1 - 0.34 * 19 / 399) ** 5 * (1 - 0.35 / 4)));
+  // Magmar ★★★ (coût 3) ne sort plus : ses 20 exemplaires quittent la réserve, et il n'est plus repêché.
+  near(chance({ ...four, magmar: 3 }), 100 * (1 - (1 - 0.34 * 19 / 379) ** 5 * (1 - 0.15 / 4)));
+  // Onix ★★★ : plus aucune chance.
+  assert.equal(chance({ onix: 3 }), 0);
+  // Campagne : 12 lignées de coût 3, sans repêchage.
+  const camp = KT.modeContext(KT.CAMPAIGN, {}, 'kanto');
+  near(chance(four, { round: 6 }, camp), 100 * (1 - (1 - 0.34 * 19 / 239) ** 5));
+});
+
+test('actualiser : rien sous 10 % de chance ; Boîte Jetons gratuite une fois par étage', () => {
+  // Étage 20, niveau 7 (niveau 6 visé) : trio Onix + Abra + Nosferapti en ★★, Rattata en paire. Rattata (coût 1 : 22 % par
+  // case, 24 exemplaires sur 492) se voit à 1 − (1 − 0,22 × 24/492)^5 × (1 − 0,15/4) = 8,8 % : pas d'actualisation, et
+  // aucun niveau jusqu'au 9 ne le rend plus fréquent.
+  const core = ['onix', 'abra', 'zubat'];
+  const t = brockStats([{ ...brockCore(core), stop: '21:brock' }], { stops: [{ ...BROCK[0], stop: '21:brock' }] });
+  const owned = ownedGame({ onix: 2, abra: 2, zubat: 2, a: 1, b: 1 });
+  owned.units.a.line = 'rattata';
+  owned.units.b.line = 'rattata';
+  const at = (extra = {}) => advise({ ...save, round: 1019, level: 7, xp: 0, gold: 60, attempts: 0, shop: [], ...owned, ...extra }, { stats: t });
+  const chance = KT.rerollChance(KT.readGame({ ...save, ...owned }, T), data, 7, ['rattata']);
+  assert.ok(Math.abs(chance - 100 * (1 - (1 - 0.22 * 24 / 492) ** 5 * (1 - 0.15 / 4))) < 0.05, `${chance}`);
+  assert.equal(at().reroll, null);
+  // Boîte Jetons : actualisation gratuite à cet étage, même sans rien à chercher ; l'or ne lui est pas réservé.
+  const box = cf => ({ tower: { ...save.tower, boons: ['coincase'], ...(cf === undefined ? {} : { cf }) } });
+  assert.equal(why(at(box()).reroll), 'do Actualise : gratuite à cet étage (Boîte Jetons), après les achats');
+  assert.equal(why(at(box()).xp), why(at().xp));
+  // Déjà servie à cet étage (cf = round) : la règle ordinaire reprend.
+  assert.equal(at(box(1019)).reroll, null);
 });
 
 // Trio Giovanni + Koga + Samouraï (coût 5) possédé en ★★ à l'étage 78, 120 pièces, boutique sans intérêt.
@@ -562,26 +604,27 @@ test('or en trop : XP quand rien n’est à chercher, puis ★★★ du trio au 
   const eight = advise(late(8), LATE_TRIO);
   assert.equal(eight.target.key, 'giovanni+koga+samurai');
   assert.deepEqual([why(eight.xp), why(eight.reroll)], ['do Monte : niveau 10 visé à cet étage ; 96 XP avant le niveau 9', null]);
-  // Étage 62, niveau 9 : niveau visé atteint, rien à chercher sous le niveau maximal, l'or va au niveau 10.
+  // Étage 62, niveau 9 : le niveau 10, visé dès l'étage 60, passe avant l'actualisation.
   const nine = advise(late(9, { round: 1061 }), LATE_TRIO);
-  assert.deepEqual([why(nine.xp), why(nine.reroll)], ['do Monte : rien à chercher en boutique à ce niveau ; 120 XP avant le niveau 10', null]);
-  // Niveau 10 : plus d'XP, les ★★★ du trio se cherchent (coût 5 : 20 %).
+  assert.deepEqual([why(nine.xp), why(nine.reroll)], ['do Monte : niveau 10 visé à cet étage ; 120 XP avant le niveau 10', null]);
+  // Niveau 10 : plus d'XP, les ★★★ du trio se cherchent. Coût 5 : 3 lignées de 9 exemplaires, moins les 9 des trois ★★ ;
+  // 20 % par case, tous les exemplaires restants cherchés, plus le repêchage (15 %, les trois lignées possédées) :
+  // 1 − (1 − 0,2)^5 × 0,85 = 72 %.
   const ten = advise(late(10), LATE_TRIO);
   assert.equal(ten.xp, null);
-  assert.equal(why(ten.reroll), 'do Actualise : cherche Miaouss de Giovanni (coût 5 : 20 %), Smogo de Koga (coût 5 : 20 %), Scarabrute du Samouraï (coût 5 : 20 %) au niveau 10');
+  assert.equal(why(ten.reroll), 'do Actualise : cherche Miaouss de Giovanni, Smogo de Koga, Scarabrute du Samouraï : 72 % par actualisation au niveau 10');
 });
 
 test('niveau maximal : pas de ★★★ cherchée pour une lignée du trio qu’elle affaiblit nettement (intervalles disjoints)', () => {
   // Écart de victoire d ± demi-largeur de l'intervalle à 95 %, autour d'un taux attendu de 70 %.
   const star = (n, d, half) => ({ line: 'giovanni', star: n, n: 1000, win: 70 + d, lo: 70 + d - half, hi: 70 + d + half, exp: 70, d });
   const giovanni = (...stars) => ({ stats: { ...torre, stars: [...torre.stars.filter(s => s.line !== 'giovanni'), ...stars] }, ...LATE_TRIO });
-  const others = 'Smogo de Koga (coût 5 : 20 %), Scarabrute du Samouraï (coût 5 : 20 %) au niveau 10';
-  const all = `do Actualise : cherche Miaouss de Giovanni (coût 5 : 20 %), ${others}`;
+  const all = 'do Actualise : cherche Miaouss de Giovanni, Smogo de Koga, Scarabrute du Samouraï : 72 % par actualisation au niveau 10';
   // ★★ à +4 ± 1, ★★★ à 0 ± 1 : au mieux +1 contre au moins +3.
   const clear = giovanni(star(2, 4, 1), star(3, 0, 1));
   const ten = advise(late(10), clear);
   assert.deepEqual(ten.target.flat, ['giovanni']);
-  assert.equal(why(ten.reroll), `do Actualise : cherche ${others}`);
+  assert.equal(why(ten.reroll), 'do Actualise : cherche Smogo de Koga, Scarabrute du Samouraï : 56 % par actualisation au niveau 10');
   // Intervalles qui se chevauchent (± 2,5), ou ★★★ sans statistiques : la ★★★ se cherche.
   assert.equal(why(advise(late(10), giovanni(star(2, 4, 2.5), star(3, 0, 2.5))).reroll), all);
   assert.deepEqual(advise(late(10), giovanni(star(2, 4, 1))).target.flat, []);
@@ -591,12 +634,12 @@ test('niveau maximal : pas de ★★★ cherchée pour une lignée du trio qu’
 });
 
 test('actualiser : lignée introuvable à ce niveau → XP ; fusion à une copie cherchée', () => {
-  // Étage 5, sans niveau visé. Trio Onix + Kabuto + Rhinocorne à trouver, niveau 3 : les coûts 3 et 4 ne sortent pas. Sans
+  // Étage 4, sans niveau visé. Trio Onix + Kabuto + Rhinocorne à trouver, niveau 3 : les coûts 3 et 4 ne sortent pas. Sans
   // statistiques d'étoile, la ★★★ du trio se cherche au niveau maximal.
   const t = brockStats([brockCore(['onix', 'kabuto', 'rhyhorn'])], { stars: [] });
-  const empty = { ...save, round: 1004, level: 3, xp: 0, gold: 40, units: {}, board: {}, bench: [], shop: [], attempts: 0 };
+  const empty = { ...save, round: 1003, level: 3, xp: 0, gold: 40, units: {}, board: {}, bench: [], shop: [], attempts: 0 };
   const lost = advise(empty, { stats: t });
-  assert.equal(why(lost.reroll), 'no Garde l’or : Onix (coût 3 : 0 %) au niveau 3 : à chercher au niveau 6');
+  assert.equal(why(lost.reroll), 'no Garde l’or : Onix, Kabuto, Rhinocorne ne sortent pas au niveau 3 ; à chercher au niveau 7');
   assert.equal(why(lost.xp), 'do Monte : rien à chercher en boutique à ce niveau ; 8 XP avant le niveau 4');
   // Trio complet en ★★ : rien à chercher, sauf la lignée à une copie d'une fusion.
   const units = Object.fromEntries(['onix', 'kabuto', 'rhyhorn'].map(line => [line, { id: line, line, star: 2 }]));
@@ -604,13 +647,16 @@ test('actualiser : lignée introuvable à ce niveau → XP ; fusion à une copie
   assert.deepEqual([advise(full, { stats: t }).reroll, brief(advise(full, { stats: t }).xp)], [null, 'do Monte']);
   const pair = { ...full, units: { ...units, a: { id: 'a', line: 'rattata', star: 1 }, b: { id: 'b', line: 'rattata', star: 1 } }, bench: ['a', 'b'] };
   const rolled = advise(pair, { stats: t });
-  assert.equal(why(rolled.reroll), 'do Actualise : cherche Rattata (coût 1 : 60 %) au niveau 4');
+  assert.equal(why(rolled.reroll), 'do Actualise : cherche Rattata : 20 % par actualisation au niveau 4');
   assert.equal(why(rolled.xp), 'no Attends : l’or va d’abord à l’actualisation');
-  // Étage 62, niveau 9 : Rattata (coût 1) sort à 6 %, et à 4 % au niveau 10. Monter ne le rend pas trouvable : aucun conseil
-  // d'actualisation, l'or va à l'XP. Au niveau 10, le maximum, tout ce qui sort en boutique se cherche.
-  const high = level => advise({ ...pair, round: 1061, level, gold: 60 }, { stats: { ...t, stops: [{ ...BROCK[0], stop: '64:brock' }], cores: [{ ...t.cores[0], stop: '64:brock' }] } });
-  assert.deepEqual([high(9).reroll, brief(high(9).xp)], [null, 'do Monte']);
-  assert.equal(why(high(10).reroll), 'do Actualise : cherche Onix (coût 3 : 24 %), Kabuto (coût 4 : 42 %), Rhinocorne (coût 4 : 42 %), Rattata (coût 1 : 4 %) au niveau 10');
+  // Étage 62, niveaux « plus tard » (10 visé dès l'étage 75), niveau 9 : Rattata (coût 1 : 6 % par case) se voit à 5 % par
+  // actualisation, repêchage compris, et à 5 % au niveau 10. Monter ne le rend pas trouvable : aucun conseil d'actualisation,
+  // l'or va à l'XP. Au niveau 10, le maximum, tout ce qui sort en boutique se cherche.
+  const high = (level, mode = T) => advise({ ...pair, round: 1061, level, gold: 60 },
+    { mode, stats: { ...t, stops: [{ ...BROCK[0], stop: '64:brock' }], cores: [{ ...t.cores[0], stop: '64:brock' }] } });
+  const late9 = high(9, strategy({ pace: 'late' }));
+  assert.deepEqual([late9.reroll, brief(late9.xp)], [null, 'do Monte']);
+  assert.equal(why(high(10).reroll), 'do Actualise : cherche Onix, Kabuto, Rhinocorne, Rattata : 38 % par actualisation au niveau 10');
 });
 
 test('lignée du trio inconnue des données : ni malus, ni actualisation pour elle, pas d’erreur', () => {
@@ -622,7 +668,7 @@ test('lignée du trio inconnue des données : ni malus, ni actualisation pour el
   const a = advise({ ...save, round: 1004, level: 9, xp: 0, gold: 60, attempts: 0, units: {}, board: {}, bench: [], shop: [] },
     { stats: brockStats([brockCore(core)]) });
   assert.equal(a.target.key, 'newmon+pidgey+spearow');
-  assert.equal(why(a.reroll), 'do Actualise : cherche Roucool (coût 1 : 6 %), Piafabec (coût 1 : 6 %) au niveau 9');
+  assert.equal(why(a.reroll), 'do Actualise : cherche Roucool, Piafabec : 3 % par actualisation au niveau 9');
   // Tout jouer : aucune chance n'est lue, la lignée inconnue se cherche comme les autres.
   const own = Object.fromEntries(['pidgey', 'spearow'].map(line => [line, { id: line, line, star: 3 }]));
   const allIn = advise({ ...save, round: 1004, level: 9, xp: 0, gold: 10, hp: 30, attempts: 0, units: own, board: {}, bench: ['pidgey', 'spearow'], shop: [] },
@@ -673,7 +719,7 @@ test('compo suivante : inertie de 30 points dans la même partie', () => {
 });
 
 test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamais sous le palier ni en tout jouer', () => {
-  // Étage 5, aucun niveau visé (NEXT_SHOP).
+  // Étage 4, aucun niveau visé (NEXT_SHOP).
   const t = twoWindows([[['caterpie', 'pidgey', 'rattata'], 80]]);
   const base = NEXT_SHOP;
   const at = (gold, extra = {}) => advise({ ...base, gold, ...extra }, { stats: t });
@@ -1566,7 +1612,7 @@ test('tranches et règles d’or corrigées', () => {
   assert.deepEqual([KT.guideFor(161).from, KT.guideFor(999).to], [161, Infinity]);
   assert.ok(KT.goldRules(KT.TOWER_MODE).some(r => r.includes('+3 au plus') && r.includes('30 pièces')));
   assert.ok(KT.goldRules(KT.TOWER_MODE).every(r => !r.includes('+5')));
-  assert.ok(KT.goldRules(KT.TOWER_MODE).some(r => r.includes('XP jusqu’au niveau visé (5 dès l’étage 6, 6 dès l’étage 12, 7 dès l’étage 20, 8 dès l’étage 30, 9 dès l’étage 45, 10 dès l’étage 65)')));
+  assert.ok(KT.goldRules(KT.TOWER_MODE).some(r => r.includes('XP jusqu’au niveau visé (5 dès l’étage 5, 6 dès l’étage 11, 7 dès l’étage 21, 8 dès l’étage 29, 9 dès l’étage 44, 10 dès l’étage 60)')));
   assert.ok(KT.goldRules(KT.TOWER_MODE).some(r => r === 'Tout jouer sur un combat sous 45 % de victoires, sous 40 PV, ou sur un étage rejoué à partir de l’étage 50.'));
 });
 

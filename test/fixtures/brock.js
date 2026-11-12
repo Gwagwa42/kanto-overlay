@@ -28,10 +28,10 @@ const ownedGame = (stars, board = {}) => ({
 });
 // Partie de graine 7 (runSeed) à l'étage 10, niveau 3, sans unité ni boutique ; le sac reste celui de la sauvegarde.
 const EMPTY10 = { ...save, round: 1009, level: 3, units: {}, board: {}, bench: [], shop: [], runSeed: 7 };
-// Même partie à l'étage 5, niveau 4 : trio Abra + Onix + Nosferapti à trouver (twoWindows), Abo ★ pour seul complément ;
+// Même partie à l'étage 4, sans niveau visé, niveau 4 : trio Abra + Onix + Nosferapti à trouver (twoWindows), Abo ★ pour seul complément ;
 // Chenipan et Roucool ne servent que la compo des étages 19–27.
 const NEXT_SHOP = {
-  ...EMPTY10, round: 1004, level: 4, xp: 0, units: { e: { id: 'e', line: 'ekans', star: 1 } }, bench: ['e'],
+  ...EMPTY10, round: 1003, level: 4, xp: 0, units: { e: { id: 'e', line: 'ekans', star: 1 } }, bench: ['e'],
   shop: ['caterpie', 'pidgey', 'ekans', null, null],
 };
 

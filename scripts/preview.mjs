@@ -59,7 +59,7 @@ const STATES = {
   'onglet-boss': { save: S57, api: 'ok', ui: { tab: 'boss' } },
   'onglet-regles': { save: S57, api: 'ok', ui: { tab: 'rules' } },
   // Journal de 100 combats à 50 % attendus, 30 gagnés, dont 60 avec le trio posé : bilan complet et écart compté (13 points).
-  'regles-bilan': { save: S57, api: 'ok', ui: { tab: 'rules' }, fights: Array.from({ length: 100 }, (_, i) => ({ r: i < 60 ? 1 : 2, k: 'tower', f: 57, p: 50, w: Number(i < 20 || (i >= 60 && i < 70)), c: Number(i < 60) })) },
+  'regles-bilan': { save: S57, api: 'ok', ui: { tab: 'rules' }, fights: Array.from({ length: 100 }, (_, i) => ({ r: i < 60 ? 1 : 2, k: 'tower', f: 57, p: 50, w: Number(i < 20 || (i >= 60 && i < 70)), c: Number(i < 60), l: i < 40 ? 9 : 8, g: 9 })) },
   'a-eviter-ouvert': { save: S57, api: 'ok', ui: { avoid: true } },
   options: { save: S57, api: 'ok', menu: true, ui: { pins: { no: false } } },
   replie: { save: S57, api: 'ok', tip: true, ui: { collapsed: true } },
