@@ -67,20 +67,33 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
   sans passer sous le palier ni en tout jouer, et pas de « Vends » pour eux au banc tant que l'or suffit aux ★ de la compo cible.
 - **Économie** : intérêts plafonnés à +3 en Tour, donc palier de 30 pièces (50 avec la voie Fortune complète). On ne dépense que le
   surplus, sauf en **tout jouer** : combat de l'étage sous 45 % de victoires, PV sous 40, ou étage rejoué après une défaite à partir
-  de l'étage 50 (une nouvelle défaite y coûte 12 PV et plus, et supprime les intérêts de la manche).
+  de l'étage 50. Dans le jeu, une nouvelle défaite sur un étage rejoué supprime les intérêts de la manche et réduit son revenu de
+  base dès le premier étage ; le seuil de 50 est un choix, pris là où cette défaite coûte aussi 12 PV et plus. Le revenu de base
+  de la Tour monte de 4 pièces (étages 1 à 20) à 9 (à partir de l'étage 101), une défaite rapporte 2 pièces de plus, et la série
+  de victoires ne rapporte rien.
 - **Or au-dessus du palier** : il ne rapporte rien, il est dépensé dans cet ordre.
   1. Les achats ★ : trio, 3ᵉ copie, shiny qui devient la meilleure copie, place libre. Eux seuls peuvent faire passer sous le
      palier : une place vide ou un Pokémon du trio manquant coûte plus qu'un intérêt.
-  2. L'XP jusqu'au niveau visé : 5 dès l'étage 6, 6 dès 12, 7 dès 20, 8 dès 30, 9 dès 45, 10 dès 65. La Tour ne donne que 1 XP
-     par étage : le niveau s'achète. Tant qu'il n'est pas atteint, le surplus y va par tranches de 4 pièces : pas d'actualisation,
-     et les ◆ n'ont que le reste.
+  2. L'XP jusqu'au niveau visé : 5 dès l'étage 5, 6 dès 11, 7 dès 21, 8 dès 29, 9 dès 44, 10 dès 60. Chaque niveau est visé
+     un étage avant un saut de la puissance de l'équipe adverse, que le jeu fixe par étage (table `ry` de `route-*.js`, même
+     formule que la puissance d'une unité) : 4,8 au boss de l'étage 5, de 7,6 à 10,7 entre les étages 11 et 12, de 17,8 à 22,3
+     entre 21 et 22, de 26,4 à 31,3 entre 29 et 30, de 32,9 à 38,3 entre 44 et 45 ; le niveau 10 dès qu'il s'ouvre, à l'étage
+     60. La Tour ne donne que 1 XP par étage : le niveau s'achète. Tant qu'il n'est pas atteint, le surplus y va par tranches de
+     4 pièces : pas d'actualisation, et les ◆ n'ont que le reste.
   3. Les ◆ de la compo cible.
-  4. L'actualisation, s'il y a quelque chose à chercher dont le coût sort à 15 % ou plus à ton niveau : un Pokémon du trio sous ★★,
-     ou un Pokémon de la compo qui a 2 copies ★ ou 2 copies ★★. Au niveau maximal, le trio se cherche jusqu'à ★★★ et le seuil de
-     15 % ne vaut plus : l'or n'a pas d'autre emploi. Seule exception, le trio ne cherche plus la ★★★ d'une forme
-     qu'elle affaiblit nettement dans le mode (intervalles à 95 % disjoints : 16 formes en novembre 2026, dont Hypotrempe, Ptitard,
-     Psykokwak, Kabuto, Rhinocorne) ; deux copies ★★ font encore chercher la troisième. Une lignée trouvable seulement plus
-     haut est annoncée (« Kabuto (coût 4 : 12 %) au niveau 7 : à chercher au niveau 8 ») ; un coût 1 ou 2, qui sort de moins en moins, ne donne aucun conseil.
+  4. L'actualisation, quand elle a au moins 10 % de chances de montrer une copie cherchée (une copie pour 20 pièces en
+     moyenne) : un Pokémon du trio sous ★★, ou un Pokémon de la compo qui a 2 copies ★ ou 2 copies ★★. La chance suit les
+     règles de la boutique du jeu. Chacune des 5 cases tire son coût selon ton niveau, puis sa lignée au poids des exemplaires
+     restants : 26, 22, 20, 13 ou 9 par lignée selon le coût, moins 1, 3 ou 9 par copie ★, ★★ ou ★★★ que tu possèdes, et plus
+     aucun pour une lignée que tu as en ★★★. La Tour compte 19, 21, 20, 14 et 3 lignées par coût, Kanto 14, 13, 12, 11 et 6. En
+     Tour, le repêchage remplace en plus une case, 15 fois sur 100 (35 avec la voie Élevage complète), par une de tes lignées
+     tirée au hasard. Exemple en Tour, au niveau 7 : une lignée de coût 3 dont tu as une copie sort à 8 % hors repêchage, 11 %
+     avec lui si tu possèdes 4 lignées. Au niveau maximal, le trio se cherche jusqu'à ★★★ et toute chance suffit : l'or n'a
+     pas d'autre emploi. Seule exception, le trio ne cherche plus la ★★★ d'une forme qu'elle affaiblit nettement dans le mode
+     (intervalles à 95 % disjoints : 16 formes en novembre 2026, dont Hypotrempe, Ptitard, Psykokwak, Kabuto, Rhinocorne) ;
+     deux copies ★★ font encore chercher la troisième. Sous 10 %, le premier niveau qui les donne est annoncé (« Kabuto : 4 %
+     par actualisation au niveau 7 ; à chercher au niveau 9 ») ; sans un tel niveau, aucun conseil. Avec la Boîte Jetons,
+     l'actualisation gratuite de chaque étage est toujours conseillée, après les achats.
   5. Les ◆ de la compo suivante.
   6. L'XP avec ce qui reste, jusqu'au niveau maximal (9, puis 10 à partir de l'étage 60).
 - **Profil de chaque lignée** : tank ou attaquant, et les stats d'attaque qui la servent.
@@ -187,7 +200,7 @@ Changer un préréglage recalcule tout de suite les conseils et les règles d'or
 
 | Réglage | Valeurs | Effet |
 | --- | --- | --- |
-| Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 5, 6 dès 9, 7 dès 15, 8 dès 23, 9 dès 34, 10 dès 60 ; plus tard : 8, 15, 25, 38, 56, 81. Campagne plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38, sous la taille des équipes des champions (8 au 6ᵉ badge, 9 contre Mewtwo). Le niveau maximal ne change pas : le niveau 10 n'est jamais visé avant l'étage 60 en Tour. |
+| Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 4, 6 dès 8, 7 dès 16, 8 dès 22, 9 dès 33, 10 dès 60 ; plus tard : 6, 14, 26, 36, 55, 75. Campagne plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38, sous la taille des équipes des champions (8 au 6ᵉ badge, 9 contre Mewtwo). Le niveau maximal ne change pas : le niveau 10 n'est jamais visé avant l'étage 60 en Tour. |
 | Tout jouer | Prudent, Normal, Audacieux | Combat sous 50, 45 ou 40 % de victoires (plus la pénalité de difficulté en campagne et l'écart appris sur [tes résultats](#tes-résultats)), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
 | Compo cible | Réactive, Normale, Stable | Combats vus d'avance (6, 9 ou 12, la compo suivante sur autant d'après) et gain minimal pour changer de trio (15, 30 ou 45 points). |
 | Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver introuvable à ton niveau (autant). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
@@ -198,15 +211,18 @@ Le panneau note le résultat de chaque combat joué avec lui et apprend de l'éc
 
 - **Journal** : à chaque combat fini, une ligne dans le navigateur (`localStorage`, clé `kt-overlay:journal`) : la partie, la
   Tour ou l'aventure et sa difficulté, l'étage ou le combat, le taux attendu (taux public, moins 10 ou 20 points en Vétéran et en Légende), le
-  résultat, et si le trio de la compo cible était posé à la dernière lecture avant le combat. Le résultat se lit dans la
+  résultat, si le trio de la compo cible était posé à la dernière lecture avant le combat et, à cette lecture, ton niveau, le
+  niveau visé, ton or et tes PV, avec la version du script et les quatre préréglages de stratégie (ces six champs manquent aux
+  combats notés avant la version 2.11.0). Le résultat se lit dans la
   sauvegarde du jeu, relue toutes les 2 s : la série de victoires (`streak`) change à chaque combat, et la partie avance d'une
   manche ou compte un essai de plus. Le journal garde les 300 derniers combats de la Tour et de chaque aventure à chaque difficulté, pour suivre ton
   niveau et les rééquilibrages du jeu ; rien ne quitte le navigateur.
 - **Bilan** (onglet Règles) : pour la Tour, ou pour l'aventure et la difficulté en cours, tes victoires, les victoires attendues (somme des taux) et la
-  marge à 95 % sur cette somme, puis les mêmes chiffres avec et sans le trio de la compo cible posé. Ces deux lignes décrivent,
-  sans départager : on s'écarte du conseil surtout quand la partie va déjà mal.
+  marge à 95 % sur cette somme, puis les mêmes chiffres avec et sans le trio de la compo cible posé, et au niveau visé ou en
+  dessous. Ces lignes décrivent, sans départager : on s'écarte du conseil surtout quand la partie va déjà mal.
 - **Écart appris** : la moyenne de (résultat − taux attendu), rétrécie par 50 combats fictifs sans écart et bornée à 20 points.
-  Il s'ajoute à la pénalité de difficulté : seuil de « tout jouer », couleur des taux et poids des combats dans la compo cible.
+  Il s'ajoute à la pénalité de difficulté : seuil de « tout jouer », couleur des taux, poids des combats dans la compo cible et,
+  en campagne, avance des niveaux visés.
   Avec 30 victoires pour 50 attendues sur 100 combats, les taux comptent 13 points de moins : tout jouer sous 58 % au lieu de
   45 %, ce que l'en-tête rappelle (« Tour · tout jouer sous 58 % »). Les taux affichés restent les taux publics. Il n'y a pas de
   seuil en deçà duquel l'écart serait ignoré : il ferait sauter les conseils d'une dizaine de points sur un seul combat. Un
@@ -229,7 +245,8 @@ Mêmes conseils qu'en Tour, sur les combats de l'aventure en cours, avec les rè
   manche aux variantes tirées au sort (combat 11 : Marin, Gentleman ou Pêcheur) compte chacune selon sa part des combats. Aux
   4ᵉ, 5ᵉ et 6ᵉ badges, le champion est celui que tu as choisi (`gymOrder`), sinon un de ceux qui restent.
 - **Boss** (Kanto) : les 8 badges, le Conseil 4, le Maître de la Ligue et Mewtwo ; dans les autres aventures, chaque combat.
-- **Économie** : intérêts plafonnés à +4, donc palier de 40 pièces ; 2 XP gratuites par combat, niveau 9 au plus. Niveaux visés
+- **Économie** : intérêts plafonnés à +4, donc palier de 40 pièces ; +1 pièce par victoire à partir de la 2ᵉ de suite ; 2 XP
+  gratuites par manche, niveau 9 au plus. Niveaux visés
   (choix de jeu, d'après la taille des équipes des champions) : 4 dès le combat 4, 5 dès 8, 6 dès 12, 7 dès 16, 8 dès 24, 9 dès 30.
   Sur un combat obligatoire (badge, Ligue, boss), une deuxième défaite ne rapporte plus d'intérêts : un combat rejoué se joue à fond
   dès le premier échec. Ni bénédiction ni sceau.
@@ -237,9 +254,11 @@ Mêmes conseils qu'en Tour, sur les combats de l'aventure en cours, avec les rè
   trois ; or le jeu renforce les adversaires (textes du jeu, roster-*.js : en Vétéran, rivaux +5 % à toutes les stats, équipes
   variées et objets ; au-delà, as à une étoile de plus, objets combinés, boucliers et rage des boss, selon l'aventure). Le panneau
   retire donc 10 puis 20 points au taux de chaque combat : « tout jouer » sous 55 puis 65 %, couleur des taux en conséquence,
-  niveaux visés avancés d'un puis de deux combats, et poids des combats dans la compo cible relevés d'autant, ce qui resserre
-  l'écart entre combats faciles et murs (80 % contre 30 % : 20 contre 70 en Normal, 40 contre 90 en Légende). Ces écarts sont un
-  choix de jeu : aucune statistique publique ne sépare les difficultés.
+  poids des combats dans la compo cible relevés d'autant, ce qui resserre l'écart entre combats faciles et murs (80 % contre
+  30 % : 20 contre 70 en Normal, 40 contre 90 en Légende), et niveaux visés avancés d'un combat par 10 points, de 0 à 2. Ces
+  écarts sont un choix de jeu : aucune statistique publique ne sépare les difficultés. L'écart appris sur [tes
+  résultats](#tes-résultats), compté par aventure et difficulté, corrige la pénalité : avec 6 victoires de moins qu'attendu sur
+  50 combats en Vétéran, elle passe de 10 à 16 points, et les niveaux visés de 1 à 2 combats d'avance.
 - **Partie lue** : celle du mode à l'écran (barre de la Tour, de la campagne, vies du Nuzlocke), la plus récente à l'accueil. Entre
   deux aventures, le jeu ne réécrit la sauvegarde qu'à la première action : jusque-là, le panneau garde l'aventure précédente.
 - **Champion à choisir** (4ᵉ et 5ᵉ badges) : l'en-tête montre la manche entière (« Erika ou Koga ou Morgane », taux moyen
@@ -261,17 +280,22 @@ Data: Kanto Tactics · [einoow.com](https://einoow.com) — API publique `https:
 types). Conformément à ses conditions, chaque source est gardée **une heure** dans le Cache Storage du navigateur, puis revalidée
 (`ETag`) ; en cas d'erreur, la dernière copie sert et le pied du panneau en donne la date.
 
-L'API publique s'arrête aux règles 40 alors que la Tour tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
-le script (seuils d'XP, 1 XP gratuite par étage, chances de chaque coût en boutique par niveau, plafond d'intérêts, intérêts perdus
-sur une deuxième défaite au même étage, voies et noms des bénédictions, coût, types, portée et stats d'attaque utiles de 24 lignées, effet d'un shiny :
-+10 % de PV, dégâts et défenses, transmis par la fusion, série de victoires changée à chaque combat, sauvegarde supprimée à la
-défaite finale). La puissance d'une unité et le seuil de 15 % sont ceux des robots du jeu.
+`data.json` s'arrête aux règles 40 alors que le jeu tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
+le script (seuils d'XP, 1 XP gratuite par étage, chances de chaque coût en boutique par niveau, exemplaires par lignée, lignées
+en boutique par coût, repêchage, actualisation gratuite de la Boîte Jetons, plafond d'intérêts, intérêts perdus sur une
+deuxième défaite au même étage, or de série en campagne, voies et noms des bénédictions, coût, types, portée et stats
+d'attaque utiles de 24 lignées, effet d'un shiny : +10 % de PV, dégâts et défenses, transmis par la fusion, série de victoires
+changée à chaque combat, sauvegarde supprimée à la défaite finale). La puissance d'une unité et le seuil de 15 % du malus de la
+compo cible sont ceux des robots du jeu. Le script ignore l'XP de Multi Exp (+1 par manche et par exemplaire) et les lignées
+bannies de la semaine en Tour, qui ne changent aucun conseil ou presque.
 L'écart de victoire `d` corrige la difficulté du combat, pas le niveau du joueur : une lignée que choisissent surtout les bons
 joueurs paraît plus forte qu'elle n'est, d'où le décalage borné à un cran et les 400 combats fictifs. L'API ne publie
 ni le rôle d'une lignée (mage, tireur, tank…) ni les capacités qui peuvent être critiques. Que ses attaques de base comptent se
 lit donc sur ses stats : le rapport de l'Attaque à l'Atq. Spé. va de 0,31 à 0,76 pour les mages et les soutiens, de 0,90 à 2,35
 pour les autres rôles (novembre 2026), d'où le seuil de 0,83. Le critique n'est compté que pour les attaques de base.
-La courbe de niveaux visés est un choix de jeu : aucune statistique publique ne donne le niveau des joueurs en Tour. La liste des
+La courbe de niveaux visés reste un choix de jeu : aucune statistique publique ne donne le niveau des joueurs, et la puissance
+adverse ne dit que l'étage où le niveau suivant compte. La courbe des robots du jeu (`engine-*.js`) sert le PvP, dont
+l'économie diffère (2 XP par manche, or de série). La liste des
 shinies à saisir par tranche d'étages vient d'un guide et n'est pas vérifiée.
 `modes.camp` ne dit ni l'aventure ni la difficulté d'un combat (`difficulty: "todas"`) : deux aventures qui partagent un arrêt
 (`1:Pokémon salvajes`, `9:Pokémon salvajes` pour Kanto et « Je te choisis ! », peut-être d'autres avec les aventures chiffrées)
