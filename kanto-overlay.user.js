@@ -423,19 +423,19 @@ const KT = (() => {
   // possédée qui peut encore sortir. Approximations : les cases d'une même boutique sont tirées avec remise, et les lignées
   // bannies de la semaine en Tour restent comptées.
   function rerollChance(game, data, level, bases) {
-    const owned = new Map();
-    for (const u of game.units) owned.set(baseLine(u.line), (owned.get(baseLine(u.line)) ?? 0) + 3 ** (u.star - 1));
+    const owned = [...new Set(game.units.map(u => baseLine(u.line)))];
     const cost = base => lineInfo(data, base)?.c;
     const odds = base => shopOdds(data, level, base) / 100;
-    const left = base => (bestStar(game, base) >= 3 ? 0 : SHOP_COPIES[cost(base) - 1] - (owned.get(base) ?? 0));
+    const left = base => (bestStar(game, base) >= 3 ? 0
+      : SHOP_COPIES[cost(base) - 1] - unitsOf(game, base).reduce((sum, u) => sum + 3 ** (u.star - 1), 0));
     const pool = c => game.mode.shopLines[c - 1] * SHOP_COPIES[c - 1]
-      - [...owned.keys()].filter(b => cost(b) === c).reduce((sum, b) => sum + SHOP_COPIES[c - 1] - left(b), 0);
+      - owned.filter(b => cost(b) === c).reduce((sum, b) => sum + SHOP_COPIES[c - 1] - left(b), 0);
     const drawable = base => cost(base) !== undefined && odds(base) > 0 && left(base) > 0;
     const sought = bases.filter(drawable);
     const perSlot = sought.reduce((sum, b) => sum + odds(b) * left(b) / pool(cost(b)), 0);
-    const redrawn = [...owned.keys()].filter(drawable);
+    const redrawn = owned.filter(drawable);
     const redraw = game.mode.redraw + (pathCount(game.boons, 'breed') >= PATH_SIZE ? BREED_REDRAW : 0);
-    const redrawHit = redrawn.length ? redraw * sought.filter(b => owned.has(b)).length / redrawn.length : 0;
+    const redrawHit = redrawn.length ? redraw * sought.filter(b => owned.includes(b)).length / redrawn.length : 0;
     return 100 * (1 - (1 - perSlot) ** SHOP_SLOTS * (1 - redrawHit));
   }
   const unitPower = (cost, star) => (1 + COST_POWER * (cost - 1)) * STAR_POWER[star - 1];
@@ -664,7 +664,8 @@ const KT = (() => {
       bag: save.items ?? [],
       reward: Array.isArray(save.itemReward) ? save.itemReward : [],
       boons: save.tower?.boons ?? [],
-      // Boîte Jetons : une actualisation gratuite par étage ; le jeu note dans tower.cf l'étage où elle a servi (nx, route-*.js).
+      // Boîte Jetons : une actualisation gratuite par étage ; le jeu note dans tower.cf la manche (round) où elle a servi
+      // (nx, route-*.js ; action reroll, pvpNet-*.js).
       freeReroll: (save.tower?.boons ?? []).includes('coincase') && save.tower.cf !== save.round,
       offer: save.tower?.offer?.ids ?? [],
       anchor: save.anchor ?? {},
@@ -791,7 +792,8 @@ const KT = (() => {
   // Bilan des combats de la Tour, ou de l'aventure et de sa difficulté : victoires, victoires attendues (somme des taux), écart type de cette
   // somme, et shift, l'écart moyen en points (résultat moins taux attendu), rétréci par OWN_PRIOR combats sans écart et borné
   // à OWN_MAX. Sans seuil : un écart compté à partir d'un seuil sauterait de 0 à 10 points sur un seul combat. followed,
-  // other : avec ou sans le trio posé ; onPace, behind : au niveau visé ou en dessous (lignes qui notent le niveau).
+  // other : avec ou sans le trio posé ; onPace, behind : au niveau visé ou en dessous, sur les lignes qui notent un niveau
+  // visé (g au-dessus de 0).
   function ownResults(fights, mode) {
     const mine = fights.filter(f => f.k === cellOf(mode));
     const tally = list => ({
@@ -803,7 +805,7 @@ const KT = (() => {
     return {
       ...all, runs: new Set(mine.map(f => f.r)).size, shift: Math.max(-OWN_MAX, Math.min(OWN_MAX, gap)),
       followed: tally(mine.filter(f => f.c === 1)), other: tally(mine.filter(f => f.c === 0)),
-      onPace: tally(mine.filter(f => Number.isFinite(f.l) && f.l >= f.g)), behind: tally(mine.filter(f => Number.isFinite(f.l) && f.l < f.g)),
+      onPace: tally(mine.filter(f => f.g > 0 && f.l >= f.g)), behind: tally(mine.filter(f => f.g > 0 && f.l < f.g)),
     };
   }
 
@@ -1146,14 +1148,15 @@ const KT = (() => {
     let left = stars.short ? stars.left : freeSlotMarks(shop, stars.left);
     const xp = xpMark(game, eco, left);
     left -= xp.cost;
-    let reroll = game.freeReroll ? mark('do', 'Actualise', 'Actualise', 'gratuite à cet étage (Boîte Jetons), après les achats') : null;
-    let paid = false;
+    let ordinary = null;
     if (target) {
       left = targetOptMarks(shop, left);
-      reroll ??= rerollMark(shop, left);
-      paid = !game.freeReroll && reroll?.level === 'do';
-      left = restMarks(shop, left, xp.cost, paid ? REROLL_COST : 0);
+      ordinary = rerollMark(shop, left);
+      left = restMarks(shop, left, xp.cost, ordinary?.level === 'do' ? REROLL_COST : 0);
     }
+    // L'or d'une actualisation payante conseillée reste réservé derrière la gratuite : elle se conseillera à la lecture suivante.
+    const reroll = game.freeReroll ? mark('do', 'Actualise', 'Actualise', 'gratuite à cet étage (Boîte Jetons), après les achats') : ordinary;
+    const paid = ordinary?.level === 'do';
     return { shop: shop.marks.map(m => m ?? null), xp: xp.spare ? spareXp(game, eco, left, paid) : xp.mark, reroll, short: stars.short };
   }
 
@@ -1181,20 +1184,25 @@ const KT = (() => {
     const keep = why => mark('no', 'Garde l’or', 'N’actualise pas', why);
     const goal = levelGoal(game.floor, game.mode);
     if (game.level < goal) return keep(`d’abord le niveau ${goal}`);
-    const chance = level => rerollChance(game, data, level, seek);
-    const seen = level => {
+    const top = maxLevel(game.floor, game.mode);
+    // Chance suffisante à ce niveau : REROLL_CHANCE, ou toute chance au niveau maximal.
+    const enough = (level, chance) => (level >= top ? chance > 0 : chance >= REROLL_CHANCE);
+    const chances = Array.from({ length: Math.max(0, top - game.level) + 1 }, (_, i) => game.level + i)
+      .map(level => ({ level, chance: rerollChance(game, data, level, seek) }));
+    const seen = ({ level, chance }) => {
       const lines = seek.filter(base => rerollChance(game, data, level, [base]) > 0).map(names.line).join(', ');
-      return `${lines} : ${Math.round(chance(level))} % par actualisation au niveau ${level}`;
+      return `${lines} : ${Math.round(chance)} % par actualisation au niveau ${level}`;
     };
-    const top = game.level >= maxLevel(game.floor, game.mode);
-    if (top ? chance(game.level) === 0 : chance(game.level) < REROLL_CHANCE) {
-      const levels = Array.from({ length: maxLevel(game.floor, game.mode) - game.level }, (_, i) => game.level + 1 + i);
-      const reach = levels.find(level => chance(level) >= REROLL_CHANCE);
-      const none = `${seek.map(names.line).join(', ')} ${seek.length > 1 ? 'ne sortent' : 'ne sort'} pas au niveau ${game.level}`;
-      return reach ? keep(`${chance(game.level) > 0 ? seen(game.level) : none} ; à chercher au niveau ${reach}`) : null;
+    const [now, ...higher] = chances;
+    if (!enough(now.level, now.chance)) {
+      // Le niveau maximal n'est annoncé qu'à REROLL_CHANCE : toute chance y suffit faute d'autre emploi de l'or, pas parce
+      // que l'actualisation y vaut mieux.
+      const reach = higher.find(c => c.chance >= REROLL_CHANCE);
+      const none = `${seek.map(names.line).join(', ')} ${seek.length > 1 ? 'ne sortent' : 'ne sort'} pas au niveau ${now.level}`;
+      return reach ? keep(`${now.chance > 0 ? seen(now) : none} ; à chercher au niveau ${reach.level} (${seen(reach)})`) : null;
     }
     if (left - REROLL_COST < eco.floor) return keep(`tu passerais sous ${eco.floor} pièces`);
-    return mark('do', 'Actualise', 'Actualise', `cherche ${seen(game.level)}`);
+    return mark('do', 'Actualise', 'Actualise', `cherche ${seen(now)}`);
   }
 
   const buyXp = why => mark('do', 'Monte', 'Achète de l’XP', why);

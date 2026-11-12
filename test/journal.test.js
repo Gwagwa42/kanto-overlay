@@ -153,8 +153,9 @@ test('bilan de l’onglet Règles : vide, sans écart, écart compté, avec et s
     'Trio de la compo cible posé : 20 victoires pour 30 attendues (± 7,6) sur 60 combats. Sans lui : 10 victoires pour 20 attendues (± 6,2) sur 40 combats.',
     'Les taux publics comptent 13 points de moins pour toi : seuil de « tout jouer », couleurs, poids des combats.',
   ]);
-  // Au niveau visé ou en dessous : seulement sur les lignes qui notent le niveau, et quand les deux cas existent.
-  const paced = [...fights(30, 20, { l: 6, g: 6 }), ...fights(20, 5, { l: 5, g: 6, r: 2 }), ...fights(50, 25)];
+  // Au niveau visé ou en dessous : seulement sur les lignes qui notent un niveau visé, et quand les deux cas existent ; les
+  // étages sans niveau visé (g = 0) ne comptent pas.
+  const paced = [...fights(30, 20, { l: 6, g: 6 }), ...fights(20, 5, { l: 5, g: 6, r: 2 }), ...fights(10, 10, { l: 3, g: 0 }), ...fights(40, 15)];
   assert.ok(KT.resultsNote(T, paced).includes('Au niveau visé : 20 victoires pour 15 attendues (± 5,4) sur 30 combats. En dessous : 5 victoires pour 10 attendues (± 4,4) sur 20 combats.'));
   assert.ok(!KT.resultsNote(T, fights(30, 20, { l: 6, g: 6 })).some(n => n.startsWith('Au niveau visé')));
   const html = KT.panelHtml({ mode: T, floor: 10, fights: fights(1, 1), stats: { torre: stats }, advice: null, failed: [], error: null }, { ...KT.UI_DEFAULTS, tab: 'rules' });
