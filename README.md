@@ -165,7 +165,12 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
       rien pour une unité de mêlée, déjà à l'avant.
   - Assassins adverses (case de l'onglet Compo, à cocher quand l'adversaire affiché en aligne ; elle vaut pour le combat en
     cours et se vide au suivant). Le panneau ne lit pas l'équipe adverse : elle n'est ni dans la sauvegarde ni dans la page,
-    le jeu la calcule à partir de la graine de la partie. Règles du moteur : Insécateur, Doduo et Abo plongent sur ton
+    le jeu la calcule à partir de la graine de la partie. Il ne peut pas non plus la calculer. En Tour, le générateur a
+    besoin de données que le serveur envoie au démarrage, décodées par un module obfusqué. En campagne, son portage
+    recopierait environ 8 k de code et 20 k de tables, à refaire à chaque version. Quant au générateur du jeu, le script ne
+    peut pas l'appeler : la CSP du site (`script-src 'self'`) empêche Violentmonkey d'injecter le script dans le monde de la
+    page sur Firefox, et un import depuis le monde du contenu créerait une seconde instance du jeu sans ces données.
+    Règles du moteur : Insécateur, Doduo et Abo plongent sur ton
     Pokémon le plus au fond (à rangée égale, celui qui a le moins de PV ; Abo, dans la moitié du plateau par où il entre, la
     colonne 4 comptant dans les deux) ; Nosferapti, sur le plus au fond de la colonne la plus proche de la sienne. La parade
     pose donc un appât plus au fond que le porteur à distance, dans la même moitié que lui : le porteur du fond avance en
