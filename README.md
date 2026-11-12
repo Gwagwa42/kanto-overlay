@@ -78,14 +78,14 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
      un étage avant un saut de la puissance de l'équipe adverse, que le jeu fixe par étage (table `ry` de `route-*.js`, même
      formule que la puissance d'une unité) : 4,8 au boss de l'étage 5, de 7,6 à 10,7 entre les étages 11 et 12, de 17,8 à 22,3
      entre 21 et 22, de 26,4 à 31,3 entre 29 et 30, de 32,9 à 38,3 entre 44 et 45 ; le niveau 10 dès qu'il s'ouvre, à l'étage
-     60. La Tour ne donne que 1 XP par étage : le niveau s'achète. Tant qu'il n'est pas atteint, le surplus y va par tranches de
+     60. Le saut de l'étage 15 (de 10,9 à 14,7) et les pics des boss des étages 35 et 55 ne déplacent aucun niveau. La Tour ne donne que 1 XP par étage : le niveau s'achète. Tant qu'il n'est pas atteint, le surplus y va par tranches de
      4 pièces : pas d'actualisation, et les ◆ n'ont que le reste.
   3. Les ◆ de la compo cible.
   4. L'actualisation, quand elle a au moins 10 % de chances de montrer une copie cherchée (une copie pour 20 pièces en
      moyenne) : un Pokémon du trio sous ★★, ou un Pokémon de la compo qui a 2 copies ★ ou 2 copies ★★. La chance suit les
      règles de la boutique du jeu. Chacune des 5 cases tire son coût selon ton niveau, puis sa lignée au poids des exemplaires
      restants : 26, 22, 20, 13 ou 9 par lignée selon le coût, moins 1, 3 ou 9 par copie ★, ★★ ou ★★★ que tu possèdes, et plus
-     aucun pour une lignée que tu as en ★★★. La Tour compte 19, 21, 20, 14 et 3 lignées par coût, Kanto 14, 13, 12, 11 et 6. En
+     aucun pour une lignée que tu as en ★★★. La Tour compte 19, 21, 20, 14 et 3 lignées par coût, sans les légendaires, Kanto 14, 13, 12, 11 et 6, Cramois'Île 13, 14, 12, 11 et 6. En
      Tour, le repêchage remplace en plus une case, 15 fois sur 100 (35 avec la voie Élevage complète), par une de tes lignées
      tirée au hasard. Exemple en Tour, au niveau 7 : une lignée de coût 3 dont tu as une copie sort à 8 % hors repêchage, 11 %
      avec lui si tu possèdes 4 lignées. Au niveau maximal, le trio se cherche jusqu'à ★★★ et toute chance suffit : l'or n'a
@@ -288,8 +288,10 @@ en boutique par coût, repêchage, actualisation gratuite de la Boîte Jetons, p
 deuxième défaite au même étage, or de série en campagne, voies et noms des bénédictions, coût, types, portée et stats
 d'attaque utiles de 24 lignées, effet d'un shiny : +10 % de PV, dégâts et défenses, transmis par la fusion, série de victoires
 changée à chaque combat, sauvegarde supprimée à la défaite finale). La puissance d'une unité et le seuil de 15 % du malus de la
-compo cible sont ceux des robots du jeu. Le script ignore l'XP de Multi Exp (+1 par manche et par exemplaire) et les lignées
-bannies de la semaine en Tour, qui ne changent aucun conseil ou presque.
+compo cible sont ceux des robots du jeu. Le script ignore l'XP de Multi Exp (+1 par manche et par exemplaire), les lignées
+bannies de la semaine en Tour et les sceaux de boutique (lignées possédées ×1,3, +8 points de coût 4, actualisation à 1
+pièce…) : la chance d'une actualisation est alors approchée. Les boutiques de Safari, Lavanville et Team Rocket, chiffrées,
+sont comptées comme celle de Kanto ; celle de Cramois'Île est relevée dans le jeu.
 L'écart de victoire `d` corrige la difficulté du combat, pas le niveau du joueur : une lignée que choisissent surtout les bons
 joueurs paraît plus forte qu'elle n'est, d'où le décalage borné à un cran et les 400 combats fictifs. L'API ne publie
 ni le rôle d'une lignée (mage, tireur, tank…) ni les capacités qui peuvent être critiques. Que ses attaques de base comptent se
