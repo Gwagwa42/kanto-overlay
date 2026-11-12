@@ -309,7 +309,7 @@ const KT = (() => {
   // (shop-*.js).
   // hud : barre de progression du mode affiché, qui montre les pastilles ; xm : mode du code KT1 (teamCode-*.js : pvp, tower, adv).
   // shopLines : lignées en boutique par coût (Tour : 77, vérifiées par al de route-*.js ; Kanto : les 56 lignées de base,
-  // copiées par Tl avant que lu n'y ajoute les formes PvP) ; shopOut : lignées hors de la boutique (Tour : légendaires, vl) ;
+  // copiées par Tl avant que lu n'y ajoute les formes PvP) ; shopOut : lignées hors de la boutique (Tour : les 5 légendaires de vl) ;
   // redraw : chance du repêchage.
   const TOWER = {
     id: 'tower', stats: 'torre', name: 'Tour', where: 'en Tour', label: 'Étage', unit: 'étage', units: 'étages', the: 'l’étage', at: 'à l’étage', here: 'à cet étage', xm: 'tower', hud: '.topbar .rtrack.tw',
