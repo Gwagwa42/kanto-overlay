@@ -17,6 +17,8 @@ const advice = adviseOn(S10, { mode: T, stats });
 const after = change => JSON.stringify({ ...S10, ...change });
 // n combats à 50 % attendus, dont wins gagnés, en Tour.
 const fights = (n, wins, extra = {}) => Array.from({ length: n }, (_, i) => ({ r: 1, k: 'tower', f: 10, p: 50, w: Number(i < wins), ...extra }));
+// Ligne de S10 : étage 10, niveau 4 pour 5 visé, 29 pièces, 89 PV, préréglages normaux.
+const S10_ENTRY = { r: 7, k: 'tower', f: 10, p: 50, w: 1, c: 1, l: 4, g: 5, o: 29, h: 89, v: KT.VERSION, s: ['normal', 'normal', 'normal', 'normal'] };
 
 test('résultat d’un combat : lu sur la série, nul sans combat fini ou sur une autre partie', () => {
   assert.equal(KT.fightWon(S10, after({ round: 1010, streak: 3 }), null, T), true);
@@ -51,7 +53,9 @@ test('défaite finale : confirmée en Tour par la liste des parties finies, jama
 });
 
 test('ligne de journal : taux attendu, trio posé ou non, rien sans taux public', () => {
-  assert.deepEqual(KT.fightEntry(advice, stats, true), { r: 7, k: 'tower', f: 10, p: 50, w: 1, c: 1 });
+  assert.deepEqual(KT.fightEntry(advice, stats, true), S10_ENTRY);
+  const early = adviseOn(S10, { mode: KT.withStrategy(T, { ...KT.STRATEGY_DEFAULTS, pace: 'early' }), stats });
+  assert.deepEqual(KT.fightEntry(early, stats, true).s, ['early', 'normal', 'normal', 'normal']);
   const benched = adviseOn({ ...S10, board: { 38: 'u1' }, bench: ['u2', 'u5', 'u6'] }, { mode: T, stats });
   assert.equal(KT.fightEntry(benched, stats, false).c, 0);
   assert.equal(KT.fightEntry(adviseOn({ ...S10, round: 1010 }, { mode: T, stats }), stats, true), null);
@@ -66,7 +70,7 @@ test('combat noté : une ligne par combat fini, rien sans conseil ni combat', ()
   const state = { save: S10, advice, stats, runsRaw: null };
   assert.equal(KT.notedFight({ ...state, afterRaw: after({ gold: 1 }) }), null);
   assert.equal(KT.notedFight({ ...state, advice: null, afterRaw: after({ round: 1010, streak: 3 }) }), null);
-  assert.deepEqual(KT.notedFight({ ...state, afterRaw: after({ round: 1010, streak: 3 }) }), { r: 7, k: 'tower', f: 10, p: 50, w: 1, c: 1 });
+  assert.deepEqual(KT.notedFight({ ...state, afterRaw: after({ round: 1010, streak: 3 }) }), S10_ENTRY);
   // Taux public de moins de 20 combats : pas de ligne.
   const thin = { ...stats, stops: [{ ...stats.stops[0], n: 19 }] };
   assert.equal(KT.notedFight({ ...state, stats: thin, afterRaw: after({ round: 1010, streak: 3 }) }), null);
@@ -149,7 +153,17 @@ test('bilan de l’onglet Règles : vide, sans écart, écart compté, avec et s
     'Trio de la compo cible posé : 20 victoires pour 30 attendues (± 7,6) sur 60 combats. Sans lui : 10 victoires pour 20 attendues (± 6,2) sur 40 combats.',
     'Les taux publics comptent 13 points de moins pour toi : seuil de « tout jouer », couleurs, poids des combats.',
   ]);
+  // Au niveau visé ou en dessous : seulement sur les lignes qui notent un niveau visé, et quand les deux cas existent ; les
+  // étages sans niveau visé (g = 0) et les lignes sans niveau lisible ne comptent pas.
+  const paced = [...fights(30, 20, { l: 6, g: 6 }), ...fights(20, 5, { l: 5, g: 6, r: 2 }), ...fights(10, 10, { l: 3, g: 0 }), ...fights(5, 0, { l: null, g: 6 }), ...fights(35, 15)];
+  assert.ok(KT.resultsNote(T, paced).includes('Au niveau visé : 20 victoires pour 15 attendues (± 5,4) sur 30 combats. En dessous : 5 victoires pour 10 attendues (± 4,4) sur 20 combats.'));
+  assert.ok(!KT.resultsNote(T, fights(30, 20, { l: 6, g: 6 })).some(n => n.startsWith('Au niveau visé')));
   const html = KT.panelHtml({ mode: T, floor: 10, fights: fights(1, 1), stats: { torre: stats }, advice: null, failed: [], error: null }, { ...KT.UI_DEFAULTS, tab: 'rules' });
   assert.match(html, /Tes résultats<\/span><span>Tour<\/span>.*1 victoire pour 0,5 attendues \(± 1\) sur 1 combat, 1 partie\./s);
   assert.match(html, /Les taux publics comptent 1 point de plus pour toi/);
+});
+
+test('version notée au journal : celle de l’en-tête du script', () => {
+  const header = require('node:fs').readFileSync(require.resolve('../kanto-overlay.user.js'), 'utf8').match(/^\/\/ @version\s+(\S+)$/m)[1];
+  assert.equal(KT.VERSION, header);
 });

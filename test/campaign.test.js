@@ -128,6 +128,22 @@ test('économie de campagne : palier 40 (+4), combat rejoué joué à fond dès 
   assert.deepEqual(goals(1), [0, 4, 4, 5, 8, 9]);
   assert.deepEqual(goals(2), [4, 4, 5, 5, 9, 9]);
   assert.equal(advise({ ...CAMP, level: 9, round: 37 }).xp, null);
+  // Or de série (Th du jeu) : en campagne seulement.
+  const streak = 'Série : +1 pièce par victoire à partir de la 2ᵉ de suite.';
+  assert.deepEqual([KT.goldRules(mode({})), KT.goldRules(KT.TOWER_MODE)].map(rules => rules.some(r => r.includes(streak))), [true, false]);
+});
+
+test('niveaux visés de campagne : avance d’un combat par 10 points de pénalité après l’écart appris, de 0 à 2', () => {
+  // 50 combats de Kanto en Vétéran (pénalité 10) attendus à 80 % : 40 victoires attendues ; l'écart est rétréci par 50 combats
+  // fictifs, soit 6 points pour 6 victoires d'écart.
+  const fights = (k, wins) => Array.from({ length: 50 }, (_, i) => ({ r: 1, k, f: 1, p: 80, w: Number(i < wins) }));
+  const learned = wins => KT.withResults(mode({ league: 2 }), fights('kanto:2', wins));
+  // Pénalité 10, 16 puis 4 points : 1, 2 puis 0 combat d'avance.
+  assert.deepEqual([learned(40).advance, learned(34).advance, learned(46).advance], [1, 2, 0]);
+  assert.deepEqual([6, 10].map(f => KT.levelGoal(f, learned(34))), [5, 6]);
+  assert.ok(KT.goldRules(learned(34)).some(r => r.includes('(4 dès le combat 2, 5 dès le combat 6,')));
+  // La Tour n'avance jamais ses niveaux visés, même avec un écart appris défavorable.
+  assert.equal(KT.withResults(KT.TOWER_MODE, fights('tower', 0)).advance, 0);
 });
 
 test('compo de campagne : trio des 9 prochains combats de l’aventure, code KT1 en mode aventure', () => {

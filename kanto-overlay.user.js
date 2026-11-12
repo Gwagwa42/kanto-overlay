@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour et campagne
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.10.0
+// @version      2.11.0
 // @description  Tour de combat et campagne (aventures, trois difficultés) de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -28,6 +28,9 @@
 'use strict';
 
 const KT = (() => {
+  // Version du script, notée dans le journal des combats ; égale à @version (un test le vérifie) : GM_info n'est pas garanti
+  // avec @grant none.
+  const VERSION = '2.11.0';
   const API = 'https://einoow.com/api/meta/kanto/';
   const SOURCES = { stats: `${API}campana.json`, data: `${API}data.json`, lang: `${API}lang.json?lang=fr` };
   const CACHE_NAME = 'kt-overlay';
@@ -50,7 +53,8 @@ const KT = (() => {
   const MIN_FIGHTS = 20;
   // Difficulté de la campagne (league de la sauvegarde) : l'API mélange les trois (difficulty « todas »), ses taux surestiment
   // Vétéran et Légende. Points retirés au taux de chaque combat par cran de difficulté (choix de jeu, aucune statistique par
-  // difficulté) : « tout jouer » sous 45, 55 puis 65 % en stratégie normale. Les niveaux visés avancent d'un combat par cran.
+  // difficulté) : « tout jouer » sous 45, 55 puis 65 % en stratégie normale. Les niveaux visés avancent avec la pénalité
+  // (advanceOf).
   const LEAGUES = { 1: 'Normal', 2: 'Vétéran', 3: 'Légende' };
   const LEAGUE_PENALTY = 10;
   // Stratégie réglable dans le menu ⚙ (choix de jeu, aucune statistique ne les départage), mêmes champs qu'OPTIONS ; le
@@ -84,17 +88,33 @@ const KT = (() => {
     1: [100, 0, 0, 0, 0], 2: [100, 0, 0, 0, 0], 3: [75, 25, 0, 0, 0], 4: [60, 30, 10, 0, 0], 5: [50, 36, 13, 1, 0],
     6: [36, 42, 19, 3, 0], 7: [22, 32, 34, 12, 0], 8: [14, 22, 32, 26, 6], 9: [6, 14, 27, 36, 17], 10: [4, 10, 24, 42, 20],
   };
+  // Boutique (route-*.js, gm et pm) : SHOP_SLOTS cases ; chaque lignée a SHOP_COPIES[coût − 1] exemplaires, moins 3^(★−1)
+  // par copie possédée, et une case tire sa lignée au poids des exemplaires restants.
+  const SHOP_SLOTS = 5;
+  const SHOP_COPIES = [26, 22, 20, 13, 9];
+  // Repêchage de la Tour (shop-*.js, Tt) : à chaque boutique, avec cette chance, une case devient une lignée possédée tirée
+  // au hasard ; la voie Élevage complète ajoute BREED_REDRAW.
+  const TOWER_REDRAW = 0.15;
+  const BREED_REDRAW = 0.2;
+  // Chance (%) de voir une copie cherchée à partir de laquelle une actualisation se conseille : une copie pour 20 pièces en
+  // moyenne (choix de jeu).
+  const REROLL_CHANCE = 10;
+  // Chance d'un coût en boutique sous laquelle un Pokémon du trio à trouver vaut un malus (seuil des robots du jeu, engine-*.js).
+  const FINDABLE = 15;
   // Niveau 10 ouvert à partir de cet étage.
   const LEVEL_10_FROM = 60;
-  // Chance à partir de laquelle un coût vaut une actualisation (seuil des robots du jeu, engine-*.js).
-  const FINDABLE = 15;
-  // Niveau visé à partir d'un étage (choix de jeu) : la Tour ne donne que 1 XP par étage, le niveau s'achète. Les coûts 4
-  // sortent au niveau 8, les coûts 5 au niveau 9, atteint avant Électhor (étage 60).
-  const LEVEL_GOALS = [[6, 5], [12, 6], [20, 7], [30, 8], [45, 9], [65, 10]];
+  // Niveau visé à partir d'un étage (choix de jeu) : la Tour ne donne que 1 XP par étage, le niveau s'achète. Chaque niveau
+  // est visé un étage avant un saut de la puissance adverse (table ry de route-*.js, même formule que unitPower) : 4,8 à
+  // l'étage 5, 7,6 puis 10,7 aux étages 11 et 12, 17,8 puis 22,3 aux étages 21 et 22, 26,4 puis 31,3 aux étages 29 et 30,
+  // 32,9 puis 38,3 aux étages 44 et 45 ; le niveau 10 dès qu'il s'ouvre (37,4 puis 42,5 aux étages 59 et 60). Les autres
+  // sauts ne déplacent aucun niveau : celui de l'étage 15 (10,9 puis 14,7) tombe entre les niveaux 6 et 7, ceux des boss
+  // des étages 35 et 55 retombent à l'étage suivant.
+  const LEVEL_GOALS = [[5, 5], [11, 6], [21, 7], [29, 8], [44, 9], [60, 10]];
   // Campagne Kanto (choix de jeu) : 2 XP gratuites par combat, niveau 9 au plus ; un niveau au moins égal à la taille de
   // l'équipe du champion : Pierre 2, Ondine 3, Major Bob 4, 4ᵉ badge 5, 5ᵉ 6, 6ᵉ 8, Conseil 4 et Mewtwo 9 (route-*.js).
   const CAMPAIGN_LEVEL_GOALS = [[4, 4], [8, 5], [12, 6], [16, 7], [24, 8], [30, 9]];
-  // Un étage rejoué se joue à fond à partir de celui-ci : une défaite y coûte 12 PV et plus, et la suivante supprime les intérêts.
+  // Un étage rejoué se joue à fond à partir de celui-ci (choix de jeu). Dès le premier étage, une nouvelle défaite sur un étage
+  // rejoué supprime les intérêts et réduit le revenu de base (Oh, route-*.js) ; à partir d'ici, elle coûte aussi 12 PV et plus.
   const RETRY_ALL_IN_FROM = 50;
   // Puissance d'une unité selon son coût et son étoile (estimation des robots du jeu, engine-*.js) ; un point de traitGain
   // vaut TRAIT_WEIGHT.
@@ -161,7 +181,9 @@ const KT = (() => {
   // (route-*.js, ul) ; les événements n'ont pas de statistiques. Safari, Lavanda et Rocket chargent leurs manches par un module
   // chiffré : absentes, elles reçoivent une compo sans trio (targetComp). Méthode de relevé : README, Développement. bosses :
   // manches de badge, de Ligue et Mewtwo ; sans liste, chaque combat compte comme boss. gyms : manches des champions dont
-  // l'ordre suit gymOrder de la sauvegarde.
+  // l'ordre suit gymOrder de la sauvegarde. shopLines, shopOut : boutique de l'aventure quand elle n'est pas celle de Kanto
+  // (ul de route-*.js : Cramois'Île retire les 22 lignées de Cc et ajoute les 22 de wc) ; celles de Safari, Lavanda et Rocket
+  // sont chiffrées, comptées comme celle de Kanto.
   const ADVENTURES = {
     kanto: {
       name: 'Kanto',
@@ -186,6 +208,9 @@ const KT = (() => {
         20: ['Atrapados en el hielo'], 21: ['Puerto'], 22: ['Científico'], 24: ['Ladrón'], 27: ['Rival Azul'], 29: ['Sótano'],
         30: ['El fósil despierta'],
       },
+      shopLines: [13, 14, 12, 11, 6],
+      shopOut: ['squirtle', 'caterpie', 'rattata', 'magikarp', 'zubat', 'oddish', 'gastly', 'poliwag', 'ekans', 'jigglypuff', 'paras', 'eevee',
+        'slowpoke', 'scyther', 'hitmonlee', 'hitmonchan', 'jynx', 'seel', 'cubone', 'chansey', 'staryu', 'tauros'],
     },
     inicio: {
       name: 'Je te choisis !',
@@ -277,25 +302,29 @@ const KT = (() => {
     venonat: { c: 2, t: ['bug', 'poison'], s: [48, 49], range: 3 },
   };
   const lineInfo = (data, base) => data?.lines[base] ?? LINES_V41[base];
-  // Règles de chaque mode lues dans le code du jeu (route-*.js, règles 41). Campagne : base 5 et intérêts plafonnés à +4 (Ch),
-  // 2 XP gratuites par manche ($m), niveau 9 au plus (rh), pas de bénédiction ni de sceau. Sur un combat obligatoire (badge,
+  // Règles de chaque mode lues dans le code du jeu (route-*.js, règles 41). Campagne : base 5 et intérêts plafonnés à +4 (wh),
+  // 2 XP gratuites par manche (eh), niveau 9 au plus (ih), pas de bénédiction ni de sceau. Sur un combat obligatoire (badge,
   // Ligue, boss), la défaite qui suit un premier échec ne rapporte plus d'intérêts (Rm) : tout jouer dès le premier essai raté.
   // attempts ne dépasse 0 que sur ces combats : une manche ordinaire perdue avance quand même, et l'avance remet attempts à 0
   // (shop-*.js).
   // hud : barre de progression du mode affiché, qui montre les pastilles ; xm : mode du code KT1 (teamCode-*.js : pvp, tower, adv).
+  // shopLines : lignées en boutique par coût (Tour : 77, vérifiées par al de route-*.js ; Kanto : les 56 lignées de base,
+  // copiées par Tl avant que lu n'y ajoute les formes PvP) ; shopOut : lignées hors de la boutique (Tour : les 5 légendaires de vl) ;
+  // redraw : chance du repêchage.
   const TOWER = {
     id: 'tower', stats: 'torre', name: 'Tour', where: 'en Tour', label: 'Étage', unit: 'étage', units: 'étages', the: 'l’étage', at: 'à l’étage', here: 'à cet étage', xm: 'tower', hud: '.topbar .rtrack.tw',
     interest: BASE_INTEREST, levelGoals: LEVEL_GOALS, levelCap: floor => (floor >= LEVEL_10_FROM ? 10 : 9),
-    retryFrom: RETRY_ALL_IN_FROM, shinyKeepTo: SHINY_KEEP_TO, floorOf: round => Math.max(1, Math.floor(round) - ROUND_BASE + 1),
+    retryFrom: RETRY_ALL_IN_FROM, shinyKeepTo: SHINY_KEEP_TO, shopLines: [19, 21, 20, 14, 3],
+    shopOut: ['articuno', 'zapdos', 'moltres', 'mew', 'mewtwo'], redraw: TOWER_REDRAW, floorOf: round => Math.max(1, Math.floor(round) - ROUND_BASE + 1),
     // Morceaux des règles d'or propres au mode (goldRules) ; hasLeague : le mode a des difficultés, qui durcissent le seuil de
     // « tout jouer ».
-    fortuneNote: ` (+${FORTUNE_INTEREST} avec la voie Fortune complète)`, xpNote: '', retryNote: `sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}`, hasLeague: false,
+    fortuneNote: ` (+${FORTUNE_INTEREST} avec la voie Fortune complète)`, streakNote: '', xpNote: '', retryNote: `sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}`, hasLeague: false,
   };
   const CAMPAIGN = {
     id: 'campaign', stats: 'camp', name: 'Campagne', where: 'en campagne', label: 'Combat', unit: 'combat', units: 'combats', the: 'le combat', at: 'au combat', here: 'à ce combat', xm: 'adv',
     hud: '.topbar .rtrack:not(.tw):not(.pt-track)', interest: 4, levelGoals: CAMPAIGN_LEVEL_GOALS, levelCap: () => 9,
-    retryFrom: 1, shinyKeepTo: Infinity, floorOf: round => Math.max(1, Math.floor(round) + 1),
-    fortuneNote: '', xpNote: ' La campagne donne 2 XP par combat.', retryNote: 'sur un combat rejoué', hasLeague: true,
+    retryFrom: 1, shinyKeepTo: Infinity, shopLines: [14, 13, 12, 11, 6], shopOut: [], redraw: 0, floorOf: round => Math.max(1, Math.floor(round) + 1),
+    fortuneNote: '', streakNote: ' Série : +1 pièce par victoire à partir de la 2ᵉ de suite.', xpNote: ' La campagne donne 2 XP par combat.', retryNote: 'sur un combat rejoué', hasLeague: true,
   };
 
   // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null), difficulté et stratégie normale
@@ -305,11 +334,18 @@ const KT = (() => {
     if (rules === CAMPAIGN && !known && save.league !== undefined) console.warn('kanto-overlay : difficulté inconnue, comptée Normal', save.league);
     const league = rules === CAMPAIGN && known ? save.league : 1;
     const leaguePenalty = (league - 1) * LEAGUE_PENALTY;
+    const adv = adventure ? ADVENTURES[adventure] ?? null : null;
     return withStrategy({
-      ...rules, baseGoals: rules.levelGoals, adventure, adv: adventure ? ADVENTURES[adventure] ?? null : null, league,
-      leaguePenalty, ownPenalty: 0, penalty: leaguePenalty, gymOrder: Array.isArray(save.gymOrder) ? save.gymOrder : [],
+      ...rules, shopLines: adv?.shopLines ?? rules.shopLines, shopOut: adv?.shopOut ?? rules.shopOut,
+      baseGoals: rules.levelGoals, adventure, adv, league,
+      leaguePenalty, ownPenalty: 0, penalty: leaguePenalty, advance: advanceOf(rules, leaguePenalty),
+      gymOrder: Array.isArray(save.gymOrder) ? save.gymOrder : [],
     }, STRATEGY_DEFAULTS);
   }
+
+  // Combats d'avance des niveaux visés dans un mode à difficultés : un par LEAGUE_PENALTY points de pénalité (difficulté moins
+  // écart appris), de 0 à 2 ; la Tour n'en a pas.
+  const advanceOf = (rules, penalty) => (rules.hasLeague ? Math.max(0, Math.min(2, Math.round(penalty / LEAGUE_PENALTY))) : 0);
 
   // Mode avec la stratégie choisie (choice : clé de STRATEGY → valeur connue, l'objet ui passé par checkUi) ; les niveaux visés repartent de ceux des
   // règles (baseGoals), pour qu'un nouveau choix remplace le précédent. Un niveau n'est pas visé avant l'étage où le jeu
@@ -318,7 +354,7 @@ const KT = (() => {
     const params = Object.assign({}, ...STRATEGY.map(o => o.values.find(([v]) => v === choice[o.key])[2]));
     const unlocked = level => (level === 10 ? LEVEL_10_FROM : 1);
     const levelGoals = mode.baseGoals.map(([from, level]) => [Math.max(unlocked(level), Math.round(from * params.pace)), level]);
-    return { ...mode, ...params, levelGoals };
+    return { ...mode, ...params, levelGoals, strategy: STRATEGY.map(o => choice[o.key]) };
   }
   const TOWER_MODE = modeContext(TOWER);
 
@@ -387,11 +423,37 @@ const KT = (() => {
   }
 
   const levelGoal = (floor, mode) => mode.levelGoals
-    .reduce((goal, [from, level]) => (floor + mode.league - 1 >= from ? level : goal), 0);
+    .reduce((goal, [from, level]) => (floor + mode.advance >= from ? level : goal), 0);
   const maxLevel = (floor, mode) => mode.levelCap(floor);
   // Chance (%) de voir le coût de la lignée dans une case de boutique à ce niveau ; 0 pour un coût ou un niveau inconnu.
   const shopOdds = (data, level, base) => SHOP_ODDS[level]?.[lineInfo(data, base)?.c - 1] ?? 0;
   const findable = (data, level, base) => shopOdds(data, level, base) >= FINDABLE;
+
+  // Chance (%) qu'une actualisation au niveau level montre au moins une copie de l'une des lignées bases (gm, pm, Tt du jeu).
+  // Une case tire son coût dans SHOP_ODDS, puis sa lignée au poids des exemplaires restants : SHOP_COPIES du coût moins
+  // 3^(★−1) par copie possédée, aucun pour une lignée possédée en ★★★ ; une lignée hors de la boutique du mode (shopOut) ne
+  // sort pas. Le repêchage remplace ensuite une case par une lignée possédée qui peut encore sortir. Approximations : les
+  // cases d'une même boutique sont tirées avec remise, le repêchage compte comme une case de plus alors qu'il en remplace
+  // une (moins d'un point d'écart) ; en Tour, les lignées bannies de la semaine restent comptées, et les sceaux de boutique
+  // (Ojo de Cazador ×1,3 pour tes lignées, Mercado Alto +8 points de coût 4…) ne le sont pas.
+  function rerollChance(game, data, level, bases) {
+    const cost = base => lineInfo(data, base)?.c;
+    const odds = base => shopOdds(data, level, base) / 100;
+    // Exemplaires restants de chaque lignée possédée.
+    const owned = new Map([...new Set(game.units.map(u => baseLine(u.line)))].map(base => [base, bestStar(game, base) >= 3 ? 0
+      : SHOP_COPIES[cost(base) - 1] - unitsOf(game, base).reduce((sum, u) => sum + 3 ** (u.star - 1), 0)]));
+    const left = base => owned.get(base) ?? SHOP_COPIES[cost(base) - 1];
+    const sold = base => !game.mode.shopOut.includes(base);
+    const pool = c => game.mode.shopLines[c - 1] * SHOP_COPIES[c - 1]
+      - [...owned].filter(([b]) => cost(b) === c && sold(b)).reduce((sum, [, n]) => sum + SHOP_COPIES[c - 1] - n, 0);
+    const drawable = base => cost(base) !== undefined && sold(base) && odds(base) > 0 && left(base) > 0;
+    const sought = bases.filter(drawable);
+    const perSlot = sought.reduce((sum, b) => sum + odds(b) * left(b) / pool(cost(b)), 0);
+    const redrawn = [...owned.keys()].filter(drawable);
+    const redraw = game.mode.redraw + (pathCount(game.boons, 'breed') >= PATH_SIZE ? BREED_REDRAW : 0);
+    const redrawHit = redrawn.length ? redraw * sought.filter(b => owned.has(b)).length / redrawn.length : 0;
+    return 100 * (1 - (1 - perSlot) ** SHOP_SLOTS * (1 - redrawHit));
+  }
   const unitPower = (cost, star) => (1 + COST_POWER * (cost - 1)) * STAR_POWER[star - 1];
 
   // Conseils du guide (non vérifiés) par tranche d'étages.
@@ -412,7 +474,7 @@ const KT = (() => {
   }
 
   function goldRules(mode) {
-    const goals = mode.levelGoals.map(([from, level]) => `${level} dès ${mode.the} ${Math.max(1, from - mode.league + 1)}`).join(', ');
+    const goals = mode.levelGoals.map(([from, level]) => `${level} dès ${mode.the} ${Math.max(1, from - mode.advance)}`).join(', ');
     const hard = mode.hardWin + mode.penalty;
     const notes = [];
     if (mode.hasLeague) {
@@ -421,8 +483,8 @@ const KT = (() => {
     }
     if (mode.ownPenalty) notes.push(`${mode.ownPenalty > 0 ? 'plus' : 'moins'} ${Math.abs(mode.ownPenalty)} points d’après tes résultats`);
     return [
-      `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus ${mode.where} → garder ${10 * mode.interest} pièces${mode.fortuneNote}.`,
-      `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation pour les copies trouvables, puis XP.${mode.xpNote}`,
+      `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus ${mode.where} → garder ${10 * mode.interest} pièces${mode.fortuneNote}.${mode.streakNote}`,
+      `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation si elle montre une copie cherchée à ${REROLL_CHANCE} % ou plus, puis XP.${mode.xpNote}`,
       `Actualisation à ${REROLL_COST} pièces : ne pas en enchaîner pour un shiny.`,
       `Tout jouer sur un combat sous ${hard} % de victoires${notes.length ? ` (${notes.join(' ; ')})` : ''}, sous ${mode.lowHp} PV, ou ${mode.retryNote}.`,
     ];
@@ -618,6 +680,9 @@ const KT = (() => {
       bag: save.items ?? [],
       reward: Array.isArray(save.itemReward) ? save.itemReward : [],
       boons: save.tower?.boons ?? [],
+      // Boîte Jetons : une actualisation gratuite par étage ; le jeu note dans tower.cf la manche (round) où elle a servi
+      // (nx, route-*.js ; action reroll, pvpNet-*.js).
+      freeReroll: (save.tower?.boons ?? []).includes('coincase') && save.tower.cf !== save.round,
       offer: save.tower?.offer?.ids ?? [],
       anchor: save.anchor ?? {},
     };
@@ -657,8 +722,10 @@ const KT = (() => {
 
   // Journal des combats joués avec le panneau ouvert : { r: partie (runSeed), k: la Tour, ou l'aventure et sa difficulté (cellOf), f: étage ou
   // combat, p: taux attendu en % (taux public moins la pénalité de difficulté), w: 1 gagné, c: 1 si le trio de la compo
-  // cible était posé à la dernière lecture avant le combat (2 s au plus), absent sans trio }. Par clé k, les
-  // plus anciens sortent au-delà de JOURNAL_MAX : l'écart suit le niveau du joueur et les rééquilibrages du jeu.
+  // cible était posé à la dernière lecture avant le combat (2 s au plus), absent sans trio ; à cette lecture, l: niveau,
+  // g: niveau visé, o: or, h: PV ; v: VERSION, s: préréglages de stratégie dans l'ordre de STRATEGY }. Les lignes écrites
+  // avant la 2.11.0 n'ont ni l, g, o, h, v ni s. Par clé k, les plus anciens sortent au-delà de JOURNAL_MAX : l'écart suit
+  // le niveau du joueur et les rééquilibrages du jeu.
   const JOURNAL_KEY = 'kt-overlay:journal';
   const JOURNAL_MAX = 300;
   // Parties de Tour finies, écrites par le jeu à la défaite finale (towerRuns-*.js) : seed et étage atteint.
@@ -720,6 +787,7 @@ const KT = (() => {
     return {
       r: advice.run, k: cellOf(game.mode), f: game.floor, p, w: Number(won),
       ...(core.length ? { c: Number(core.every(id => placed.has(baseLine(id)))) } : {}),
+      l: game.level, g: levelGoal(game.floor, game.mode), o: game.gold, h: game.hp, v: VERSION, s: game.mode.strategy,
     };
   }
 
@@ -740,9 +808,11 @@ const KT = (() => {
   // Bilan des combats de la Tour, ou de l'aventure et de sa difficulté : victoires, victoires attendues (somme des taux), écart type de cette
   // somme, et shift, l'écart moyen en points (résultat moins taux attendu), rétréci par OWN_PRIOR combats sans écart et borné
   // à OWN_MAX. Sans seuil : un écart compté à partir d'un seuil sauterait de 0 à 10 points sur un seul combat. followed,
-  // other : avec ou sans le trio posé.
+  // other : avec ou sans le trio posé ; onPace, behind : au niveau visé ou en dessous, sur les lignes qui notent un niveau
+  // visé (g au-dessus de 0).
   function ownResults(fights, mode) {
     const mine = fights.filter(f => f.k === cellOf(mode));
+    const paced = f => Number.isFinite(f.l) && f.g > 0;
     const tally = list => ({
       n: list.length, wins: list.reduce((s, f) => s + f.w, 0), expected: list.reduce((s, f) => s + f.p / 100, 0),
       spread: Math.sqrt(list.reduce((s, f) => s + f.p * (100 - f.p) / 1e4, 0)),
@@ -752,15 +822,18 @@ const KT = (() => {
     return {
       ...all, runs: new Set(mine.map(f => f.r)).size, shift: Math.max(-OWN_MAX, Math.min(OWN_MAX, gap)),
       followed: tally(mine.filter(f => f.c === 1)), other: tally(mine.filter(f => f.c === 0)),
+      onPace: tally(mine.filter(f => paced(f) && f.l >= f.g)), behind: tally(mine.filter(f => paced(f) && f.l < f.g)),
     };
   }
 
   // Mode dont la pénalité suit les résultats du joueur : ses taux comptent shift points de plus ou de moins que les taux
-  // publics, pour le seuil de « tout jouer », la couleur des taux et le poids des combats dans la compo cible.
+  // publics, pour le seuil de « tout jouer », la couleur des taux, le poids des combats dans la compo cible et l'avance des
+  // niveaux visés (advanceOf).
   function withResults(mode, fights) {
     const { shift } = ownResults(fights, mode);
     // 0 - shift : un écart nul donne 0 et non −0, que Object.is et deepStrictEqual distinguent.
-    return { ...mode, ownPenalty: 0 - shift, penalty: mode.leaguePenalty - shift };
+    const penalty = mode.leaguePenalty - shift;
+    return { ...mode, ownPenalty: 0 - shift, penalty, advance: advanceOf(mode, penalty) };
   }
 
   const decimal = x => x.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
@@ -772,6 +845,7 @@ const KT = (() => {
     const line = t => `${t.wins} ${t.wins > 1 ? 'victoires' : 'victoire'} pour ${decimal(t.expected)} attendues (± ${decimal(1.96 * t.spread)}) sur ${t.n} ${t.n > 1 ? 'combats' : 'combat'}`;
     const notes = [`${line(r)}, ${r.runs} ${r.runs > 1 ? 'parties' : 'partie'}.`];
     if (r.followed.n && r.other.n) notes.push(`Trio de la compo cible posé : ${line(r.followed)}. Sans lui : ${line(r.other)}.`);
+    if (r.onPace.n && r.behind.n) notes.push(`Au niveau visé : ${line(r.onPace)}. En dessous : ${line(r.behind)}.`);
     notes.push(r.shift
       ? `Les taux publics comptent ${Math.abs(r.shift)} ${Math.abs(r.shift) > 1 ? 'points' : 'point'} de ${r.shift > 0 ? 'plus' : 'moins'} pour toi : seuil de « tout jouer », couleurs, poids des combats.`
       : 'Aucun écart compté : les taux publics sont gardés tels quels.');
@@ -1081,8 +1155,9 @@ const KT = (() => {
 
   // Dépenses du tour, dans l'ordre où l'or leur va : ★ de la boutique, ★ des places libres, XP réservée (xpMark), ◆ de la
   // compo cible, actualisation (rerollMark), ◆ de la compo suivante. L'or que ni un achat ni une actualisation n'engage va au
-  // niveau suivant (spareXp). Sans compo cible, seules les 3ᵉ copies sont marquées. short : un ★ a été rétrogradé faute d'or
-  // (déclenche « Vends »).
+  // niveau suivant (spareXp). L'actualisation gratuite de la Boîte Jetons se conseille toujours, après les achats, sans
+  // engager d'or. Sans compo cible, seules les 3ᵉ copies sont marquées. short : un ★ a été rétrogradé faute d'or (déclenche
+  // « Vends »).
   function spend(game, target, next, data, eco, names) {
     const cards = shopCards(game, target, next, data, names);
     const shop = { cards, marks: cards.map(() => undefined), game, target, next, data, eco, names };
@@ -1090,13 +1165,17 @@ const KT = (() => {
     let left = stars.short ? stars.left : freeSlotMarks(shop, stars.left);
     const xp = xpMark(game, eco, left);
     left -= xp.cost;
-    let reroll = null;
+    let ordinary = null;
     if (target) {
       left = targetOptMarks(shop, left);
-      reroll = rerollMark(shop, left);
-      left = restMarks(shop, left, xp.cost, reroll?.level === 'do' ? REROLL_COST : 0);
+      ordinary = rerollMark(shop, left);
+      left = restMarks(shop, left, xp.cost, ordinary?.level === 'do' ? REROLL_COST : 0);
     }
-    return { shop: shop.marks.map(m => m ?? null), xp: xp.spare ? spareXp(game, eco, left, reroll) : xp.mark, reroll, short: stars.short };
+    // L'or d'une actualisation payante conseillée reste réservé derrière la gratuite : elle se conseillera à la lecture suivante.
+    const paid = ordinary?.level === 'do';
+    const free = `gratuite à cet étage (Boîte Jetons), après les achats${paid ? ` ; puis payante : ${ordinary.why}` : ''}`;
+    const reroll = game.freeReroll ? mark('do', 'Actualise', 'Actualise', free) : ordinary;
+    return { shop: shop.marks.map(m => m ?? null), xp: xp.spare ? spareXp(game, eco, left, paid) : xp.mark, reroll, short: stars.short };
   }
 
   // Lignées de la compo qui valent une actualisation : trio sous ★★ (sous ★★★ au niveau maximal, sauf ★★★ nettement moins
@@ -1110,10 +1189,10 @@ const KT = (() => {
   }
 
   // Marque de l'actualisation, renvoyée sans toucher shop.marks ; shop : contexte de spend, avec une compo cible. left : or
-  // restant après les achats conseillés. Hors tout jouer, le niveau visé passe avant l'actualisation, et seules
-  // les lignées trouvables à ce niveau la justifient ; au niveau maximal, où l'or n'a plus d'autre emploi, toute lignée qui
-  // sort en boutique. Une lignée qui ne devient trouvable qu'à un niveau plus haut est annoncée ; un coût 1 ou 2, qui sort
-  // de moins en moins, ne donne aucun conseil, ni une lignée de coût inconnu.
+  // restant après les achats conseillés. Hors tout jouer, le niveau visé passe avant l'actualisation, qui ne se conseille
+  // qu'à REROLL_CHANCE de voir une copie cherchée (rerollChance) ; au niveau maximal, où l'or n'a plus d'autre emploi, à
+  // toute chance. Sinon, le premier niveau où cette chance est atteinte est annoncé ; sans un tel niveau, ou pour une
+  // lignée de coût inconnu, aucun conseil.
   function rerollMark(shop, left) {
     const { game, target, data, eco, names } = shop;
     const wanted = seekLines(game, target);
@@ -1123,17 +1202,23 @@ const KT = (() => {
     const keep = why => mark('no', 'Garde l’or', 'N’actualise pas', why);
     const goal = levelGoal(game.floor, game.mode);
     if (game.level < goal) return keep(`d’abord le niveau ${goal}`);
-    const odds = base => `${names.line(base)} (coût ${lineInfo(data, base).c} : ${shopOdds(data, game.level, base)} %)`;
-    const top = game.level >= maxLevel(game.floor, game.mode);
-    const found = seek.filter(base => (top ? shopOdds(data, game.level, base) > 0 : findable(data, game.level, base)));
-    if (!found.length) {
-      const levels = Array.from({ length: maxLevel(game.floor, game.mode) - game.level }, (_, i) => game.level + 1 + i);
-      const reach = base => levels.find(level => findable(data, level, base));
-      const later = seek.find(reach);
-      return later ? keep(`${odds(later)} au niveau ${game.level} : à chercher au niveau ${reach(later)}`) : null;
+    const top = maxLevel(game.floor, game.mode);
+    const chance = level => rerollChance(game, data, level, seek);
+    const visible = level => seek.filter(base => rerollChance(game, data, level, [base]) > 0).map(names.line).join(', ');
+    const odds = x => `${x < 1 ? 'moins de 1' : Math.round(x)} % par actualisation`;
+    const now = chance(game.level);
+    if (game.level >= top ? now === 0 : now < REROLL_CHANCE) {
+      // Le niveau maximal n'est annoncé qu'à REROLL_CHANCE : toute chance y suffit faute d'autre emploi de l'or, pas parce
+      // que l'actualisation y vaut mieux.
+      const reach = Array.from({ length: Math.max(0, top - game.level) }, (_, i) => game.level + 1 + i).find(level => chance(level) >= REROLL_CHANCE);
+      if (!reach) return null;
+      const here = now > 0 ? visible(game.level) : seek.map(names.line).join(', ');
+      const there = visible(reach);
+      const state = now > 0 ? `${here} : ${odds(now)} au niveau ${game.level}` : `${here} ${seek.length > 1 ? 'ne sortent' : 'ne sort'} pas au niveau ${game.level}`;
+      return keep(`${state} ; à chercher au niveau ${reach}${there === here ? '' : ` pour ${there}`} : ${odds(chance(reach))}`);
     }
     if (left - REROLL_COST < eco.floor) return keep(`tu passerais sous ${eco.floor} pièces`);
-    return mark('do', 'Actualise', 'Actualise', `cherche ${found.map(odds).join(', ')} au niveau ${game.level}`);
+    return mark('do', 'Actualise', 'Actualise', `cherche ${visible(game.level)} : ${odds(now)} au niveau ${game.level}`);
   }
 
   const buyXp = why => mark('do', 'Monte', 'Achète de l’XP', why);
@@ -1165,9 +1250,9 @@ const KT = (() => {
   }
 
   // Suite de xpMark (spare) : l'or que l'actualisation conseillée n'engage pas va au niveau suivant. left : or restant après
-  // tous les achats conseillés.
-  function spareXp(game, eco, left, reroll) {
-    if (reroll?.level === 'do') return waitXp('l’or va d’abord à l’actualisation');
+  // tous les achats conseillés ; rerolling : une actualisation payante est conseillée.
+  function spareXp(game, eco, left, rerolling) {
+    if (rerolling) return waitXp('l’or va d’abord à l’actualisation');
     if (left - XP_COST < eco.floor) return waitXp(keepFloor(eco));
     return buyXp(`rien à chercher en boutique à ce niveau ; ${missingXp(game)} XP avant le niveau ${game.level + 1}`);
   }
@@ -2083,9 +2168,9 @@ const KT = (() => {
 
   return {
     SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, leagueLabel, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, STRATEGY_DEFAULTS, latestSave, shownMode, pollState,
-    JOURNAL_KEY, TOWER_RUNS_KEY, readJournal, fightWon, fightEntry, notedFight, addFight, ownResults, withResults, resultsNote,
+    VERSION, JOURNAL_KEY, TOWER_RUNS_KEY, readJournal, fightWon, fightEntry, notedFight, addFight, ownResults, withResults, resultsNote,
     parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss,
-    baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
+    baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, rerollChance, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, touching, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
   };
 })();
