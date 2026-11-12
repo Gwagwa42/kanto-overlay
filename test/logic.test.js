@@ -566,6 +566,13 @@ test('actualiser : chance de voir une copie cherchée, réserve de la lignée et
   // Campagne : 12 lignées de coût 3, sans repêchage.
   const camp = KT.modeContext(KT.CAMPAIGN, {}, 'kanto');
   near(chance(four, { round: 6 }, camp), 100 * (1 - (1 - 0.34 * 19 / 239) ** 5));
+  // Lignée hors de la boutique du mode : Artikodin en Tour (légendaire, même possédée), Rattata à Cramois'Île.
+  const at = (mode, base, stars = {}) => KT.rerollChance(KT.readGame({ ...save, ...ownedGame(stars), round: 6 }, mode), data, 9, [base]);
+  assert.equal(at(T, 'articuno', { articuno: 1 }), 0);
+  const canela = KT.modeContext(KT.CAMPAIGN, {}, 'canela');
+  assert.deepEqual([at(canela, 'rattata'), at(camp, 'rattata') > 0], [0, true]);
+  // Cramois'Île : 14 lignées de coût 2 (13 à Kanto) ; Abra (coût 2 : 32 % par case au niveau 7) à une copie.
+  near(KT.rerollChance(KT.readGame({ ...save, ...ownedGame({ abra: 1 }), round: 6 }, canela), data, 7, ['abra']), 100 * (1 - (1 - 0.32 * 21 / 307) ** 5));
 });
 
 test('actualiser : rien sous 10 % de chance ; Boîte Jetons gratuite une fois par étage', () => {

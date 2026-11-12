@@ -53,7 +53,8 @@ const KT = (() => {
   const MIN_FIGHTS = 20;
   // Difficulté de la campagne (league de la sauvegarde) : l'API mélange les trois (difficulty « todas »), ses taux surestiment
   // Vétéran et Légende. Points retirés au taux de chaque combat par cran de difficulté (choix de jeu, aucune statistique par
-  // difficulté) : « tout jouer » sous 45, 55 puis 65 % en stratégie normale. Les niveaux visés avancent d'un combat par cran.
+  // difficulté) : « tout jouer » sous 45, 55 puis 65 % en stratégie normale. Les niveaux visés avancent avec la pénalité
+  // (advanceOf).
   const LEAGUES = { 1: 'Normal', 2: 'Vétéran', 3: 'Légende' };
   const LEAGUE_PENALTY = 10;
   // Stratégie réglable dans le menu ⚙ (choix de jeu, aucune statistique ne les départage), mêmes champs qu'OPTIONS ; le
@@ -105,7 +106,9 @@ const KT = (() => {
   // Niveau visé à partir d'un étage (choix de jeu) : la Tour ne donne que 1 XP par étage, le niveau s'achète. Chaque niveau
   // est visé un étage avant un saut de la puissance adverse (table ry de route-*.js, même formule que unitPower) : 4,8 à
   // l'étage 5, 7,6 puis 10,7 aux étages 11 et 12, 17,8 puis 22,3 aux étages 21 et 22, 26,4 puis 31,3 aux étages 29 et 30,
-  // 32,9 puis 38,3 aux étages 44 et 45 ; le niveau 10 dès qu'il s'ouvre (37,4 puis 42,5 aux étages 59 et 60).
+  // 32,9 puis 38,3 aux étages 44 et 45 ; le niveau 10 dès qu'il s'ouvre (37,4 puis 42,5 aux étages 59 et 60). Les autres
+  // sauts ne déplacent aucun niveau : celui de l'étage 15 (10,9 puis 14,7) tombe entre les niveaux 6 et 7, ceux des boss
+  // des étages 35 et 55 retombent à l'étage suivant.
   const LEVEL_GOALS = [[5, 5], [11, 6], [21, 7], [29, 8], [44, 9], [60, 10]];
   // Campagne Kanto (choix de jeu) : 2 XP gratuites par combat, niveau 9 au plus ; un niveau au moins égal à la taille de
   // l'équipe du champion : Pierre 2, Ondine 3, Major Bob 4, 4ᵉ badge 5, 5ᵉ 6, 6ᵉ 8, Conseil 4 et Mewtwo 9 (route-*.js).
@@ -178,7 +181,9 @@ const KT = (() => {
   // (route-*.js, ul) ; les événements n'ont pas de statistiques. Safari, Lavanda et Rocket chargent leurs manches par un module
   // chiffré : absentes, elles reçoivent une compo sans trio (targetComp). Méthode de relevé : README, Développement. bosses :
   // manches de badge, de Ligue et Mewtwo ; sans liste, chaque combat compte comme boss. gyms : manches des champions dont
-  // l'ordre suit gymOrder de la sauvegarde.
+  // l'ordre suit gymOrder de la sauvegarde. shopLines, shopOut : boutique de l'aventure quand elle n'est pas celle de Kanto
+  // (ul de route-*.js : Cramois'Île retire les 22 lignées de Cc et ajoute les 22 de wc) ; celles de Safari, Lavanda et Rocket
+  // sont chiffrées, comptées comme celle de Kanto.
   const ADVENTURES = {
     kanto: {
       name: 'Kanto',
@@ -203,6 +208,9 @@ const KT = (() => {
         20: ['Atrapados en el hielo'], 21: ['Puerto'], 22: ['Científico'], 24: ['Ladrón'], 27: ['Rival Azul'], 29: ['Sótano'],
         30: ['El fósil despierta'],
       },
+      shopLines: [13, 14, 12, 11, 6],
+      shopOut: ['squirtle', 'caterpie', 'rattata', 'magikarp', 'zubat', 'oddish', 'gastly', 'poliwag', 'ekans', 'jigglypuff', 'paras', 'eevee',
+        'slowpoke', 'scyther', 'hitmonlee', 'hitmonchan', 'jynx', 'seel', 'cubone', 'chansey', 'staryu', 'tauros'],
     },
     inicio: {
       name: 'Je te choisis !',
@@ -300,12 +308,14 @@ const KT = (() => {
   // attempts ne dépasse 0 que sur ces combats : une manche ordinaire perdue avance quand même, et l'avance remet attempts à 0
   // (shop-*.js).
   // hud : barre de progression du mode affiché, qui montre les pastilles ; xm : mode du code KT1 (teamCode-*.js : pvp, tower, adv).
-  // shopLines : lignées en boutique par coût (Tour : 77, vérifiées par al de route-*.js ; Kanto : les 56 lignées de base, sans
-  // les formes PvP, absentes des statistiques de campagne) ; redraw : chance du repêchage.
+  // shopLines : lignées en boutique par coût (Tour : 77, vérifiées par al de route-*.js ; Kanto : les 56 lignées de base,
+  // copiées par Tl avant que lu n'y ajoute les formes PvP) ; shopOut : lignées hors de la boutique (Tour : légendaires, vl) ;
+  // redraw : chance du repêchage.
   const TOWER = {
     id: 'tower', stats: 'torre', name: 'Tour', where: 'en Tour', label: 'Étage', unit: 'étage', units: 'étages', the: 'l’étage', at: 'à l’étage', here: 'à cet étage', xm: 'tower', hud: '.topbar .rtrack.tw',
     interest: BASE_INTEREST, levelGoals: LEVEL_GOALS, levelCap: floor => (floor >= LEVEL_10_FROM ? 10 : 9),
-    retryFrom: RETRY_ALL_IN_FROM, shinyKeepTo: SHINY_KEEP_TO, shopLines: [19, 21, 20, 14, 3], redraw: TOWER_REDRAW, floorOf: round => Math.max(1, Math.floor(round) - ROUND_BASE + 1),
+    retryFrom: RETRY_ALL_IN_FROM, shinyKeepTo: SHINY_KEEP_TO, shopLines: [19, 21, 20, 14, 3],
+    shopOut: ['articuno', 'zapdos', 'moltres', 'mew', 'mewtwo'], redraw: TOWER_REDRAW, floorOf: round => Math.max(1, Math.floor(round) - ROUND_BASE + 1),
     // Morceaux des règles d'or propres au mode (goldRules) ; hasLeague : le mode a des difficultés, qui durcissent le seuil de
     // « tout jouer ».
     fortuneNote: ` (+${FORTUNE_INTEREST} avec la voie Fortune complète)`, streakNote: '', xpNote: '', retryNote: `sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}`, hasLeague: false,
@@ -313,7 +323,7 @@ const KT = (() => {
   const CAMPAIGN = {
     id: 'campaign', stats: 'camp', name: 'Campagne', where: 'en campagne', label: 'Combat', unit: 'combat', units: 'combats', the: 'le combat', at: 'au combat', here: 'à ce combat', xm: 'adv',
     hud: '.topbar .rtrack:not(.tw):not(.pt-track)', interest: 4, levelGoals: CAMPAIGN_LEVEL_GOALS, levelCap: () => 9,
-    retryFrom: 1, shinyKeepTo: Infinity, shopLines: [14, 13, 12, 11, 6], redraw: 0, floorOf: round => Math.max(1, Math.floor(round) + 1),
+    retryFrom: 1, shinyKeepTo: Infinity, shopLines: [14, 13, 12, 11, 6], shopOut: [], redraw: 0, floorOf: round => Math.max(1, Math.floor(round) + 1),
     fortuneNote: '', streakNote: ' Série : +1 pièce par victoire à partir de la 2ᵉ de suite.', xpNote: ' La campagne donne 2 XP par combat.', retryNote: 'sur un combat rejoué', hasLeague: true,
   };
 
@@ -324,8 +334,10 @@ const KT = (() => {
     if (rules === CAMPAIGN && !known && save.league !== undefined) console.warn('kanto-overlay : difficulté inconnue, comptée Normal', save.league);
     const league = rules === CAMPAIGN && known ? save.league : 1;
     const leaguePenalty = (league - 1) * LEAGUE_PENALTY;
+    const adv = adventure ? ADVENTURES[adventure] ?? null : null;
     return withStrategy({
-      ...rules, baseGoals: rules.levelGoals, adventure, adv: adventure ? ADVENTURES[adventure] ?? null : null, league,
+      ...rules, shopLines: adv?.shopLines ?? rules.shopLines, shopOut: adv?.shopOut ?? rules.shopOut,
+      baseGoals: rules.levelGoals, adventure, adv, league,
       leaguePenalty, ownPenalty: 0, penalty: leaguePenalty, advance: advanceOf(rules, leaguePenalty),
       gymOrder: Array.isArray(save.gymOrder) ? save.gymOrder : [],
     }, STRATEGY_DEFAULTS);
@@ -419,9 +431,11 @@ const KT = (() => {
 
   // Chance (%) qu'une actualisation au niveau level montre au moins une copie de l'une des lignées bases (gm, pm, Tt du jeu).
   // Une case tire son coût dans SHOP_ODDS, puis sa lignée au poids des exemplaires restants : SHOP_COPIES du coût moins
-  // 3^(★−1) par copie possédée, aucun pour une lignée possédée en ★★★. Le repêchage remplace ensuite une case par une lignée
-  // possédée qui peut encore sortir. Approximations : les cases d'une même boutique sont tirées avec remise, et les lignées
-  // bannies de la semaine en Tour restent comptées.
+  // 3^(★−1) par copie possédée, aucun pour une lignée possédée en ★★★ ; une lignée hors de la boutique du mode (shopOut) ne
+  // sort pas. Le repêchage remplace ensuite une case par une lignée possédée qui peut encore sortir. Approximations : les
+  // cases d'une même boutique sont tirées avec remise, le repêchage compte comme une case de plus alors qu'il en remplace
+  // une (moins d'un point d'écart) ; en Tour, les lignées bannies de la semaine restent comptées, et les sceaux de boutique
+  // (Ojo de Cazador ×1,3 pour tes lignées, Mercado Alto +8 points de coût 4…) ne le sont pas.
   function rerollChance(game, data, level, bases) {
     const cost = base => lineInfo(data, base)?.c;
     const odds = base => shopOdds(data, level, base) / 100;
@@ -429,9 +443,10 @@ const KT = (() => {
     const owned = new Map([...new Set(game.units.map(u => baseLine(u.line)))].map(base => [base, bestStar(game, base) >= 3 ? 0
       : SHOP_COPIES[cost(base) - 1] - unitsOf(game, base).reduce((sum, u) => sum + 3 ** (u.star - 1), 0)]));
     const left = base => owned.get(base) ?? SHOP_COPIES[cost(base) - 1];
+    const sold = base => !game.mode.shopOut.includes(base);
     const pool = c => game.mode.shopLines[c - 1] * SHOP_COPIES[c - 1]
-      - [...owned].filter(([b]) => cost(b) === c).reduce((sum, [, n]) => sum + SHOP_COPIES[c - 1] - n, 0);
-    const drawable = base => cost(base) !== undefined && odds(base) > 0 && left(base) > 0;
+      - [...owned].filter(([b]) => cost(b) === c && sold(b)).reduce((sum, [, n]) => sum + SHOP_COPIES[c - 1] - n, 0);
+    const drawable = base => cost(base) !== undefined && sold(base) && odds(base) > 0 && left(base) > 0;
     const sought = bases.filter(drawable);
     const perSlot = sought.reduce((sum, b) => sum + odds(b) * left(b) / pool(cost(b)), 0);
     const redrawn = [...owned.keys()].filter(drawable);
