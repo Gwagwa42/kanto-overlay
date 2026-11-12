@@ -423,19 +423,20 @@ const KT = (() => {
   // possédée qui peut encore sortir. Approximations : les cases d'une même boutique sont tirées avec remise, et les lignées
   // bannies de la semaine en Tour restent comptées.
   function rerollChance(game, data, level, bases) {
-    const owned = [...new Set(game.units.map(u => baseLine(u.line)))];
     const cost = base => lineInfo(data, base)?.c;
     const odds = base => shopOdds(data, level, base) / 100;
-    const left = base => (bestStar(game, base) >= 3 ? 0
-      : SHOP_COPIES[cost(base) - 1] - unitsOf(game, base).reduce((sum, u) => sum + 3 ** (u.star - 1), 0));
+    // Exemplaires restants de chaque lignée possédée.
+    const owned = new Map([...new Set(game.units.map(u => baseLine(u.line)))].map(base => [base, bestStar(game, base) >= 3 ? 0
+      : SHOP_COPIES[cost(base) - 1] - unitsOf(game, base).reduce((sum, u) => sum + 3 ** (u.star - 1), 0)]));
+    const left = base => owned.get(base) ?? SHOP_COPIES[cost(base) - 1];
     const pool = c => game.mode.shopLines[c - 1] * SHOP_COPIES[c - 1]
-      - owned.filter(b => cost(b) === c).reduce((sum, b) => sum + SHOP_COPIES[c - 1] - left(b), 0);
+      - [...owned].filter(([b]) => cost(b) === c).reduce((sum, [, n]) => sum + SHOP_COPIES[c - 1] - n, 0);
     const drawable = base => cost(base) !== undefined && odds(base) > 0 && left(base) > 0;
     const sought = bases.filter(drawable);
     const perSlot = sought.reduce((sum, b) => sum + odds(b) * left(b) / pool(cost(b)), 0);
-    const redrawn = owned.filter(drawable);
+    const redrawn = [...owned.keys()].filter(drawable);
     const redraw = game.mode.redraw + (pathCount(game.boons, 'breed') >= PATH_SIZE ? BREED_REDRAW : 0);
-    const redrawHit = redrawn.length ? redraw * sought.filter(b => owned.includes(b)).length / redrawn.length : 0;
+    const redrawHit = redrawn.length ? redraw * sought.filter(b => owned.has(b)).length / redrawn.length : 0;
     return 100 * (1 - (1 - perSlot) ** SHOP_SLOTS * (1 - redrawHit));
   }
   const unitPower = (cost, star) => (1 + COST_POWER * (cost - 1)) * STAR_POWER[star - 1];
@@ -796,6 +797,7 @@ const KT = (() => {
   // visé (g au-dessus de 0).
   function ownResults(fights, mode) {
     const mine = fights.filter(f => f.k === cellOf(mode));
+    const paced = f => Number.isFinite(f.l) && f.g > 0;
     const tally = list => ({
       n: list.length, wins: list.reduce((s, f) => s + f.w, 0), expected: list.reduce((s, f) => s + f.p / 100, 0),
       spread: Math.sqrt(list.reduce((s, f) => s + f.p * (100 - f.p) / 1e4, 0)),
@@ -805,7 +807,7 @@ const KT = (() => {
     return {
       ...all, runs: new Set(mine.map(f => f.r)).size, shift: Math.max(-OWN_MAX, Math.min(OWN_MAX, gap)),
       followed: tally(mine.filter(f => f.c === 1)), other: tally(mine.filter(f => f.c === 0)),
-      onPace: tally(mine.filter(f => f.g > 0 && f.l >= f.g)), behind: tally(mine.filter(f => f.g > 0 && f.l < f.g)),
+      onPace: tally(mine.filter(f => paced(f) && f.l >= f.g)), behind: tally(mine.filter(f => paced(f) && f.l < f.g)),
     };
   }
 
@@ -1155,8 +1157,9 @@ const KT = (() => {
       left = restMarks(shop, left, xp.cost, ordinary?.level === 'do' ? REROLL_COST : 0);
     }
     // L'or d'une actualisation payante conseillée reste réservé derrière la gratuite : elle se conseillera à la lecture suivante.
-    const reroll = game.freeReroll ? mark('do', 'Actualise', 'Actualise', 'gratuite à cet étage (Boîte Jetons), après les achats') : ordinary;
     const paid = ordinary?.level === 'do';
+    const free = `gratuite à cet étage (Boîte Jetons), après les achats${paid ? ` ; puis payante : ${ordinary.why}` : ''}`;
+    const reroll = game.freeReroll ? mark('do', 'Actualise', 'Actualise', free) : ordinary;
     return { shop: shop.marks.map(m => m ?? null), xp: xp.spare ? spareXp(game, eco, left, paid) : xp.mark, reroll, short: stars.short };
   }
 
@@ -1185,24 +1188,22 @@ const KT = (() => {
     const goal = levelGoal(game.floor, game.mode);
     if (game.level < goal) return keep(`d’abord le niveau ${goal}`);
     const top = maxLevel(game.floor, game.mode);
-    // Chance suffisante à ce niveau : REROLL_CHANCE, ou toute chance au niveau maximal.
-    const enough = (level, chance) => (level >= top ? chance > 0 : chance >= REROLL_CHANCE);
-    const chances = Array.from({ length: Math.max(0, top - game.level) + 1 }, (_, i) => game.level + i)
-      .map(level => ({ level, chance: rerollChance(game, data, level, seek) }));
-    const seen = ({ level, chance }) => {
-      const lines = seek.filter(base => rerollChance(game, data, level, [base]) > 0).map(names.line).join(', ');
-      return `${lines} : ${Math.round(chance)} % par actualisation au niveau ${level}`;
-    };
-    const [now, ...higher] = chances;
-    if (!enough(now.level, now.chance)) {
+    const chance = level => rerollChance(game, data, level, seek);
+    const visible = level => seek.filter(base => rerollChance(game, data, level, [base]) > 0).map(names.line).join(', ');
+    const odds = x => `${x < 1 ? 'moins de 1' : Math.round(x)} % par actualisation`;
+    const now = chance(game.level);
+    if (game.level >= top ? now === 0 : now < REROLL_CHANCE) {
       // Le niveau maximal n'est annoncé qu'à REROLL_CHANCE : toute chance y suffit faute d'autre emploi de l'or, pas parce
       // que l'actualisation y vaut mieux.
-      const reach = higher.find(c => c.chance >= REROLL_CHANCE);
-      const none = `${seek.map(names.line).join(', ')} ${seek.length > 1 ? 'ne sortent' : 'ne sort'} pas au niveau ${now.level}`;
-      return reach ? keep(`${now.chance > 0 ? seen(now) : none} ; à chercher au niveau ${reach.level} (${seen(reach)})`) : null;
+      const reach = Array.from({ length: Math.max(0, top - game.level) }, (_, i) => game.level + 1 + i).find(level => chance(level) >= REROLL_CHANCE);
+      if (!reach) return null;
+      const here = now > 0 ? visible(game.level) : seek.map(names.line).join(', ');
+      const there = visible(reach);
+      const state = now > 0 ? `${here} : ${odds(now)} au niveau ${game.level}` : `${here} ${seek.length > 1 ? 'ne sortent' : 'ne sort'} pas au niveau ${game.level}`;
+      return keep(`${state} ; à chercher au niveau ${reach}${there === here ? '' : ` pour ${there}`} : ${odds(chance(reach))}`);
     }
     if (left - REROLL_COST < eco.floor) return keep(`tu passerais sous ${eco.floor} pièces`);
-    return mark('do', 'Actualise', 'Actualise', `cherche ${seen(now)}`);
+    return mark('do', 'Actualise', 'Actualise', `cherche ${visible(game.level)} : ${odds(now)} au niveau ${game.level}`);
   }
 
   const buyXp = why => mark('do', 'Monte', 'Achète de l’XP', why);

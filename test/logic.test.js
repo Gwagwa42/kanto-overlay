@@ -639,7 +639,7 @@ test('actualiser : lignée introuvable à ce niveau → XP ; fusion à une copie
   const t = brockStats([brockCore(['onix', 'kabuto', 'rhyhorn'])], { stars: [] });
   const empty = { ...save, round: 1003, level: 3, xp: 0, gold: 40, units: {}, board: {}, bench: [], shop: [], attempts: 0 };
   const lost = advise(empty, { stats: t });
-  assert.equal(why(lost.reroll), 'no Garde l’or : Onix, Kabuto, Rhinocorne ne sortent pas au niveau 3 ; à chercher au niveau 7 (Onix, Kabuto, Rhinocorne : 16 % par actualisation au niveau 7)');
+  assert.equal(why(lost.reroll), 'no Garde l’or : Onix, Kabuto, Rhinocorne ne sortent pas au niveau 3 ; à chercher au niveau 7 : 16 % par actualisation');
   assert.equal(why(lost.xp), 'do Monte : rien à chercher en boutique à ce niveau ; 8 XP avant le niveau 4');
   // Trio complet en ★★ : rien à chercher, sauf la lignée à une copie d'une fusion.
   const units = Object.fromEntries(['onix', 'kabuto', 'rhyhorn'].map(line => [line, { id: line, line, star: 2 }]));
@@ -651,7 +651,7 @@ test('actualiser : lignée introuvable à ce niveau → XP ; fusion à une copie
   assert.equal(why(rolled.xp), 'no Attends : l’or va d’abord à l’actualisation');
   // Boîte Jetons : la gratuite se conseille d'abord, et l'or de l'actualisation payante qui suivra reste réservé : l'XP attend.
   const boxed = advise({ ...pair, tower: { ...save.tower, boons: ['coincase'] } }, { stats: t });
-  assert.deepEqual([why(boxed.reroll), why(boxed.xp)], ['do Actualise : gratuite à cet étage (Boîte Jetons), après les achats', 'no Attends : l’or va d’abord à l’actualisation']);
+  assert.deepEqual([why(boxed.reroll), why(boxed.xp)], ['do Actualise : gratuite à cet étage (Boîte Jetons), après les achats ; puis payante : cherche Rattata : 20 % par actualisation au niveau 4', 'no Attends : l’or va d’abord à l’actualisation']);
   // Étage 62, niveaux « plus tard » (10 visé dès l'étage 75), niveau 9 : Rattata (coût 1 : 6 % par case) se voit à 5 % par
   // actualisation, repêchage compris, et à 5 % au niveau 10. Monter ne le rend pas trouvable : aucun conseil d'actualisation,
   // l'or va à l'XP. Au niveau 10, le maximum, tout ce qui sort en boutique se cherche.
