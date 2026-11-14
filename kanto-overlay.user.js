@@ -1798,7 +1798,7 @@ const KT = (() => {
   // Pokémon offert : la lignée du trio de la compo cible dont tu tiens le moins d’exemplaires (shopCopies), puis celle du trio de la compo suivante,
   // puis la plus forte sur les combats de la compo cible (lineStrength) ; à égalité, celle qui donne de l'XP. Chaque critère
   // garde les meilleures des options restantes ; la première seule en tête est conseillée, avec le motif de ce critère
-  // (rivals : les options qu'elle devance) ; null si les critères n'en séparent aucune.
+  // (rivals : les options qu'elle devance) ; null si les critères n'en séparent aucune, ou s'il n'y a qu'une option.
   function monChoice(game, options, target, next, names) {
     const core = comp => (comp ? comp.core.map(baseLine) : []);
     const name = o => names.line(o.mon);
@@ -1815,7 +1815,7 @@ const KT = (() => {
       const scores = left.map(score);
       const top = Math.max(...scores);
       const best = left.filter((_, i) => scores[i] === top);
-      if (best.length === 1) return { o: best[0], why: why(best[0], left.filter(o => o !== best[0])) };
+      if (best.length === 1 && left.length > 1) return { o: best[0], why: why(best[0], left.filter(o => o !== best[0])) };
       left = best;
     }
     return null;
@@ -1834,7 +1834,7 @@ const KT = (() => {
 
   // Événements à choix de l'aventure (events) et centres Pokémon : une carte conseillée, jamais une carte que le jeu grise
   // (pièces sous goldCost, PV au plus hpCost). Seulement dans une aventure qui décrit ses événements : les cartes du centre
-  // y sont relevées, pas ailleurs.
+  // y sont relevées, pas ailleurs. Dans un événement à Pokémon, seules les cartes qui en donnent un se comparent (monChoice).
   function eventMarks(game, target, next, names) {
     const { event, mode } = game;
     if (!event || !mode.adv?.events) return [];
@@ -1842,8 +1842,9 @@ const KT = (() => {
     if (!options) return [];
     const off = o => (o.goldCost ?? 0) > game.gold || (o.hpCost !== undefined && game.hp <= o.hpCost);
     const xp = options.find(o => o.xp && !o.mon);
+    const mons = options.filter(o => o.mon);
     let pick;
-    if (options.some(o => o.mon)) pick = monChoice(game, options, target, next, names);
+    if (mons.length) pick = monChoice(game, mons, target, next, names);
     else if (xp) pick = xpChoice(game, xp, options.find(o => o !== xp));
     else {
       const paid = options.find(o => o.goldCost);

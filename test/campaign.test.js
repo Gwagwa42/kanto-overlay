@@ -333,6 +333,14 @@ test('Cramois’Île, événements à Pokémon : trio de la compo cible, puis le
   const amberWhy = (save, core) => advise(save, 'canela', { mode: amber, stats: coresOn(save, [core, 95, 90]) }).event.map(x => x && x.why);
   assert.deepEqual(amberWhy(lab, ['aerodactyl', 'growlithe', 'vulpix']), [null, null, 'Ptéra, du trio de la compo cible']);
   assert.deepEqual(amberWhy(both, ['kabuto', 'omanyte', 'vulpix']), ['Amonita, du trio de la compo cible : 2 exemplaires', null, null]);
+  // Carte sans Pokémon : hors de la comparaison (sans quoi elle serait nommée parmi les cartes devancées), et seule face à
+  // elle, une carte à Pokémon n'est pas conseillée.
+  const leave = cards => ({ ...labMode, adv: { ...labMode.adv, events: { ...labMode.adv.events, 23: cards } } });
+  const fossils = labMode.adv.events[23];
+  const leaveWhy = cards => advise(lab, 'canela', { mode: leave(cards), stats: coresOn(lab, [['growlithe', 'vulpix', 'ponyta'], 95, 90], [['omanyte', 'abra', 'oddish'], 99, 40]) })
+    .event.map(x => x && x.why);
+  assert.deepEqual(leaveWhy([...fossils, { name: 'Partir' }]), ['Amonita, plus fort que Kabuto (combats 24–30)', null, null]);
+  assert.deepEqual(leaveWhy([fossils[0], { name: 'Partir' }]), [null, null]);
   // Poste de garde : ni Excelangue ni Canarticho dans un trio, Canarticho donne 2 XP.
   assert.deepEqual(eventPicks(choiceAt(4), KABUTO), [null, 'Prends Canarticho : même force, +2 XP']);
   // Excelangue dans le trio des combats d'après la compo cible : la compo suivante.
