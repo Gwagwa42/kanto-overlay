@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour et campagne
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.13.0
+// @version      2.13.1
 // @description  Tour de combat et campagne (aventures, trois difficultés) de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -30,7 +30,7 @@
 const KT = (() => {
   // Version du script, notée dans le journal des combats ; égale à @version (un test le vérifie) : GM_info n'est pas garanti
   // avec @grant none.
-  const VERSION = '2.13.0';
+  const VERSION = '2.13.1';
   const API = 'https://einoow.com/api/meta/kanto/';
   // campana.json mêle les trois difficultés de la campagne ; ?dif=1 et ?dif=2 n'en gardent qu'une (Normal, Vétéran) ; Légende
   // se déduit des trois (legendStats).
@@ -585,18 +585,19 @@ const KT = (() => {
     stops: s => s.stop, cores: c => `${c.stop}|${coreKey(c.core)}`, lines: l => l.line, stars: s => `${s.line}:${s.star}`,
     holders: h => `${h.line}:${h.id}`,
   };
-  const COUNTED = ['n', 'ne', 'win', 'exp', 'first'];
+  const COUNTED = ['n', 'ne', 'win', 'exp'];
   const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
   // Statistiques de campagne de Légende : celles de toutes les difficultés (all) moins celles de Normal et de Vétéran, mode camp
   // de chaque fichier. Les comptes se soustraient par entrée : combats n, victoires (n × win), combats notés ne, victoires
-  // attendues (ne × exp), victoires au premier essai (n × first, pondérées par n faute du nombre de premiers essais). Comme
+  // attendues (ne × exp), victoires au premier essai (n × first, pondérées par n faute du nombre de premiers essais). L'API
+  // publie first à null sur quelques trios (78 sur 16 051 le 14 novembre 2026) : le first de Légende l'est alors aussi. Comme
   // dans l'API, d = win − exp, tries = n / victoires (Infinity sans victoire) et lo, hi sont l'intervalle de Wilson sur ne.
   // Une entrée absente d'un sous-fichier y compte PUBLISHED_MIN − 1 combats, tous gagnés ; victoires bornées à [0, n] et exp à [0, 100] (taux
   // de l'API arrondis au dixième) ; une entrée sans combat, ou sans combat noté, restant est retirée.
   function legendStats(all, normal, veteran) {
     const hidden = PUBLISHED_MIN - 1;
-    const counts = x => ({ n: x.n, ne: x.ne, wins: x.n * x.win / 100, expected: x.ne * x.exp / 100, first: x.n * x.first / 100 });
+    const counts = x => ({ n: x.n, ne: x.ne, wins: x.n * x.win / 100, expected: x.ne * x.exp / 100, first: x.n * (x.first ?? NaN) / 100 });
     const deduce = (x, ys) => {
       const c = counts(x);
       for (const y of ys) {
@@ -608,7 +609,8 @@ const KT = (() => {
       const win = 100 * wins / c.n;
       const exp = clamp(100 * c.expected / c.ne, 0, 100);
       const [lo, hi] = wilson(win / 100 * c.ne, c.ne);
-      return { ...x, n: c.n, ne: c.ne, win, lo, hi, exp, d: win - exp, first: 100 * clamp(c.first, 0, c.n) / c.n, tries: Math.round(100 * c.n / wins) / 100 };
+      const first = 100 * clamp(c.first, 0, c.n) / c.n;
+      return { ...x, n: c.n, ne: c.ne, win, lo, hi, exp, d: win - exp, first: Number.isFinite(first) ? first : null, tries: Math.round(100 * c.n / wins) / 100 };
     };
     const lists = Object.entries(LEGEND_LISTS).map(([list, key]) => {
       const subs = [normal, veteran].map(f => new Map(f[list].map(x => [key(x), x])));
@@ -618,7 +620,8 @@ const KT = (() => {
   }
 
   // Fichier dont Légende peut se déduire : les trois couvrent les mêmes jours (une copie gardée d'un autre jour fausserait la
-  // soustraction), et chaque entrée porte les comptes soustraits (COUNTED), que l'API publie depuis novembre 2026.
+  // soustraction), et chaque entrée porte les comptes soustraits (COUNTED), que l'API publie depuis novembre 2026. first n'y
+  // est pas : nul sur quelques trios, il ne prive pas Légende du reste (legendStats).
   const deducible = (file, days) => file.from === days.from && file.to === days.to
     && [file.total, ...Object.keys(LEGEND_LISTS).flatMap(list => file[list])].every(x => COUNTED.every(k => Number.isFinite(x?.[k])));
 
