@@ -326,7 +326,7 @@ test('Cramois’Île, événements à Pokémon : trio de la compo cible, puis le
   // Les deux fossiles dans le trio : Kabuto ★★ tient 3 exemplaires, deux Amonita ★ en tiennent 2.
   const units = { ...CANELA.units, k: { id: 'k', line: 'kabuto', star: 2 }, o1: { id: 'o1', line: 'omanyte', star: 1 }, o2: { id: 'o2', line: 'omanyte', star: 1 } };
   const both = { ...lab, units, bench: ['b', 'c', 'e', 'k', 'o1', 'o2', null, null, null] };
-  assert.deepEqual(eventPicks(both, [['kabuto', 'omanyte', 'vulpix'], 95, 90]), ['Prends Fossile Nautile : Amonita, du trio de la compo cible : 2 copies', null]);
+  assert.deepEqual(eventPicks(both, [['kabuto', 'omanyte', 'vulpix'], 95, 90]), ['Prends Fossile Nautile : Amonita, du trio de la compo cible : 2 exemplaires', null]);
   // Poste de garde : ni Excelangue ni Canarticho dans un trio, Canarticho donne 2 XP.
   assert.deepEqual(eventPicks(choiceAt(4), KABUTO), [null, 'Prends Canarticho : même force, +2 XP']);
   // Excelangue dans le trio des combats d'après la compo cible : la compo suivante.

@@ -1786,7 +1786,7 @@ const KT = (() => {
   };
   const elide = name => (/^[aeiouyâéèêîô]/i.test(name) ? `qu’${name}` : `que ${name}`);
 
-  // Pokémon offert : la lignée du trio de la compo cible qui a le moins de copies, puis celle du trio de la compo suivante,
+  // Pokémon offert : la lignée du trio de la compo cible dont tu tiens le moins d’exemplaires (shopCopies), puis celle du trio de la compo suivante,
   // puis la plus forte sur les combats de la compo cible (lineStrength) ; à égalité, celle qui donne de l'XP.
   function monChoice(game, options, target, next, names) {
     const core = comp => (comp ? comp.core.map(baseLine) : []);
@@ -1795,7 +1795,7 @@ const KT = (() => {
     const other = o => options.find(x => x !== o);
     const tests = [
       [o => Number(core(target).includes(o.mon)), o => `${name(o)}, du trio de la compo cible`],
-      [o => (core(target).includes(o.mon) ? -held(o) : 0), o => `${name(o)}, du trio de la compo cible : ${held(o)} copie${held(o) > 1 ? 's' : ''}`],
+      [o => (core(target).includes(o.mon) ? -held(o) : 0), o => `${name(o)}, du trio de la compo cible : ${held(o)} exemplaire${held(o) > 1 ? 's' : ''}`],
       [o => Number(core(next).includes(o.mon)), o => `${name(o)}, du trio de la compo suivante`],
       [o => target?.strength.get(o.mon) ?? 0, o => `${name(o)}, plus fort ${elide(name(other(o)))} (${floorRange(target.stops, game.mode)})`],
       [o => o.xp ?? 0, o => `même force, +${o.xp} XP`],

@@ -256,7 +256,8 @@ Mêmes conseils qu'en Tour, sur les combats de l'aventure en cours, avec les rè
   motards (8), Artikodin (19), Rival (27), Sous-sol (29) et Le fossile s'éveille (30) ; « Je te choisis ! » : chaque combat.
 - **Tout jouer** sur un taux bas seulement contre un boss que le jeu fait rejouer tant qu'il est perdu. Une manche ordinaire perdue
   avance quand même, comme Artikodin, que le jeu laisse perdre : l'or y garde ses intérêts, et l'en-tête le dit (« Combat 24
-  (Voleur, 18,9 %) : perdable sans rejouer, garde le palier »). PV bas et combat rejoué font tout jouer partout.
+  (Voleur, 18,9 %) : perdable sans rejouer, garde le palier »), sauf si un boss à gagner sous le seuil suit dans les 3 combats
+  à venir : l'en-tête annonce alors celui-ci. PV bas et combat rejoué font tout jouer partout.
 - **Économie** : intérêts plafonnés à +4, donc palier de 40 pièces ; +1 pièce par victoire à partir de la 2ᵉ de suite ; 2 XP
   gratuites par manche, niveau 9 au plus. Niveaux visés (choix de jeu, d'après la taille des équipes adverses) : Kanto, 4 dès le
   combat 4, 5 dès 8, 6 dès 12, 7 dès 16, 8 dès 24, 9 dès 30 ; Cap sur Cramois'Île, 4 dès 6, 5 dès 8, 6 dès 14, 7 dès 19 (pour
@@ -265,7 +266,7 @@ Mêmes conseils qu'en Tour, sur les combats de l'aventure en cours, avec les rè
   dès le premier échec. Ni bénédiction ni sceau.
 - **Événements** (Cap sur Cramois'Île) : une pastille ★ « Prends » sur la carte conseillée, jamais sur une carte grisée par le
   jeu, et la même ligne en tête de l'onglet Tour.
-  - Pokémon offert (Poste de garde au combat 5, fossile au 23) : celui du trio de la compo cible qui a le moins de copies, puis
+  - Pokémon offert (Poste de garde au combat 5, fossile au 23) : celui du trio de la compo cible dont tu tiens le moins d'exemplaires (3 par ★★), puis
     celui du trio de la compo suivante, puis le plus fort sur les combats de la compo cible ; à égalité, celui qui donne de l'XP
     (Canarticho, +2). La bulle du fossile dit quel boss final il laisse : Kabutops ★3 ou Amonistar ★3.
   - XP contre PV (le courant au combat 13, le journal au 26, entraînement du centre) : l'XP si les PV restent à 40 ou plus
