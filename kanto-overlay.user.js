@@ -906,15 +906,16 @@ const KT = (() => {
   }
 
   // Combats d'une fenêtre qui ont des trios notés, et leur poids total. Seuls ceux-là entrent dans les moyennes de coreScore
-  // et de lineStrength : un combat sans statistiques, manche peu jouée de campagne, les tirerait vers zéro.
+  // et de lineStrength : un combat sans statistiques, manche peu jouée de campagne, les tirerait vers zéro (dans coreScore,
+  // les bonus de possession l'emporteraient alors).
   function ratedStops(stops, coresByStop) {
     const rated = stops.filter(st => coresByStop.get(st.stop)?.size);
     return { stops: rated, total: totalWeight(rated) };
   }
 
   // Note d'un trio : borne basse de son taux, en moyenne pondérée par la difficulté sur les combats notés (rated, de
-  // ratedStops : sinon les bonus de possession l'emporteraient ; 0 sans aucun), plus ces bonus. Une lignée à trouver dont
-  // le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
+  // ratedStops ; 0 sans aucun), plus les bonus de possession. Une lignée à trouver dont le coût, connu, ne sort pas assez au
+  // niveau du joueur coûte ce qu'une lignée possédée rapporte.
   function coreScore(core, rated, coresByStop, game, data) {
     const { ownedBonus } = game.mode;
     const { stops, total } = rated;
@@ -1054,8 +1055,8 @@ const KT = (() => {
       ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
     if (!best) return null;
     const strength = lineStrength(coresByStop, stops);
-    // Toutes les variantes du prochain combat (champions possibles d'une manche), pondérées par leur part. Sans trio d'au moins
-    // MIN_FIGHTS combats sur ce combat, la carte est vide : rien ne change.
+    // Variantes notées du prochain combat (champions possibles d'une manche, ratedStops), pondérées par leur part. Sans trio
+    // d'au moins MIN_FIGHTS combats sur ce combat, la carte est vide : rien ne change.
     const nextFight = lineStrength(coresByStop, stops.filter(st => st.floor === stops[0].floor));
     const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), { strength, nextFight, previous: previous?.fillers ?? [] });
     if (!best.core.length && !fillers.length) return null;
@@ -1087,7 +1088,7 @@ const KT = (() => {
 
   const proofText = (p, names) => (p ? `${p.c.core.map(names.line).join(' · ')} : ${pct(p.c.win)} contre ${bossName(p.st.boss)} ${p.st.floor} (${p.c.n} combats, au moins ${pct(p.c.lo)})` : '');
 
-  // Cartes de la boutique (null pour une case vide) et ce que la compo en attend ; ctx : contexte de spend.
+  // Cartes de la boutique (null pour une case vide) et ce que la compo en attend, lues sur le contexte de spend.
   function shopCards({ game, target, next, data, names }) {
     const wanted = targetBases(target);
     const core = target ? target.core.map(baseLine) : [];
@@ -1811,8 +1812,9 @@ const KT = (() => {
     ];
     let left = options;
     for (const [score, why] of tests) {
-      const top = Math.max(...left.map(score));
-      const best = left.filter(o => score(o) === top);
+      const scores = left.map(score);
+      const top = Math.max(...scores);
+      const best = left.filter((_, i) => scores[i] === top);
       if (best.length === 1) return { o: best[0], why: why(best[0], left.filter(o => o !== best[0])) };
       left = best;
     }
@@ -1999,7 +2001,7 @@ const KT = (() => {
   // l'appât libère sa case. Mew n'entre pas dans la parade : sa case suit celle de son modèle, et porteur, il n'est pas
   // couvert. unit : l'unité possédée (porteur de holdersOf), from : sa cellule,
   // 'bench', ou null s'il n'est pas possédé ; bait, guarded : l'appât et le porteur qu'il couvre.
-  function formation(target, game, data, holders, { side, dive = false }) {
+  function formation(target, game, data, holders, { side, dive }) {
     const stars = id => bestStar(game, baseLine(id));
     const kept = new Set([...[...target.core].sort((a, b) => stars(b) - stars(a)), ...target.fillers].slice(0, game.level));
     const units = [...target.core, ...target.fillers].filter(id => kept.has(id)).map(id => {

@@ -26,7 +26,7 @@ const T = KT.TOWER_MODE;
 const floorAt = raw => KT.floorFromSave(raw, T);
 const readGame = s => KT.readGame(s, T);
 // Fenêtre sans combat noté (ratedStops) : la note d'un trio (coreScore) se réduit aux bonus de possession.
-const UNRATED = { stops: [], total: 0 };
+const UNRATED = KT.ratedStops([], new Map());
 
 // Conseils à l'étage 10 (brockSave) pour une compo réduite à ce trio.
 const brockAdvice = (core, game, extra = {}) => advise(brockSave(game), { stats: brockStats([brockCore(core)]), ...extra });
