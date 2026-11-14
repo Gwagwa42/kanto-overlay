@@ -905,16 +905,21 @@ const KT = (() => {
     return Boolean(two && three) && three.hi - three.exp < two.lo - two.exp;
   }
 
-  // Note d'un trio : borne basse de son taux, en moyenne pondérée par la difficulté sur les combats qui ont des trios notés (un
-  // combat sans statistiques, manche peu jouée de campagne, laisserait sinon les bonus de possession l'emporter ; 0 sans
-  // aucun), plus ces bonus. Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une
-  // lignée possédée rapporte.
-  function coreScore(core, stops, coresByStop, game, data) {
-    const { ownedBonus } = game.mode;
+  // Combats d'une fenêtre qui ont des trios notés, et leur poids total. Seuls ceux-là entrent dans les moyennes de coreScore
+  // et de lineStrength : un combat sans statistiques, manche peu jouée de campagne, les tirerait vers zéro.
+  function ratedStops(stops, coresByStop) {
     const rated = stops.filter(st => coresByStop.get(st.stop)?.size);
-    const total = totalWeight(rated);
+    return { stops: rated, total: totalWeight(rated) };
+  }
+
+  // Note d'un trio : borne basse de son taux, en moyenne pondérée par la difficulté sur les combats notés (rated, de
+  // ratedStops : sinon les bonus de possession l'emporteraient ; 0 sans aucun), plus ces bonus. Une lignée à trouver dont
+  // le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
+  function coreScore(core, rated, coresByStop, game, data) {
+    const { ownedBonus } = game.mode;
+    const { stops, total } = rated;
     const key = coreKey(core);
-    const stat = total ? rated.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop).get(key)?.lo ?? 0), 0) / total : 0;
+    const stat = total ? stops.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop).get(key)?.lo ?? 0), 0) / total : 0;
     const owned = core.reduce((s, id) => {
       const base = baseLine(id);
       const star = bestStar(game, base);
@@ -979,9 +984,10 @@ const KT = (() => {
     const candidates = new Map();
     for (const m of coresByStop.values()) for (const [key, c] of m) candidates.set(key, c.core);
     if (!candidates.size) return null;
+    const rated = ratedStops(stops, coresByStop);
     let best = null;
     for (const [key, core] of candidates) {
-      const score = coreScore(core, stops, coresByStop, game, data) + (key === previousKey ? game.mode.inertia : 0);
+      const score = coreScore(core, rated, coresByStop, game, data) + (key === previousKey ? game.mode.inertia : 0);
       if (!best || score > best.score) best = { key, core: [...core], score };
     }
     const proof = [...stops].sort((a, b) => b.weight - a.weight)
@@ -2278,7 +2284,7 @@ const KT = (() => {
     SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, leagueLabel, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, STRATEGY_DEFAULTS, latestSave, shownMode, pollState,
     VERSION, JOURNAL_KEY, TOWER_RUNS_KEY, readJournal, fightWon, fightEntry, notedFight, addFight, ownResults, withResults, resultsNote,
     parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss, mustWin,
-    baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, rerollChance, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
+    baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, rerollChance, ratedStops, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, touching, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
   };
 })();
