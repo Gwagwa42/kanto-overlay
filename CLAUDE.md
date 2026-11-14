@@ -6,8 +6,8 @@ Usage, règles des conseils, données de l'API einoow et développement : `READM
 - `kanto-overlay.user.js` : le script entier, en-tête `==UserScript==` compris (`@version`, `@match`, `@updateURL`). Il exporte ses
   fonctions pour Node (`module.exports`, fin du fichier) : les tests et l'aperçu le chargent par `require`.
 - `test/*.test.js` : tests `node --test` ; `test/helpers.js` : `adviseOn`, les conseils d'une sauvegarde sur les fixtures.
-- `test/fixtures/` : réponses enregistrées de l'API, sauvegardes de partie, et scénarios `s57.js`, `brock.js` partagés avec
-  `scripts/preview.mjs` et les maquettes : les modifier change aussi les pages d'aperçu.
+- `test/fixtures/` : réponses enregistrées de l'API, sauvegardes de partie, et scénarios `s57.js` (celui de la maquette
+  `2026-11-05-conseils`) et `brock.js`, partagés avec `scripts/preview.mjs` : les modifier change aussi les pages d'aperçu.
 - `scripts/preview.mjs` : pages d'aperçu dans `build/` (ignoré par git).
 - `docs/design/` : maquettes de la skill `ui-design` (`mockups/`), captures de l'aperçu et du jeu réel (`captures/`).
 
