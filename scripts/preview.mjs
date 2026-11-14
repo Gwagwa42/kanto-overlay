@@ -10,6 +10,10 @@ const require = createRequire(import.meta.url);
 const KT = require(`${root}kanto-overlay.user.js`);
 const script = readFileSync(`${root}kanto-overlay.user.js`, 'utf8');
 const modes = require(`${root}test/fixtures/campana.json`).modes;
+// Campagne : les trois fichiers de campana.json du 14 novembre 2026 (toutes difficultés, ?dif=1, ?dif=2) et les statistiques
+// de chaque difficulté qui s'en tirent.
+const DIF = require(`${root}test/fixtures/campana-dif.json`);
+const CAMPS = KT.leagueStats(DIF.all, DIF.normal, DIF.veteran);
 const data = require(`${root}test/fixtures/data.json`);
 const lang = require(`${root}test/fixtures/lang.json`);
 
@@ -30,7 +34,7 @@ const SHINY = {
   bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null],
 };
 
-// Campagne Kanto en Légende, combat 15 (Sbire Rocket), Morgane choisie au 4ᵉ badge : seuils durcis de 20 points ; Safari, aventure
+// Campagne Kanto en Légende, combat 15 (Sbire Rocket), Morgane choisie au 4ᵉ badge, statistiques de Légende déduites ; Safari, aventure
 // sans table d'arrêts : compo sans trio.
 const CAMP = { ...S57, mode: 'campaign', round: 14, league: 3, gymOrder: ['sabrina', 'koga'], level: 6, gold: 47, tower: undefined };
 const SAVE_KANTO = 'kanto-tactics-save';
@@ -78,35 +82,38 @@ const STATES = {
 
 // Seules les données lues par ces états restent dans la page, qui porte déjà les 160 Ko du script : le mode de la partie,
 // l'autre réduit à un arrêt (campana.json est refusé sans la Tour). stats : statistiques réduites de la Tour qui remplacent
-// celles de l'API.
+// celles de l'API. En campagne, la sélection faite sur les statistiques de la difficulté s'applique aux trois fichiers, d'où
+// le panneau les retire de la même façon.
 function slim(s, key, stats = null) {
   const camp = key !== undefined;
   const mode = camp ? KT.latestSave({ length: 1, key: () => key, getItem: () => JSON.stringify(s) }).mode : KT.TOWER_MODE;
-  stats ??= modes[mode.stats];
+  stats ??= camp ? CAMPS[mode.stats] : modes.torre;
   const floor = mode.floorOf(s.round);
   // Compo cible et compo suivante : les 18 prochains combats ; les 6 meilleurs trios de chaque combat gardent leurs
   // statistiques sur tous ces combats, pour un score identique à celui des données complètes. Tour : boss des étages 196 à 200.
   const next = KT.nextStops(stats.stops, floor, 18, mode).map(x => x.stop);
-  const stops = stats.stops.filter(x => {
+  const keptStop = x => {
     const f = Number(x.stop.split(':')[0]);
     return next.includes(x.stop) || (!camp && f >= 196 && f <= 200);
-  });
-  const played = stats.cores.filter(c => next.includes(c.stop) && c.n >= 20);
-  const best = new Set(next.flatMap(st => played.filter(c => c.stop === st).sort((a, b) => b.lo - a.lo).slice(0, 6).map(c => `${c.core}`)));
-  const boss = KT.nextBossStop(stats.stops, floor, mode)?.stop;
-  const cores = [...played.filter(c => best.has(`${c.core}`)),
-    ...(camp ? [boss] : ['60:zapdos', '200:mewtwo2']).flatMap(st => KT.topCores(stats.cores, st))];
-  const lines = new Set([...cores.flatMap(c => c.core), ...s.shop.filter(Boolean), ...Object.values(s.units).map(u => u.line)].map(KT.baseLine));
-  const slimmed = {
-    rules: stats.rules, from: stats.from, to: stats.to, stops, cores: [...new Map(cores.map(c => [`${c.stop}|${c.core}`, c])).values()],
-    lines: stats.lines.filter(l => lines.has(KT.baseLine(l.line))),
-    stars: stats.stars.filter(x => lines.has(KT.baseLine(x.line))),
-    // Tous les objets portés par ces lignées : le profil de chaque lignée (lineProfiles) se lit sur eux.
-    holders: stats.holders.filter(h => lines.has(KT.baseLine(h.line))),
   };
-  const torre = camp ? { ...modes.torre, stops: modes.torre.stops.slice(0, 1), cores: [], lines: [], stars: [], holders: [] } : slimmed;
+  const played = stats.cores.filter(c => next.includes(c.stop) && c.n >= 20);
+  const best = new Set(next.flatMap(st => played.filter(c => c.stop === st).sort((a, b) => b.lo - a.lo).slice(0, 6).map(c => KT.coreKey(c.core))));
+  const boss = KT.nextBossStop(stats.stops, floor, mode)?.stop;
+  const cores = [...played.filter(c => best.has(KT.coreKey(c.core))),
+    ...(camp ? [boss] : ['60:zapdos', '200:mewtwo2']).flatMap(st => KT.topCores(stats.cores, st))];
+  const keys = new Set(cores.map(c => `${c.stop}|${KT.coreKey(c.core)}`));
+  const lines = new Set([...cores.flatMap(c => c.core), ...s.shop.filter(Boolean), ...Object.values(s.units).map(u => u.line)].map(KT.baseLine));
+  const cut = m => ({
+    rules: m.rules, from: m.from, to: m.to, stops: m.stops.filter(keptStop), cores: m.cores.filter(c => keys.has(`${c.stop}|${KT.coreKey(c.core)}`)),
+    lines: m.lines.filter(l => lines.has(KT.baseLine(l.line))),
+    stars: m.stars.filter(x => lines.has(KT.baseLine(x.line))),
+    // Tous les objets portés par ces lignées : le profil de chaque lignée (lineProfiles) se lit sur eux.
+    holders: m.holders.filter(h => lines.has(KT.baseLine(h.line))),
+  });
+  const torre = camp ? { ...modes.torre, stops: modes.torre.stops.slice(0, 1), cores: [], lines: [], stars: [], holders: [] } : cut(stats);
   return {
-    modes: camp ? { torre, camp: slimmed } : { torre },
+    modes: camp ? { torre, camp: cut(DIF.all) } : { torre },
+    normal: { modes: { camp: cut(DIF.normal) } }, veteran: { modes: { camp: cut(DIF.veteran) } },
     data: {
       ...data, lines: Object.fromEntries([...lines].filter(b => data.lines[b]).map(b => [b, data.lines[b]])),
       seals: {},
@@ -149,7 +156,10 @@ const FAILED = { error: ['stats', 'data', 'lang'], partial: ['data'] };
 // Résultats du chargement simulé, au format de Promise.allSettled sur loadJson ; pending : aucune source n'a répondu.
 function settled(s) {
   if (s.api === 'pending') return {};
-  const json = { stats: { v: 1, modes: s.stats ? { torre: s.stats } : modes }, data, lang };
+  const json = {
+    stats: { v: 1, modes: s.stats ? { torre: s.stats } : { torre: modes.torre, camp: DIF.all } },
+    normal: { modes: { camp: DIF.normal } }, veteran: { modes: { camp: DIF.veteran } }, data, lang,
+  };
   return KT.sourcesState(KT.SOURCE_FILES.map(([key]) => (FAILED[s.api]?.includes(key)
     ? { status: 'rejected', reason: new Error('HTTP 429') }
     : { status: 'fulfilled', value: { json: json[key], at: Date.now(), stale: false } })));
@@ -162,8 +172,8 @@ function panelPage(name, s) {
   const start = { mode: KT.TOWER_MODE, saveKey: undefined, lastAuto: undefined, floor: null, source: 'manuel' };
   const fights = s.fights ?? [];
   const state = {
-    ...KT.pollState(start, found, null, ui, fights), fights, lastRaw: raw, stats: null, campBroken: false, data: null, lang: null,
-    failed: [], stale: null, uncached: false, error: null, ...settled(s), copied: null,
+    ...KT.pollState(start, found, null, ui, fights), fights, lastRaw: raw, stats: null, campError: null, data: null, lang: null,
+    failed: [], stale: null, campStale: null, uncached: false, error: null, ...settled(s), copied: null,
   };
   const stats = KT.modeStats(state);
   state.advice = KT.adviceOf(state, ui);
@@ -186,7 +196,10 @@ ${auto}</body></html>`;
 mkdirSync(`${root}build`, { recursive: true });
 for (const [name, s] of Object.entries(STATES)) {
   const api = slim(s.save ?? S57, s.key, s.stats);
-  const payload = { [KT.SOURCES.stats]: { v: 1, modes: api.modes }, [KT.SOURCES.data]: api.data, [KT.SOURCES.lang]: api.lang };
+  const payload = {
+    [KT.SOURCES.stats]: { v: 1, modes: api.modes }, [KT.SOURCES.normal]: api.normal, [KT.SOURCES.veteran]: api.veteran,
+    [KT.SOURCES.data]: api.data, [KT.SOURCES.lang]: api.lang,
+  };
   const stub = `
 const store = new Map(${JSON.stringify([...(s.save ? [[s.key ?? 'kanto-tactics-save-tower', JSON.stringify(s.save)]] : []), ...(s.ui ? [[KT.UI_KEY, JSON.stringify(s.ui)]] : []), ...(s.fights ? [[KT.JOURNAL_KEY, JSON.stringify(s.fights)]] : [])])});
 Object.defineProperty(window, 'localStorage', { configurable: true, value: {

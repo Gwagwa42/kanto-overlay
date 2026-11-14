@@ -46,8 +46,11 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
 - **Compo cible** : parmi les trios d'au moins 20 combats des 9 prochains combats (élites comprises, environ 20 étages), celui dont la
   borne basse du taux de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat qui a des trios
   notés (un combat sans trio, manche peu jouée de campagne, ne compte pas), avec un bonus pour
-  les Pokémon que tu possèdes déjà et un malus de 10 points par Pokémon à trouver dont le coût sort à moins de 15 % en boutique à ton
-  niveau. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
+  les Pokémon que tu possèdes déjà et un malus de 10 points par Pokémon à trouver dont le coût sort à moins de 15 % en boutique au
+  niveau visé au premier boss à gagner de ces combats en campagne (ton niveau s'il est plus haut, s'ils n'ont pas de boss à
+  gagner, et en Tour). Un Pokémon qu'un événement de l'aventure offre d'ici ce boss n'a pas de malus, un seul par événement,
+  qui ne laisse en choisir qu'un : à Cramois'Île, Kabuto, Amonita et Lokhlass (coût 4) visent le Rival (27) dès le combat 13
+  en Légende, au lieu du combat 26. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
   Le reste du plateau est rempli par tes unités les mieux notées, puis par la boutique pour les places restantes (★ « place libre »).
   La note d'une unité est sa puissance, `(1 + 0,35 × (coût − 1))` × 1, 1,9 ou 3,6 selon l'étoile, plus 0,25 par type renforcé et
   0,5 par seuil de type franchi. Deux copies de ta meilleure étoile comptent pour l'étoile suivante, que la 3ᵉ copie donnera :
@@ -209,28 +212,29 @@ Changer un préréglage recalcule tout de suite les conseils et les règles d'or
 | Réglage | Valeurs | Effet |
 | --- | --- | --- |
 | Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 4, 6 dès 8, 7 dès 16, 8 dès 22, 9 dès 33, 10 dès 60 ; plus tard : 6, 14, 26, 36, 55, 75. Kanto plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38, sous la taille des équipes des champions (8 au 6ᵉ badge, 9 contre Mewtwo). Cap sur Cramois'Île plus tôt : 5, 6, 11, 14, 18 ; plus tard : 8, 10, 18, 24, 30. Le niveau maximal ne change pas : le niveau 10 n'est jamais visé avant l'étage 60 en Tour. |
-| Tout jouer | Prudent, Normal, Audacieux | Étage, ou boss à gagner en campagne, sous 50, 45 ou 40 % de victoires (plus la pénalité de difficulté en campagne et l'écart appris sur [tes résultats](#tes-résultats)), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
+| Tout jouer | Prudent, Normal, Audacieux | Étage, ou boss à gagner en campagne, sous 50, 45 ou 40 % de victoires (taux de la difficulté en campagne, plus l'écart appris sur [tes résultats](#tes-résultats)), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
 | Compo cible | Réactive, Normale, Stable | Combats vus d'avance (6, 9 ou 12, la compo suivante sur autant d'après) et gain minimal pour changer de trio (15, 30 ou 45 points). |
-| Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver introuvable à ton niveau (autant). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
+| Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver rare en boutique au niveau visé à son boss (autant, voir [Compo cible](#comment-les-conseils-sont-choisis)). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
 
 ### Tes résultats
 
 Le panneau note le résultat de chaque combat joué avec lui et apprend de l'écart entre tes victoires et les taux publics.
 
 - **Journal** : à chaque combat fini, une ligne dans le navigateur (`localStorage`, clé `kt-overlay:journal`) : la partie, la
-  Tour ou l'aventure et sa difficulté, l'étage ou le combat, le taux attendu (taux public, moins 10 ou 20 points en Vétéran et en Légende), le
+  Tour ou l'aventure et sa difficulté, l'étage ou le combat, le taux attendu (taux public, de la difficulté en campagne), le
   résultat, si le trio de la compo cible était posé à la dernière lecture avant le combat et, à cette lecture, ton niveau, le
   niveau visé, ton or et tes PV, avec la version du script et les quatre préréglages de stratégie (ces six champs manquent aux
   combats notés avant la version 2.11.0). Le résultat se lit dans la
   sauvegarde du jeu, relue toutes les 2 s : la série de victoires (`streak`) change à chaque combat, et la partie avance d'une
   manche ou compte un essai de plus. Le journal garde les 300 derniers combats de la Tour et de chaque aventure à chaque difficulté, pour suivre ton
-  niveau et les rééquilibrages du jeu ; rien ne quitte le navigateur.
+  niveau et les rééquilibrages du jeu ; rien ne quitte le navigateur. Les combats de campagne notés avant la version 2.13.0 ne
+  comptent plus : leur taux attendu venait des trois difficultés mêlées.
 - **Bilan** (onglet Règles) : pour la Tour, ou pour l'aventure et la difficulté en cours, tes victoires, les victoires attendues (somme des taux) et la
   marge à 95 % sur cette somme, puis les mêmes chiffres avec et sans le trio de la compo cible posé, et au niveau visé ou en
   dessous. Ces lignes décrivent, sans départager : on s'écarte du conseil surtout quand la partie va déjà mal.
 - **Écart appris** : la moyenne de (résultat − taux attendu), rétrécie par 50 combats fictifs sans écart et bornée à 20 points.
-  Il s'ajoute à la pénalité de difficulté : seuil de « tout jouer », couleur des taux, poids des combats dans la compo cible et,
-  en campagne, avance des niveaux visés.
+  Il déplace le seuil de « tout jouer », la couleur des taux, le poids des combats dans la compo cible et, en campagne, l'avance
+  des niveaux visés.
   Avec 30 victoires pour 50 attendues sur 100 combats, les taux comptent 13 points de moins : tout jouer sous 58 % au lieu de
   45 %, ce que l'en-tête rappelle (« Tour · tout jouer sous 58 % »). Les taux affichés restent les taux publics. Il n'y a pas de
   seuil en deçà duquel l'écart serait ignoré : il ferait sauter les conseils d'une dizaine de points sur un seul combat. Un
@@ -273,15 +277,15 @@ Mêmes conseils qu'en Tour, sur les combats de l'aventure en cours, avec les rè
     après son coût et si le niveau est sous 9 ; sinon l'autre carte (marée basse, carnet, repos ou pourboire).
   - Centre Pokémon (combats 7, 18 et 25) : soins payants (6 pièces) sous 40 PV, sinon repos.
   - Sans conseil : l'assistant du Prof. Chen (3), les Safari (11, 20) et les magasins (15, 28).
-- **Difficulté** : lue dans la sauvegarde (Normal, Vétéran, Légende) et affichée en tête du panneau. Les taux de l'API mêlent les
-  trois ; or le jeu renforce les adversaires (textes du jeu, roster-*.js : en Vétéran, rivaux +5 % à toutes les stats, équipes
-  variées et objets ; au-delà, as à une étoile de plus, objets combinés, boucliers et rage des boss, selon l'aventure). Le panneau
-  retire donc 10 puis 20 points au taux de chaque combat : « tout jouer » sous 55 puis 65 %, couleur des taux en conséquence,
-  poids des combats dans la compo cible relevés d'autant, ce qui resserre l'écart entre combats faciles et murs (80 % contre
-  30 % : 20 contre 70 en Normal, 40 contre 90 en Légende), et niveaux visés avancés d'un combat par 10 points, de 0 à 2. Ces
-  écarts sont un choix de jeu : aucune statistique publique ne sépare les difficultés. L'écart appris sur [tes
-  résultats](#tes-résultats), compté par aventure et difficulté, corrige la pénalité : avec 6 victoires de moins qu'attendu sur
-  50 combats en Vétéran, elle passe de 10 à 16 points, et les niveaux visés de 1 à 2 combats d'avance.
+- **Difficulté** : lue dans la sauvegarde (Normal, Vétéran, Légende) et affichée en tête du panneau. Taux, trios, lignées et
+  objets sont ceux de cette difficulté ([Données](#données)) : le jeu renforce les adversaires (textes du jeu, roster-*.js : en
+  Vétéran, rivaux +5 % à toutes les stats, équipes variées et objets ; au-delà, as à une étoile de plus, objets combinés,
+  boucliers et rage des boss, selon l'aventure), et les trios qui gagnent changent. Contre le fossile de Cramois'Île (30),
+  Kabuto · Lokhlass · Amonita gagne 81 % en Normal et 14 % en Légende ; le combat gagne 27,6 % en Normal et 8,9 % en Légende
+  (31 octobre au 13 novembre 2026). Les niveaux visés avancent d'un combat en Vétéran, de deux en Légende (choix de jeu).
+  L'écart appris sur [tes résultats](#tes-résultats), compté par aventure et difficulté, s'y ajoute : avec 6 victoires de moins
+  qu'attendu sur 50 combats en Vétéran, les taux comptent 6 points de moins et les niveaux visés passent de 1 à 2 combats
+  d'avance.
 - **Partie lue** : celle du mode à l'écran (barre de la Tour, de la campagne, vies du Nuzlocke), la plus récente à l'accueil. Entre
   deux aventures, le jeu ne réécrit la sauvegarde qu'à la première action : jusque-là, le panneau garde l'aventure précédente.
 - **Champion à choisir** (4ᵉ et 5ᵉ badges) : l'en-tête montre la manche entière (« Erika ou Koga ou Morgane », taux moyen
@@ -299,9 +303,18 @@ Mêmes conseils qu'en Tour, sur les combats de l'aventure en cours, avec les rè
 ## Données
 
 Data: Kanto Tactics · [einoow.com](https://einoow.com) — API publique `https://einoow.com/api/meta/kanto/` : `campana.json`
-(statistiques de la Tour et de la campagne), `data.json` (lignées, objets, recettes, types, sceaux), `lang.json?lang=fr` (noms et effets des objets, sceaux,
+(statistiques de la Tour et de la campagne, toutes difficultés), `campana.json?dif=1` et `?dif=2` (campagne en Normal, en
+Vétéran), `data.json` (lignées, objets, recettes, types, sceaux), `lang.json?lang=fr` (noms et effets des objets, sceaux,
 types). Conformément à ses conditions, chaque source est gardée **une heure** dans le Cache Storage du navigateur, puis revalidée
 (`ETag`) ; en cas d'erreur, la dernière copie sert et le pied du panneau en donne la date.
+
+L'API ne publie pas Légende : le panneau la déduit, entrée par entrée (arrêt, trio, lignée, étoile, objet porté), en retirant
+aux comptes de toutes les difficultés ceux de Normal et de Vétéran (combats, victoires, victoires attendues). Un sous-fichier
+omet les entrées de moins de 10 combats ; une entrée absente y compte 9 combats tous gagnés, ce qui ne surestime jamais
+Légende. Les bornes à 95 % sont recalculées comme celles de l'API (Wilson sur les combats notés `ne`) ; le taux au premier
+essai est approché. Légende n'est déduite que si les trois copies couvrent les mêmes jours et portent ces comptes. Sans le
+fichier d'une difficulté, celle-ci n'a que les conseils d'économie, et l'alerte le dit ; sans `campana.json`, la Tour et
+Légende manquent, Normal et Vétéran restent.
 
 `data.json` s'arrête aux règles 40 alors que le jeu tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
 le script (seuils d'XP, 1 XP gratuite par étage, chances de chaque coût en boutique par niveau, exemplaires par lignée, lignées
@@ -322,7 +335,7 @@ La courbe de niveaux visés reste un choix de jeu : aucune statistique publique 
 adverse ne dit que l'étage où le niveau suivant compte. La courbe des robots du jeu (`engine-*.js`) sert le PvP, dont
 l'économie diffère (2 XP par manche, or de série). La liste des
 shinies à saisir par tranche d'étages vient d'un guide et n'est pas vérifiée.
-`modes.camp` ne dit ni l'aventure ni la difficulté d'un combat (`difficulty: "todas"`) : deux aventures qui partagent un arrêt
+`modes.camp` ne dit pas l'aventure d'un combat : deux aventures qui partagent un arrêt
 (`1:Pokémon salvajes`, `9:Pokémon salvajes` pour Kanto et « Je te choisis ! », peut-être d'autres avec les aventures chiffrées)
 y sont confondues, et la table des arrêts de Cap sur
 Cramois'Île et de « Je te choisis ! » ne couvre que les manches relevées dans le code du jeu. Pour Cramois'Île, l'arrêt 20 (Pris

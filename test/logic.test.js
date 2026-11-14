@@ -199,7 +199,7 @@ test('stratégie : tout jouer prudent ou audacieux', () => {
   const head = headHtml({ advice: advise({ ...S57, hp: 45 }, { mode: strategy({ allIn: 'careful' }) }), stats: { torre }, mode: strategy({ allIn: 'careful' }), floor: 57 });
   assert.match(head, /Tout jouer : PV sous 50./);
   const camp = strategy({ allIn: 'bold' }, KT.modeContext(KT.CAMPAIGN, { league: 3 }, 'kanto'));
-  assert.equal(KT.leagueNote(camp), 'Kanto · Légende · tout jouer sous 60 %');
+  assert.ok(KT.goldRules(camp).some(r => r.includes('sous 40 % de victoires (Légende')));
 });
 
 test('stratégie : compo réactive ou stable (combats vus d’avance, inertie)', () => {
@@ -219,6 +219,11 @@ test('stratégie : bonus des Pokémon possédés faible ou fort', () => {
   // Niveau 8 : Koga et Samouraï (coût 5) introuvables, un malus chacun ; Giovanni possédé, un bonus.
   assert.deepEqual([score('low', unit), score('normal', unit), score('high', unit)], [-5, -10, -20]);
   assert.deepEqual([score('low', {}), score('high', {})], [-15, -60]);
+  // Tour : le malus reste jugé au niveau du joueur (8), même quand l'étage noté vise le niveau 9 (59 : Koga, Samouraï à 17 %).
+  const rated = KT.ratedStops([{ stop: '59:elite', floor: 59, boss: 'elite', weight: 1 }], new Map([['59:elite', new Map([['giovanni+koga+samurai', { lo: 0 }]])]]));
+  const tower = KT.readGame({ ...save, round: 1056, level: 8, units: unit, board: {}, bench: ['g'], shop: [] }, strategy({ owned: 'normal' }));
+  assert.equal(KT.levelGoal(59, tower.mode), 9);
+  assert.equal(KT.coreScore(['giovanni', 'koga', 'samurai'], rated, tower, data), -10);
 });
 
 test('compo cible : meilleur trio pondéré, remplissage par puissance', () => {
