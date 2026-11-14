@@ -312,9 +312,10 @@ L'API ne publie pas Légende : le panneau la déduit, entrée par entrée (arrê
 aux comptes de toutes les difficultés ceux de Normal et de Vétéran (combats, victoires, victoires attendues). Un sous-fichier
 omet les entrées de moins de 10 combats ; une entrée absente y compte 9 combats tous gagnés, ce qui ne surestime jamais
 Légende. Les bornes à 95 % sont recalculées comme celles de l'API (Wilson sur les combats notés `ne`) ; le taux au premier
-essai est approché. Légende n'est déduite que si les trois copies couvrent les mêmes jours et portent ces comptes. Sans le
-fichier d'une difficulté, celle-ci n'a que les conseils d'économie, et l'alerte le dit ; sans `campana.json`, la Tour et
-Légende manquent, Normal et Vétéran restent.
+essai est approché, et manque quand l'un des trois fichiers ne le donne pas pour l'entrée (`first` nul sur quelques trios).
+Légende n'est déduite que si les trois copies couvrent les mêmes jours et portent ces comptes. Sans le fichier d'une
+difficulté, celle-ci n'a que les conseils d'économie, et l'alerte le dit ; sans `campana.json`, la Tour et Légende manquent,
+Normal et Vétéran restent.
 
 `data.json` s'arrête aux règles 40 alors que le jeu tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
 le script (seuils d'XP, 1 XP gratuite par étage, chances de chaque coût en boutique par niveau, exemplaires par lignée, lignées
