@@ -100,8 +100,8 @@ test('prochain boss de campagne : badges, Ligue et Mewtwo ; champion le plus jou
   assert.equal(KT.nextBossStop(camp.stops, 13, mode({ gymOrder: ['sabrina'] })).stop, '16:Sabrina');
   assert.equal(KT.nextBossStop(camp.stops, 29, mode({})).stop, '33:Lorelei');
   assert.equal(KT.lastBossFloor(camp.stops, mode({})), 38);
-  // Sans liste de boss (Canela), chaque combat compte ; sans table d'arrêts, aucun.
-  assert.equal(KT.nextBossStop(camp.stops, 5, mode({}, 'canela')).stop, '6:Macarra');
+  // Cramois'Île : boss du jeu (manches boss:) ; sans table d'arrêts, aucun.
+  assert.equal(KT.nextBossStop(camp.stops, 5, mode({}, 'canela')).stop, '8:Jefe de los moteros');
   assert.equal(KT.lastBossFloor(camp.stops, mode({}, 'safari')), -Infinity);
 });
 
@@ -148,7 +148,8 @@ test('niveaux visés de campagne : avance d’un combat par 10 points de pénali
 
 test('compo de campagne : trio des 9 prochains combats de l’aventure, code KT1 en mode aventure', () => {
   const a = advise(CAMP);
-  assert.deepEqual(a.target.core, ['flareon', 'ponyta', 'vulpix']);
+  // Starters : les plus forts sur les trois boss notés, devant Goupix ★★ possédé (Pyroli, Ponyta, Goupix).
+  assert.deepEqual(a.target.core, ['bulbasaur', 'charmander', 'squirtle']);
   // 9 manches de combat de 15 à 25 : les événements (19, 22) n'ont pas de statistiques.
   assert.deepEqual([...new Set(a.target.stops.map(s => s.floor))], [15, 16, 17, 18, 20, 21, 23, 24, 25]);
   assert.match(a.code, /^KT1;r41;xm=adv;xn=Plan%20kanto-overlay;/);
@@ -203,7 +204,7 @@ test('règles et en-tête de campagne : difficulté, seuils, combats', () => {
   const rules = KT.goldRules(mode(CAMP));
   assert.ok(rules.some(r => r.includes('+4 au plus en campagne → garder 40 pièces')));
   assert.ok(rules.some(r => r.includes('4 dès le combat 2') && r.includes('9 dès le combat 28') && r.includes('2 XP par combat')));
-  assert.ok(rules.some(r => r.startsWith('Tout jouer sur un combat sous 65 % de victoires (Légende')));
+  assert.ok(rules.some(r => r.startsWith('Tout jouer sur un boss rejoué tant qu’il est perdu sous 65 % de victoires (Légende')));
   assert.equal(KT.leagueNote(mode(CAMP)), 'Kanto · Légende · tout jouer sous 65 %');
   assert.equal(KT.leagueNote(mode({}, 'canela')), 'Cap sur Cramois’Île · Normal');
   const state = save => ({ advice: advise(save), stats: { torre: modes.torre, camp }, mode: mode(save), floor: save.round + 1 });
@@ -273,4 +274,75 @@ test('alerte : campagne refusée signalée en campagne seulement, avec les autre
 test('en-tête de la Tour sans aucun arrêt : format de l’API, pas « cette aventure »', () => {
   const head = KT.headHtml({ advice: null, stats: { torre: { ...modes.torre, stops: [] } }, mode: KT.TOWER_MODE, floor: 5 });
   assert.match(head, /Aucun boss de la Tour dans les statistiques publiques/);
+});
+
+// Cap sur Cramois'Île en Normal : l'équipe de CAMP, sans champion à choisir.
+const CANELA = { ...CAMP, league: 1, gymOrder: [], attempts: 0 };
+const canela = (round, extra = {}) => ({ ...CANELA, round, hp: 60, gold: 31, ...extra });
+
+test('Cramois’Île : boss du jeu, Artikodin perdable ; tout jouer seulement sur un boss à gagner', () => {
+  const m = mode({}, 'canela');
+  assert.deepEqual([8, 19, 24, 27, 29, 30].map(floor => KT.mustWin({ floor }, m)), [true, false, false, true, true, true]);
+  // Kanto : Ondine (8) à gagner, Sbire Rocket (15) non ; Tour : chaque étage, élites comprises ; Je te choisis !, sans liste
+  // de boss : chaque combat.
+  assert.deepEqual([KT.mustWin({ floor: 8 }, mode({})), KT.mustWin({ floor: 15 }, mode({})), KT.mustWin({ floor: 59, boss: 'elite' }, KT.TOWER_MODE),
+    KT.mustWin({ floor: 3 }, mode({}, 'inicio'))], [true, false, true, true]);
+  // Voleur (24, 18,9 %) : mur perdable, l'or garde son palier ; le fossile (30, 25,1 %) : tout jouer.
+  const head = round => KT.headHtml({ advice: advise(canela(round), 'canela'), stats: { torre: modes.torre, camp }, mode: mode(CANELA, 'canela'), floor: round + 1 });
+  const thief = advise(canela(23), 'canela').eco;
+  assert.deepEqual([thief.allIn, thief.spend, thief.nextWall.floor], [false, 0, 24]);
+  assert.match(head(23), /Combat 24 \(Voleur, 18,9 %\) : perdable sans rejouer, garde le palier\./);
+  assert.equal(advise(canela(29), 'canela').eco.allIn, true);
+  assert.match(head(28), /Combat 30 \(Le fossile s’éveille, 25,1 %\) : tout jouer\./);
+});
+
+test('Cramois’Île : niveaux visés à la taille des équipes adverses, Kanto inchangé', () => {
+  assert.deepEqual([5, 6, 8, 14, 19, 24, 30].map(f => KT.levelGoal(f, mode({}, 'canela'))), [0, 4, 5, 6, 7, 8, 8]);
+  assert.ok(KT.goldRules(mode({}, 'canela')).some(r => r.includes('(4 dès le combat 6, 5 dès le combat 8, 6 dès le combat 14, 7 dès le combat 19, 8 dès le combat 24)')));
+  assert.deepEqual([4, 8, 30].map(f => KT.levelGoal(f, mode({}))), [4, 5, 9]);
+});
+
+// Trios notés sur les combats de la compo cible d'une partie : [trio, taux, borne basse] chacun.
+const coresOn = (save, ...cores) => ({ ...camp, cores: advise(save, 'canela').target.stops.flatMap(s => cores.map(([core, win, lo]) => ({ stop: s.stop, core, n: 500, win, lo }))) });
+// Conseil de chaque carte d'un événement de Cramois'Île : « titre : raison », null sans pastille.
+const eventPicks = (save, ...cores) => advise(save, 'canela', { stats: cores.length ? coresOn(save, ...cores) : camp }).event.map(m => m && `${m.title} : ${m.why}`);
+const choiceAt = (round, extra = {}, event = {}) => canela(round, { ...extra, event: { round, kind: 'choice', picked: null, ...event } });
+const centerAt = (center, extra = {}) => choiceAt(24, extra, { kind: 'center', center });
+const KABUTO = [['kabuto', 'growlithe', 'vulpix'], 95, 90];
+
+test('Cramois’Île, événements à Pokémon : trio de la compo cible, puis le plus fort ; à égalité, l’XP', () => {
+  const lab = choiceAt(22);
+  assert.deepEqual(eventPicks(lab, KABUTO), [null, 'Prends Fossile Dôme : Kabuto, du trio de la compo cible']);
+  const fossil = advise(lab, 'canela', { stats: coresOn(lab, KABUTO) });
+  assert.equal(fossil.event[1].detail, 'L’autre fossile se réveille au combat 30 : Amonistar ★3.');
+  // La fenêtre d'événement bloque le jeu : son conseil passe en tête, panneau replié compris.
+  assert.match(KT.summaryHtml({ advice: fossil }), /<span class="t" title="Prends Fossile Dôme">/);
+  // Amonita, hors du trio retenu, figure dans un trio plus gagnant que ses combats : plus forte que Kabuto, sans trio.
+  assert.deepEqual(eventPicks(lab, [['growlithe', 'vulpix', 'ponyta'], 95, 90], [['omanyte', 'abra', 'oddish'], 99, 40]),
+    ['Prends Fossile Hélix : Amonita, plus fort que Kabuto (combats 24–30)', null]);
+  // Poste de garde : ni Excelangue ni Canarticho dans un trio, Canarticho donne 2 XP.
+  assert.deepEqual(eventPicks(choiceAt(4), KABUTO), [null, 'Prends Canarticho : même force, +2 XP']);
+});
+
+test('Cramois’Île, XP contre PV et centre : seuil de PV, plafond de niveau, carte grisée jamais conseillée', () => {
+  const tide = extra => eventPicks(choiceAt(12, extra));
+  assert.deepEqual(tide({ hp: 60 }), ['Prends Traverser maintenant : +4 XP ; PV 60 → 54, seuil 40', null]);
+  assert.deepEqual(tide({ hp: 44 }), [null, 'Prends Attendre la marée basse : Traverser maintenant : PV 44 → 38, sous le seuil de 40']);
+  assert.deepEqual(tide({ level: 9 }), [null, 'Prends Attendre la marée basse : niveau 9 atteint : l’XP ne sert plus']);
+  // Marée basse grisée sous 4 pièces ; journal grisé à 5 PV ou moins ; soins grisés sous 6 pièces.
+  assert.deepEqual(tide({ hp: 44, gold: 2 }), ['Prends Traverser maintenant : Attendre la marée basse : 4 pièces, tu en as 2', null]);
+  assert.deepEqual(eventPicks(choiceAt(25, { hp: 4 })), [null, 'Prends Emporter le carnet : Lire le journal : il faut plus de 5 PV, tu en as 4']);
+  assert.deepEqual(eventPicks(centerAt('care', { hp: 30 })), [null, 'Prends Soins : PV 30, sous le seuil de 40']);
+  assert.deepEqual(eventPicks(centerAt('care', { hp: 30, gold: 3 })), ['Prends Repos : Soins : 6 pièces, tu en as 3', null]);
+  assert.deepEqual(eventPicks(centerAt('care')), ['Prends Repos : PV 60, pas sous le seuil de 40 : garde tes pièces', null]);
+  assert.deepEqual(eventPicks(centerAt('top', { hp: 98 })), [null, 'Prends Entraînement : +8 XP ; PV 98 → 90, seuil 40']);
+  assert.deepEqual(eventPicks(centerAt('full', { hp: 100, level: 9 })), [null, 'Prends Pourboire : niveau 9 atteint : l’XP ne sert plus']);
+});
+
+test('Cramois’Île, événements : rien une fois la carte choisie, hors de la manche, ni hors d’une aventure qui les décrit', () => {
+  assert.deepEqual(eventPicks(choiceAt(12, {}, { picked: 0 })), []);
+  assert.deepEqual(eventPicks(choiceAt(12, {}, { round: 11 })), []);
+  // Événement sans options relevées (Ayudante de Oak, combat 3) et centre de Kanto : pas de pastille.
+  assert.deepEqual(eventPicks(choiceAt(2, {}, { kind: 'oak' })), []);
+  assert.deepEqual(advise({ ...CAMP, event: { round: CAMP.round, kind: 'center', center: 'care', picked: null } }).event, []);
 });

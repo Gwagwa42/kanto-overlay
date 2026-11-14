@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour et campagne
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.11.0
+// @version      2.12.0
 // @description  Tour de combat et campagne (aventures, trois difficultés) de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -30,7 +30,7 @@
 const KT = (() => {
   // Version du script, notée dans le journal des combats ; égale à @version (un test le vérifie) : GM_info n'est pas garanti
   // avec @grant none.
-  const VERSION = '2.11.0';
+  const VERSION = '2.12.0';
   const API = 'https://einoow.com/api/meta/kanto/';
   const SOURCES = { stats: `${API}campana.json`, data: `${API}data.json`, lang: `${API}lang.json?lang=fr` };
   const CACHE_NAME = 'kt-overlay';
@@ -180,10 +180,12 @@ const KT = (() => {
   // espagnol de la manche jouée, après le dernier « · »). Arrêts possibles de chaque aventure, relevés dans les manches du jeu
   // (route-*.js, ul) ; les événements n'ont pas de statistiques. Safari, Lavanda et Rocket chargent leurs manches par un module
   // chiffré : absentes, elles reçoivent une compo sans trio (targetComp). Méthode de relevé : README, Développement. bosses :
-  // manches de badge, de Ligue et Mewtwo ; sans liste, chaque combat compte comme boss. gyms : manches des champions dont
-  // l'ordre suit gymOrder de la sauvegarde. shopLines, shopOut : boutique de l'aventure quand elle n'est pas celle de Kanto
-  // (ul de route-*.js : Cramois'Île retire les 22 lignées de Cc et ajoute les 22 de wc) ; celles de Safari, Lavanda et Rocket
-  // sont chiffrées, comptées comme celle de Kanto.
+  // manches boss: du jeu (badge, Ligue, Mewtwo, chefs d'aventure) ; sans liste, chaque combat compte comme boss. canLose : boss
+  // que le jeu laisse perdre sans les rejouer (canLose: de la manche). gyms : manches des champions dont l'ordre suit gymOrder
+  // de la sauvegarde. shopLines, shopOut : boutique de l'aventure quand elle n'est pas celle de Kanto (ul de route-*.js :
+  // Cramois'Île retire les 22 lignées de Cc et ajoute les 22 de wc) ; celles de Safari, Lavanda et Rocket sont chiffrées,
+  // comptées comme celle de Kanto. levelGoals : niveaux visés de l'aventure, à la place de ceux de la campagne Kanto. events :
+  // options des événements à choix (eventMarks), dans l'ordre des cartes du jeu.
   const ADVENTURES = {
     kanto: {
       name: 'Kanto',
@@ -207,6 +209,21 @@ const KT = (() => {
         10: ['Nadadora'], 12: ['Nadador'], 14: ['Pareja de nadadores'], 16: ['Entrada'], 17: ['Corrientes'], 19: ['Articuno'],
         20: ['Atrapados en el hielo'], 21: ['Puerto'], 22: ['Científico'], 24: ['Ladrón'], 27: ['Rival Azul'], 29: ['Sótano'],
         30: ['El fósil despierta'],
+      },
+      bosses: [8, 19, 27, 29, 30],
+      canLose: [19],
+      // Niveau égal à la taille de l'équipe adverse (route-*.js : 4 unités au combat 6, 5 au 8, 6 au 14, 8 au 24) ; 7 dès
+      // Artikodin pour étaler l'achat avant le saut du combat 24. Aucun 9 : aucune équipe n'en aligne autant.
+      levelGoals: [[6, 4], [8, 5], [14, 6], [19, 7], [24, 8]],
+      // Événements choice de route-*.js (Is) : coût en PV (hpCost), en pièces (goldCost), XP gagnée, Pokémon reçu (mon) ;
+      // detail : ligne de preuve de la bulle.
+      events: {
+        5: [{ name: 'Excelangue', mon: 'lickitung' }, { name: 'Canarticho', mon: 'farfetchd', xp: 2 }],
+        13: [{ name: 'Traverser maintenant', xp: 4, hpCost: 6 },
+          { name: 'Attendre la marée basse', goldCost: 4, detail: 'Marée basse : pas de pluie aux combats 14 et 16.' }],
+        23: [{ name: 'Fossile Hélix', mon: 'omanyte', detail: 'L’autre fossile se réveille au combat 30 : Kabutops ★3.' },
+          { name: 'Fossile Dôme', mon: 'kabuto', detail: 'L’autre fossile se réveille au combat 30 : Amonistar ★3.' }],
+        26: [{ name: 'Lire le journal', xp: 6, hpCost: 5 }, { name: 'Emporter le carnet' }],
       },
       shopLines: [13, 14, 12, 11, 6],
       shopOut: ['squirtle', 'caterpie', 'rattata', 'magikarp', 'zubat', 'oddish', 'gastly', 'poliwag', 'ekans', 'jigglypuff', 'paras', 'eevee',
@@ -318,13 +335,13 @@ const KT = (() => {
     shopOut: ['articuno', 'zapdos', 'moltres', 'mew', 'mewtwo'], redraw: TOWER_REDRAW, floorOf: round => Math.max(1, Math.floor(round) - ROUND_BASE + 1),
     // Morceaux des règles d'or propres au mode (goldRules) ; hasLeague : le mode a des difficultés, qui durcissent le seuil de
     // « tout jouer ».
-    fortuneNote: ` (+${FORTUNE_INTEREST} avec la voie Fortune complète)`, streakNote: '', xpNote: '', retryNote: `sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}`, hasLeague: false,
+    fortuneNote: ` (+${FORTUNE_INTEREST} avec la voie Fortune complète)`, streakNote: '', xpNote: '', retryNote: `sur un étage rejoué à partir de l’étage ${RETRY_ALL_IN_FROM}`, wallNote: 'un étage', hasLeague: false,
   };
   const CAMPAIGN = {
     id: 'campaign', stats: 'camp', name: 'Campagne', where: 'en campagne', label: 'Combat', unit: 'combat', units: 'combats', the: 'le combat', at: 'au combat', here: 'à ce combat', xm: 'adv',
     hud: '.topbar .rtrack:not(.tw):not(.pt-track)', interest: 4, levelGoals: CAMPAIGN_LEVEL_GOALS, levelCap: () => 9,
     retryFrom: 1, shinyKeepTo: Infinity, shopLines: [14, 13, 12, 11, 6], shopOut: [], redraw: 0, floorOf: round => Math.max(1, Math.floor(round) + 1),
-    fortuneNote: '', streakNote: ' Série : +1 pièce par victoire à partir de la 2ᵉ de suite.', xpNote: ' La campagne donne 2 XP par combat.', retryNote: 'sur un combat rejoué', hasLeague: true,
+    fortuneNote: '', streakNote: ' Série : +1 pièce par victoire à partir de la 2ᵉ de suite.', xpNote: ' La campagne donne 2 XP par combat.', retryNote: 'sur un combat rejoué', wallNote: 'un boss rejoué tant qu’il est perdu', hasLeague: true,
   };
 
   // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null), difficulté et stratégie normale
@@ -337,7 +354,7 @@ const KT = (() => {
     const adv = adventure ? ADVENTURES[adventure] ?? null : null;
     return withStrategy({
       ...rules, shopLines: adv?.shopLines ?? rules.shopLines, shopOut: adv?.shopOut ?? rules.shopOut,
-      baseGoals: rules.levelGoals, adventure, adv, league,
+      baseGoals: adv?.levelGoals ?? rules.levelGoals, adventure, adv, league,
       leaguePenalty, ownPenalty: 0, penalty: leaguePenalty, advance: advanceOf(rules, leaguePenalty),
       gymOrder: Array.isArray(save.gymOrder) ? save.gymOrder : [],
     }, STRATEGY_DEFAULTS);
@@ -486,7 +503,7 @@ const KT = (() => {
       `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus ${mode.where} → garder ${10 * mode.interest} pièces${mode.fortuneNote}.${mode.streakNote}`,
       `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation si elle montre une copie cherchée à ${REROLL_CHANCE} % ou plus, puis XP.${mode.xpNote}`,
       `Actualisation à ${REROLL_COST} pièces : ne pas en enchaîner pour un shiny.`,
-      `Tout jouer sur un combat sous ${hard} % de victoires${notes.length ? ` (${notes.join(' ; ')})` : ''}, sous ${mode.lowHp} PV, ou ${mode.retryNote}.`,
+      `Tout jouer sur ${mode.wallNote} sous ${hard} % de victoires${notes.length ? ` (${notes.join(' ; ')})` : ''}, sous ${mode.lowHp} PV, ou ${mode.retryNote}.`,
     ];
   }
 
@@ -584,8 +601,11 @@ const KT = (() => {
     return shared.map(s => ({ ...s, fightWin: wins.get(s.floor), fight: kept.filter(x => x.floor === s.floor).map(x => x.boss) }));
   }
 
-  // Tour : tout sauf les élites ; campagne : manches de badge, de Ligue et Mewtwo, ou chaque combat sans liste de boss.
+  // Tour : tout sauf les élites ; campagne : boss de l'aventure (bosses), ou chaque combat sans liste de boss.
   const isBoss = (s, mode) => (mode.id === TOWER.id ? s.boss !== 'elite' : mode.adv?.bosses?.includes(s.floor) ?? true);
+  // Combat où un taux bas fait tout jouer : chaque étage de la Tour ; en campagne, un boss que le jeu fait rejouer tant qu'il
+  // est perdu (sans canLose). Une manche ordinaire ou un boss canLose perdus avancent quand même : l'or garde ses intérêts.
+  const mustWin = (s, mode) => mode.id === TOWER.id || (isBoss(s, mode) && !mode.adv?.canLose?.includes(s.floor));
 
   // -Infinity quand le mode n'a aucun arrêt (aventure sans table, ou libellés de l'API changés).
   function lastBossFloor(stops, mode) {
@@ -685,6 +705,9 @@ const KT = (() => {
       freeReroll: (save.tower?.boons ?? []).includes('coincase') && save.tower.cf !== save.round,
       offer: save.tower?.offer?.ids ?? [],
       anchor: save.anchor ?? {},
+      // Événement de la manche encore sans choix (event de la sauvegarde, store-*.js) : kind 'choice' (événement de
+      // l'aventure) ou 'center', avec center 'care', 'top' ou 'full' ; null sinon.
+      event: save.event?.round === save.round && save.event.picked === null ? { kind: save.event.kind, center: save.event.center ?? null } : null,
     };
   }
 
@@ -706,8 +729,9 @@ const KT = (() => {
     return 10 * (mode.interest + (pathCount(boons, 'fortune') >= PATH_SIZE ? FORTUNE_INTEREST : 0));
   }
 
-  // « Tout jouer » : le combat courant est un mur (taux de la manche sous hardWin plus la pénalité du mode : difficulté et résultats du joueur), les PV
-  // sont sous lowHp, ou le combat est rejoué (retryFrom du mode).
+  // « Tout jouer » : le combat courant est un mur à gagner (mustWin ; taux de la manche sous hardWin plus la pénalité du mode :
+  // difficulté et résultats du joueur), les PV sont sous lowHp, ou le combat est rejoué (retryFrom du mode). nextWall : premier
+  // mur des combats à venir, à gagner ou non.
   function economy(game, stops) {
     const { mode } = game;
     const here = stops.find(s => s.floor === game.floor);
@@ -715,7 +739,7 @@ const KT = (() => {
     const hard = mode.hardWin + mode.penalty;
     const lowHp = game.hp < mode.lowHp;
     const retry = game.attempts > 0 && game.floor >= mode.retryFrom;
-    const allIn = lowHp || retry || (here !== undefined && here.fightWin < hard);
+    const allIn = lowHp || retry || (here !== undefined && here.fightWin < hard && mustWin(here, mode));
     const nextWall = stops.find(s => s.fightWin < hard) ?? null;
     return { gold: game.gold, floor, spend: allIn ? game.gold : Math.max(0, game.gold - floor), allIn, lowHp, retry, nextWall };
   }
@@ -878,12 +902,16 @@ const KT = (() => {
     return Boolean(two && three) && three.hi - three.exp < two.lo - two.exp;
   }
 
-  // Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une lignée possédée rapporte.
+  // Note d'un trio : borne basse de son taux, en moyenne pondérée par la difficulté sur les combats qui ont des trios notés (un
+  // combat sans statistiques, manche peu jouée de campagne, laisserait sinon les bonus de possession l'emporter ; 0 sans
+  // aucun), plus ces bonus. Une lignée à trouver dont le coût, connu, ne sort pas assez au niveau du joueur coûte ce qu'une
+  // lignée possédée rapporte.
   function coreScore(core, stops, coresByStop, game, data) {
     const { ownedBonus } = game.mode;
-    const total = totalWeight(stops);
+    const rated = stops.filter(st => coresByStop.get(st.stop)?.size);
+    const total = totalWeight(rated);
     const key = coreKey(core);
-    const stat = stops.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop)?.get(key)?.lo ?? 0), 0) / total;
+    const stat = total ? rated.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop).get(key)?.lo ?? 0), 0) / total : 0;
     const owned = core.reduce((s, id) => {
       const base = baseLine(id);
       const star = bestStar(game, base);
@@ -1744,6 +1772,79 @@ const KT = (() => {
     return { marks, unknown };
   }
 
+  // Cartes du centre Pokémon selon center (zh de route-*.js) : soins à 6 pièces, grisés en dessous ; entraînement +8 XP pour
+  // 8 PV. Les PV rendus changent selon le mode (Lh) ; la règle n'en dépend pas.
+  const TRAIN = { name: 'Entraînement', xp: 8, hpCost: 8 };
+  const CENTER = {
+    care: [{ name: 'Repos' }, { name: 'Soins', goldCost: 6 }],
+    top: [{ name: 'Repos' }, TRAIN],
+    full: [TRAIN, { name: 'Pourboire' }],
+  };
+  const elide = name => (/^[aeiouyâéèêîô]/i.test(name) ? `qu’${name}` : `que ${name}`);
+
+  // Pokémon offert : la lignée du trio de la compo cible qui a le moins de copies, puis celle du trio de la compo suivante,
+  // puis la plus forte sur les combats de la compo cible (lineStrength) ; à égalité, celle qui donne de l'XP.
+  function monChoice(game, options, target, next, names) {
+    const core = comp => (comp ? comp.core.map(baseLine) : []);
+    const name = o => names.line(o.mon);
+    const copies = o => unitsOf(game, o.mon).length;
+    const other = o => options.find(x => x !== o);
+    const tests = [
+      [o => Number(core(target).includes(o.mon)), o => `${name(o)}, du trio de la compo cible`],
+      [o => (core(target).includes(o.mon) ? -copies(o) : 0), o => `${name(o)}, du trio de la compo cible : ${copies(o)} copie${copies(o) > 1 ? 's' : ''}`],
+      [o => Number(core(next).includes(o.mon)), o => `${name(o)}, du trio de la compo suivante`],
+      [o => target?.strength.get(o.mon) ?? 0, o => `${name(o)}, plus fort ${elide(name(other(o)))} (${floorRange(target.stops, game.mode)})`],
+      [o => o.xp ?? 0, o => `même force, +${o.xp} XP`],
+    ];
+    for (const [score, why] of tests) {
+      const [a, b] = options.map(score);
+      if (a !== b) {
+        const o = options[a > b ? 0 : 1];
+        return { o, why: why(o) };
+      }
+    }
+    return null;
+  }
+
+  // XP contre PV : l'XP tant que les PV restent au moins à lowHp après son coût et que le niveau est sous le plafond.
+  function xpChoice(game, xp, rest) {
+    const { lowHp } = game.mode;
+    const cap = maxLevel(game.floor, game.mode);
+    const after = game.hp - xp.hpCost;
+    if (game.level >= cap) return { o: rest, why: `niveau ${cap} atteint : l’XP ne sert plus` };
+    if (game.hp <= xp.hpCost) return { o: rest, why: `${xp.name} : il faut plus de ${xp.hpCost} PV, tu en as ${game.hp}` };
+    if (after < lowHp) return { o: rest, why: `${xp.name} : PV ${game.hp} → ${after}, sous le seuil de ${lowHp}` };
+    return { o: xp, why: `+${xp.xp} XP ; PV ${game.hp} → ${after}, seuil ${lowHp}` };
+  }
+
+  // Événements à choix de l'aventure (events) et centres Pokémon : une carte conseillée, jamais une carte que le jeu grise
+  // (pièces sous goldCost, PV au plus hpCost). Seulement dans une aventure qui décrit ses événements : les cartes du centre
+  // y sont relevées, pas ailleurs.
+  function eventMarks(game, target, next, names) {
+    const { event, mode } = game;
+    if (!event || !mode.adv?.events) return [];
+    const options = event.kind === 'choice' ? mode.adv.events[game.floor] : event.kind === 'center' ? CENTER[event.center] : null;
+    if (!options) return [];
+    const off = o => (o.goldCost ?? 0) > game.gold || (o.hpCost !== undefined && game.hp <= o.hpCost);
+    const xp = options.find(o => o.xp && !o.mon);
+    let pick;
+    if (options.some(o => o.mon)) pick = monChoice(game, options, target, next, names);
+    else if (xp) pick = xpChoice(game, xp, options.find(o => o !== xp));
+    else {
+      const paid = options.find(o => o.goldCost);
+      const free = options.find(o => o !== paid);
+      pick = game.hp < mode.lowHp ? { o: paid, why: `PV ${game.hp}, sous le seuil de ${mode.lowHp}` }
+        : { o: free, why: `PV ${game.hp}, pas sous le seuil de ${mode.lowHp} : garde tes pièces` };
+    }
+    // Seule une carte payante peut être retenue puis grisée : une carte à PV ne l'est qu'au-dessus de lowHp.
+    if (pick && off(pick.o)) {
+      const shut = pick.o;
+      const open = options.find(o => !off(o));
+      pick = open && { o: open, why: `${shut.name} : ${shut.goldCost} pièces, tu en as ${game.gold}` };
+    }
+    return options.map(o => (pick?.o === o ? mark('do', 'Prends', `Prends ${o.name}`, pick.why, o.detail ?? '') : null));
+  }
+
   function anchorAdvice(target, game, names) {
     if (!target) return [];
     return target.core.flatMap(id => {
@@ -2085,6 +2186,7 @@ const KT = (() => {
       reward: offerMarks(book, game, items.holders, future, names),
       aims: target ? aimsOf(data, game, items, book) : [],
       offer: choice.marks,
+      event: eventMarks(game, target, next, names),
       unknownOffer: choice.unknown,
       anchor: anchorAdvice(target, game, names),
       moves: moveAdvice(units, game, names),
@@ -2169,7 +2271,7 @@ const KT = (() => {
   return {
     SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, leagueLabel, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, STRATEGY_DEFAULTS, latestSave, shownMode, pollState,
     VERSION, JOURNAL_KEY, TOWER_RUNS_KEY, readJournal, fightWon, fightEntry, notedFight, addFight, ownResults, withResults, resultsNote,
-    parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss,
+    parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss, mustWin,
     baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, rerollChance, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, touching, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
   };
@@ -2393,6 +2495,7 @@ const TARGETS = {
   reroll: { sel: 'button.btn-roll', modal: false },
   reward: { sel: '.modal.itemreward .ir-card', modal: true },
   offer: { sel: '.modal.tboon .ev-card', modal: true },
+  event: { sel: '.modal.evround .ev-card', modal: true },
 };
 const COMPACT_BELOW = 64;
 // Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
@@ -2413,7 +2516,7 @@ const modeStats = state => state.stats?.[state.mode.stats] ?? null;
 const UNSUPPORTED = '<p class="kt-msg"><strong>Nuzlocke : pas de conseils</strong>Le panneau conseille la Tour et les aventures de la campagne.</p>';
 
 
-const allMarks = a => [...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
+const allMarks = a => [...a.event, ...a.shop, a.reroll, a.xp, ...a.bench, ...a.bag, ...a.reward, ...a.offer, ...a.anchor, ...a.moves].filter(Boolean);
 const LEVEL_ORDER = { do: 0, opt: 1, no: 2 };
 // Un conseil par titre (la même consigne peut viser plusieurs cases du jeu), du plus pressant au moins pressant.
 // Calculé une fois par conseil : l'onglet Tour, son compteur et le résumé replié le lisent à chaque rendu.
@@ -2570,7 +2673,7 @@ function headHtml(state) {
     parts.push(`<p class="kt-gold"><span class="kt-coin" aria-hidden="true"></span>Or <b>${e.gold}</b> → <span class="spend">${e.spend} à dépenser</span><span class="m">palier ${e.floor} · +${e.floor / 10}</span></p>`);
     let wall = '';
     if (e.allIn) wall = `Tout jouer : ${e.lowHp ? `PV sous ${mode.lowHp}` : e.retry ? `${mode.unit} rejoué` : 'combat difficile'}.`;
-    else if (e.nextWall) wall = `${mode.label} ${e.nextWall.floor} (${esc(KT.fightName(e.nextWall))}, ${KT.pct(e.nextWall.fightWin)}) : tout jouer.`;
+    else if (e.nextWall) wall = `${mode.label} ${e.nextWall.floor} (${esc(KT.fightName(e.nextWall))}, ${KT.pct(e.nextWall.fightWin)}) : ${KT.mustWin(e.nextWall, mode) ? 'tout jouer' : 'perdable sans rejouer, garde le palier'}.`;
     if (wall) parts.push(`<p class="kt-warn"><span class="kt-sym kp-no" aria-hidden="true">▼</span>${wall}</p>`);
   }
   if (mode.hasLeague || mode.ownPenalty) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);

@@ -130,7 +130,7 @@ test('écart appris : il déplace le seuil de « tout jouer » et s’ajoute à 
   // Pierre à 50 % : pas un mur au seuil de 45 %, un mur une fois le taux compté 13 points plus bas.
   assert.equal(adviseOn(S10, { mode: poll([]), stats }).eco.allIn, false);
   assert.equal(adviseOn(S10, { mode: weak, stats }).eco.allIn, true);
-  assert.ok(KT.goldRules(weak).includes('Tout jouer sur un combat sous 58 % de victoires (plus 13 points d’après tes résultats), sous 40 PV, ou sur un étage rejoué à partir de l’étage 50.'));
+  assert.ok(KT.goldRules(weak).includes('Tout jouer sur un étage sous 58 % de victoires (plus 13 points d’après tes résultats), sous 40 PV, ou sur un étage rejoué à partir de l’étage 50.'));
   assert.ok(KT.goldRules(poll(fights(100, 70))).some(r => r.includes('sous 32 % de victoires (moins 13 points d’après tes résultats)')));
   const camp = KT.withResults(KT.modeContext(KT.CAMPAIGN, kanto, 'kanto'), fights(100, 30, { k: 'kanto:3' }));
   assert.deepEqual([camp.leaguePenalty, camp.ownPenalty, camp.penalty], [20, 13, 33]);
