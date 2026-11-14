@@ -740,8 +740,7 @@ test('compo suivante : inertie de 30 points dans la même partie', () => {
 test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamais sous le palier ni en tout jouer', () => {
   // Étage 4, aucun niveau visé (NEXT_SHOP).
   const t = twoWindows([[['caterpie', 'pidgey', 'rattata'], 80]]);
-  const base = NEXT_SHOP;
-  const at = (gold, extra = {}) => advise({ ...base, gold, ...extra }, { stats: t });
+  const at = (gold, extra = {}) => advise({ ...NEXT_SHOP, gold, ...extra }, { stats: t });
   // 32 pièces : Abo (2, compo cible) passe avant Chenipan (1) malgré sa place ; Chenipan ferait passer sous 30.
   const a = at(32);
   assert.deepEqual(a.shop.slice(0, 3).map(brief), ['no Ignore', 'no Ignore', 'opt Si l’or']);

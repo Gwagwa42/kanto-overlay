@@ -1984,13 +1984,14 @@ const KT = (() => {
   // centre à l'avant, Ramoloss d'abord, puis les tanks et les autres, enfin les assassins et Grolem ★★★ depuis les bords ;
   // derrière, dans l'ordre de la zone choisie (coin gauche, centre ou coin droit), le porteur d'abord dans les colonnes de cette
   // zone, en évitant la colonne de tout Pokémon déjà posé derrière l'avant. Déjà sur une case de sa première
-  // liste, un Pokémon la garde ; rangée pleine, il passe derrière, puis devant. Mew se place en dernier (placeMimic). dive :
-  // parade aux assassins adverses, qui prime sur la zone du porteur : guard choisit sur une première pose la case du porteur
-  // et celle de l'appât, puis la pose reprend avec ces deux cases en tête de leurs listes ; les autres se placent autour, et
-  // un assassin débordé derrière l'avant y revient quand l'appât libère sa case. Mew n'entre pas dans la parade : sa case suit
-  // celle de son modèle, et porteur, il n'est pas couvert. unit : l'unité possédée (porteur de holdersOf), from : sa cellule,
+  // liste, un Pokémon la garde ; rangée pleine, il passe derrière, puis devant. Mew se place en dernier (placeMimic). Réglages
+  // du joueur : side, la zone du porteur (CARRY_ZONES), et dive, la parade aux assassins adverses, qui prime sur la zone du
+  // porteur : guard choisit sur une première pose la case du porteur et celle de l'appât, puis la pose reprend avec ces deux
+  // cases en tête de leurs listes ; les autres se placent autour, et un assassin débordé derrière l'avant y revient quand
+  // l'appât libère sa case. Mew n'entre pas dans la parade : sa case suit celle de son modèle, et porteur, il n'est pas
+  // couvert. unit : l'unité possédée (porteur de holdersOf), from : sa cellule,
   // 'bench', ou null s'il n'est pas possédé ; bait, guarded : l'appât et le porteur qu'il couvre.
-  function formation(target, game, data, holders, side, dive = false) {
+  function formation(target, game, data, holders, { side, dive = false }) {
     const stars = id => bestStar(game, baseLine(id));
     const kept = new Set([...[...target.core].sort((a, b) => stars(b) - stars(a)), ...target.fillers].slice(0, game.level));
     const units = [...target.core, ...target.fillers].filter(id => kept.has(id)).map(id => {
@@ -2179,7 +2180,7 @@ const KT = (() => {
     const book = target ? recipeBook(data) : null;
     const future = target ? futureLines(stats, data, target, next, holders, profiles, names) : [];
     const items = itemMarks(data, game, holders, book, target, future, names);
-    const units = target ? formation(target, game, data, holders, side, dive) : [];
+    const units = target ? formation(target, game, data, holders, { side, dive }) : [];
     const guarded = units.find(u => u.guarded);
     return {
       game, eco, target, next, names, run,
