@@ -2,12 +2,13 @@
 // Campagne : aventure Kanto aux trois difficultés, autres aventures. Deux fixtures. campana.json, extrait de modes.camp du
 // 31 octobre au 9 novembre 2026 (copie du 10), toutes difficultés mêlées : tous les stops, lines et stars ; par stop, les 20
 // trios d'au moins 20 combats les plus joués ; les holders d'au moins 50 combats. Ses taux ne sont ceux d'aucune difficulté :
-// elle sert à la Tour, au format de l'API, aux poids à statistiques égales et aux porteurs de Mystherbe, dont Lentilscope
-// manque en Légende. campana-dif.json, modes.camp de campana.json, ?dif=1 et ?dif=2 copiés le 14 novembre 2026 (31 octobre
-// au 13 novembre) : tous les stops, lines et stars ; les 20 trios les plus joués (au moins 20 combats) de chaque arrêt de
-// Kanto et de Cramois'Île dans le fichier complet, et les mêmes trios dans les deux autres quand ils y sont ; les 8 objets
-// les plus portés de chaque forme des lignées de ces trios. Elle donne les taux de chaque difficulté, Kanto et Cramois'Île.
-// Parties de test : une vraie sauvegarde Kanto (save-kanto.json), et la même avec l'équipe du scénario S57 au combat 15.
+// elle sert à la Tour, au format de l'API, aux poids à statistiques égales et aux porteurs de Mystherbe (Lentilscope n'est
+// pas parmi les trois meilleurs en Légende). campana-dif.json, modes.camp de campana.json, ?dif=1 et ?dif=2 copiés le
+// 14 novembre 2026 (31 octobre au 13 novembre) : tous les stops, lines et stars ; les 20 trios les plus joués (au moins 20
+// combats) de chaque arrêt de Kanto et de Cramois'Île dans le fichier complet, et les mêmes trios dans les deux autres quand
+// ils y sont ; les 8 objets les plus portés de chaque forme des lignées de ces trios. Elle donne les taux de chaque
+// difficulté, Kanto et Cramois'Île. Parties de test : une vraie sauvegarde Kanto (save-kanto.json), et la même avec l'équipe
+// du scénario S57 au combat 15.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const KT = require('../kanto-overlay.user.js');
@@ -179,8 +180,8 @@ test('compo de campagne : trio des 9 prochains combats de l’aventure, code KT1
 });
 
 test('objets de campagne : Mystherbe, lanceur, ne vise pas Lentilscope et ne reçoit pas la Protéine', () => {
-  // Fixture mêlée : Lentilscope y est parmi les trois objets les plus portés de Mystherbe, et son profil de lanceur l'écarte.
-  // En Légende déduite, Lentilscope n'y est pas : la règle n'aurait rien à écarter.
+  // Fixture mêlée : Lentilscope y est parmi les trois porteurs de Mystherbe de meilleure borne basse, et son profil de lanceur
+  // l'écarte. En Légende déduite, il n'en fait pas partie : la règle n'aurait rien à écarter.
   const top = profile => KT.topHolders(camp, data, 'oddish', profile).map(h => h.id);
   assert.deepEqual(top(null), ['quick-claw', 'choice-specs', 'scope-lens']);
   assert.deepEqual(top(KT.lineProfiles(camp, data).get('oddish')), ['quick-claw', 'choice-specs', 'choice-scarf']);
