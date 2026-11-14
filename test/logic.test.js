@@ -678,6 +678,14 @@ test('compo cible : note statistique sur les seuls combats qui ont des trios not
   assert.equal(KT.coreScore(core, KT.ratedStops(stops, cores), cores, game, data), 30);
 });
 
+test('compo cible : force des lignées sur les seuls combats qui ont des trios notés', () => {
+  // Pierre aux étages 10 et 11, même poids ; trio noté au 10 seulement, 90 % contre 50 % pour le combat.
+  const stats = brockStats([brockCore(['abra', 'onix', 'zubat'])], { stops: [brockStop(10), brockStop(11)] });
+  const { strength } = KT.targetComp(stats, data, readGame(EMPTY10), null);
+  // Écart de 40 points au 10 ; le 11, sans trio noté, ne le divise pas par deux.
+  assert.equal(strength.get('abra'), 40);
+});
+
 test('lignée du trio inconnue des données : ni malus, ni actualisation pour elle, pas d’erreur', () => {
   const core = ['newmon', 'pidgey', 'spearow'];
   const game = readGame({ ...save, round: 1004, level: 9, units: {}, board: {}, bench: [], shop: [] });

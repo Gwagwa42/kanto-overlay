@@ -945,12 +945,13 @@ const KT = (() => {
   }
   const coresAt = (stats, stops) => new Map(stops.map(st => [st.stop, coresIndex(stats.cores).get(st.stop) ?? new Map()]));
 
-  // Force de chaque lignée de base sur une fenêtre de combats : écart, pondéré par la difficulté des combats, entre le taux de
-  // victoire des trios où elle figure (pondéré par leurs combats) et celui du combat. Un combat sans trio pour elle compte zéro.
+  // Force de chaque lignée de base sur les combats notés d'une fenêtre (ratedStops) : écart, pondéré par la difficulté des
+  // combats, entre le taux de victoire des trios où elle figure (pondéré par leurs combats) et celui du combat. Un combat noté
+  // sans trio pour elle compte zéro.
   function lineStrength(coresByStop, stops) {
-    const total = totalWeight(stops);
+    const { stops: rated, total } = ratedStops(stops, coresByStop);
     const strength = new Map();
-    for (const st of stops) {
+    for (const st of rated) {
       const sums = new Map();
       for (const c of coresByStop.get(st.stop).values()) {
         for (const base of new Set(c.core.map(baseLine))) {
