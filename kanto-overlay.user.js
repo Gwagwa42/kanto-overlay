@@ -1080,8 +1080,8 @@ const KT = (() => {
 
   const proofText = (p, names) => (p ? `${p.c.core.map(names.line).join(' · ')} : ${pct(p.c.win)} contre ${bossName(p.st.boss)} ${p.st.floor} (${p.c.n} combats, au moins ${pct(p.c.lo)})` : '');
 
-  // Cartes de la boutique (null pour une case vide) et ce que la compo en attend.
-  function shopCards(game, target, next, data, names) {
+  // Cartes de la boutique (null pour une case vide) et ce que la compo en attend ; ctx : contexte de spend.
+  function shopCards({ game, target, next, data, names }) {
     const wanted = targetBases(target);
     const core = target ? target.core.map(baseLine) : [];
     const later = nextBases(next);
@@ -1188,10 +1188,11 @@ const KT = (() => {
   // compo cible, actualisation (rerollMark), ◆ de la compo suivante. L'or que ni un achat ni une actualisation n'engage va au
   // niveau suivant (spareXp). L'actualisation gratuite de la Boîte Jetons se conseille toujours, après les achats, sans
   // engager d'or. Sans compo cible, seules les 3ᵉ copies sont marquées. short : un ★ a été rétrogradé faute d'or (déclenche
-  // « Vends »).
-  function spend(game, target, next, data, eco, names) {
-    const cards = shopCards(game, target, next, data, names);
-    const shop = { cards, marks: cards.map(() => undefined), game, target, next, data, eco, names };
+  // « Vends »). ctx = { game, target, next, data, eco, names }, construit par advise ; spend y ajoute cards et marks.
+  function spend(ctx) {
+    const { game, target, eco } = ctx;
+    const cards = shopCards(ctx);
+    const shop = { ...ctx, cards, marks: cards.map(() => undefined) };
     const stars = starMarks(shop, game.gold);
     let left = stars.short ? stars.left : freeSlotMarks(shop, stars.left);
     const xp = xpMark(game, eco, left);
@@ -2171,7 +2172,7 @@ const KT = (() => {
     const same = previous?.run === run ? previous : null;
     const target = stats && data ? targetComp(stats, data, game, same) : null;
     const next = target ? nextComp(stats, data, game, target, same) : null;
-    const spent = spend(game, target, next, data, eco, names);
+    const spent = spend({ game, target, next, data, eco, names });
     const choice = offerChoiceMarks(data, game, eco, names);
     const profiles = target ? lineProfiles(stats, data) : null;
     const holders = target ? holdersOf(stats, data, game, target, profiles) : [];
