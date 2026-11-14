@@ -2,12 +2,12 @@
 // Campagne : aventure Kanto aux trois difficultés, autres aventures. Deux fixtures. campana.json, extrait de modes.camp du
 // 31 octobre au 9 novembre 2026 (copie du 10), toutes difficultés mêlées : tous les stops, lines et stars ; par stop, les 20
 // trios d'au moins 20 combats les plus joués ; les holders d'au moins 50 combats. Ses taux ne sont ceux d'aucune difficulté :
-// elle sert à la Tour et aux règles qui ne dépendent pas des taux lus. campana-dif.json, modes.camp de campana.json, ?dif=1
-// et ?dif=2 copiés le 14 novembre 2026 (31 octobre au 13 novembre) : tous les stops, lines et stars ; les 20 trios les plus
-// joués (au moins 20 combats) de chaque arrêt de Kanto et de Cramois'Île dans le fichier complet, et les mêmes trios dans les
-// deux autres quand ils y sont ; les 8 objets les plus portés de chaque forme des lignées de ces trios. Elle donne les taux
-// de chaque difficulté, Kanto et Cramois'Île. Parties de test : une vraie sauvegarde Kanto (save-kanto.json), et la même avec
-// l'équipe du scénario S57 au combat 15.
+// elle sert à la Tour, au format de l'API, aux poids à statistiques égales et aux porteurs de Mystherbe, dont Lentilscope
+// manque en Légende. campana-dif.json, modes.camp de campana.json, ?dif=1 et ?dif=2 copiés le 14 novembre 2026 (31 octobre
+// au 13 novembre) : tous les stops, lines et stars ; les 20 trios les plus joués (au moins 20 combats) de chaque arrêt de
+// Kanto et de Cramois'Île dans le fichier complet, et les mêmes trios dans les deux autres quand ils y sont ; les 8 objets
+// les plus portés de chaque forme des lignées de ces trios. Elle donne les taux de chaque difficulté, Kanto et Cramois'Île.
+// Parties de test : une vraie sauvegarde Kanto (save-kanto.json), et la même avec l'équipe du scénario S57 au combat 15.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const KT = require('../kanto-overlay.user.js');
@@ -185,7 +185,7 @@ test('objets de campagne : Mystherbe, lanceur, ne vise pas Lentilscope et ne re�
   assert.deepEqual(top(null), ['quick-claw', 'choice-specs', 'scope-lens']);
   assert.deepEqual(top(KT.lineProfiles(camp, data).get('oddish')), ['quick-claw', 'choice-specs', 'choice-scarf']);
   // Mystherbe dans le trio des prochains combats, Protéine et Carbone au sac : seul le Carbone va sur lui.
-  const cores = advise(CAMP).target.stops.map(s => ({ stop: s.stop, core: ['oddish', 'geodude', 'abra'], n: 500, win: 90, lo: 85 }));
+  const cores = advise(CAMP, 'kanto', { stats: camp }).target.stops.map(s => ({ stop: s.stop, core: ['oddish', 'geodude', 'abra'], n: 500, win: 90, lo: 85 }));
   const a = advise({ ...CAMP, units: { o: { id: 'o', line: 'oddish', star: 2 } }, board: {}, bench: ['o'], shop: [], items: ['protein', 'carbos'] },
     'kanto', { stats: { ...camp, cores } });
   assert.deepEqual(a.target.core, ['oddish', 'geodude', 'abra']);
@@ -244,7 +244,7 @@ test('règles et en-tête de campagne : difficulté, seuils, combats', () => {
   const weak = Array.from({ length: 100 }, (_, i) => ({ r: 1, k: 'kanto:3:dif', f: 1, p: 50, w: Number(i < 30) }));
   assert.match(open(3, weak), /kt-rate bad">▼ 47,1 %/);
   // Table d'arrêts sans arrêt reconnu (libellés de l'API changés) : dit comme tel, pas « aventure sans statistiques ».
-  const renamed = { ...camp, stops: camp.stops.map(x => ({ ...x, stop: x.stop.replace(':', ':X ') })) };
+  const renamed = { ...LEGEND, stops: LEGEND.stops.map(x => ({ ...x, stop: x.stop.replace(':', ':X ') })) };
   assert.match(KT.headHtml({ ...state(CAMP), stats: { ...LEAGUE_PANEL, camp3: renamed } }), /Aucun combat de Kanto dans les statistiques publiques/);
 });
 
@@ -417,7 +417,7 @@ const freshCanela = (round, extra = {}) => {
   return { ...CANELA, league, round, level: KT.levelGoal(round + 1, mode({ league }, 'canela')), units: {}, board: {}, bench: Array(9).fill(null),
     shop: Array(5).fill(null), items: [], hp: 60, gold: 31, ...extra };
 };
-const legendAt = (round, extra = {}) => advise(freshCanela(round, extra), 'canela', { stats: LEGEND });
+const legendAt = (round, extra = {}) => advise(freshCanela(round, extra), 'canela');
 // Malus d'un trio à trouver sur les combats notés de la compo cible : sa note moins la même sans bonus de possession.
 function scarcity(save, core, stats, extra = {}) {
   const a = advise(save, 'canela', { stats, ...extra });
@@ -443,7 +443,7 @@ test('Cramois’Île en Légende : murs sur les vrais taux, trio des boss 27 à 
 test('Cramois’Île : Pokémon offert par un événement d’ici au boss, jamais rare', () => {
   // Normal, Chef des motards (8) au niveau 5 : Excelangue (coût 3) sort à 13 %, mais le poste de garde (5) l'offre.
   const trio = ['lickitung', 'pidgey', 'spearow'];
-  const at = (round, extra = {}) => scarcity(freshCanela(round, { league: 1, level: 5, ...extra }), trio, DIF.normal);
+  const at = (round, extra = {}) => scarcity(freshCanela(round, { league: 1, level: 5, ...extra }), trio, NORMAL);
   // Au combat 5 : à venir tant que le choix n'est pas fait, que le jeu ait déjà écrit l'événement ou non.
   const pending = { event: { round: 4, kind: 'choice', picked: null } };
   const done = { event: { round: 4, kind: 'choice', picked: 1 } };
@@ -453,7 +453,7 @@ test('Cramois’Île : Pokémon offert par un événement d’ici au boss, jamai
   const m = mode({ league: 1 }, 'canela');
   const both = { ...m, adv: { ...m.adv, events: { ...m.adv.events, 5: [...m.adv.events[5], { name: 'Kabuto', mon: 'kabuto' }] } } };
   const pair = ['lickitung', 'kabuto', 'pidgey'];
-  assert.equal(scarcity(freshCanela(0, { league: 1, level: 5 }), pair, DIF.normal, { mode: both }), -10);
+  assert.equal(scarcity(freshCanela(0, { league: 1, level: 5 }), pair, NORMAL, { mode: both }), -10);
 });
 
 test('Cramois’Île : niveaux visés à la taille des équipes adverses, Kanto inchangé', () => {
