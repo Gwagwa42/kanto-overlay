@@ -21,6 +21,7 @@ const S57 = require('./fixtures/s57.js');
 const camp = modes.camp;
 // Statistiques de chaque difficulté, Légende déduite, comme les lit le panneau (sourcesState).
 const LEAGUES = KT.leagueStats(DIF.all, DIF.normal, DIF.veteran);
+const NORMAL = LEAGUES.camp1;
 const LEGEND = LEAGUES.camp3;
 // Vraie sauvegarde Kanto : Légende, combat 5, relevée le 10 novembre 2026.
 const KANTO = require('./fixtures/save-kanto.json');
@@ -97,30 +98,30 @@ test('combat de campagne = manche + 1 ; statistiques de campagne acceptées', ()
 });
 
 test('arrêts Kanto : ceux de l’aventure, variantes pondérées par leurs combats, champion fixé par gymOrder', () => {
-  const s = KT.nextStops(camp.stops, 15, 3, mode({}));
+  const s = KT.nextStops(NORMAL.stops, 15, 3, mode({}));
   assert.deepEqual(s.map(x => x.stop), ['15:Recluta', '16:Erika', '16:Koga', '16:Sabrina', '17:Médium', '17:Recluta']);
   const gym = s.filter(x => x.floor === 16);
   assert.ok(Math.abs(gym.reduce((t, x) => t + x.share, 0) - 1) < 1e-9);
-  // Erika 54,4 % (100 424 combats), Koga 70,5 % (25 755), Morgane 27,7 % (56 018).
-  assert.equal(gym[0].fightWin.toFixed(2), '48.47');
+  // Erika 52,8 % (75 531 combats), Koga 73,0 % (18 237), Morgane 27,3 % (40 823).
+  assert.equal(gym[0].fightWin.toFixed(2), '47.80');
   // Canela a aussi un combat 2 (Motard) : absent de Kanto.
-  assert.deepEqual(KT.nextStops(camp.stops, 2, 1, mode({})).map(x => x.stop), ['2:Bosque Verde', '2:Pikachu salvaje']);
-  assert.deepEqual(KT.nextStops(camp.stops, 1, 3, mode({}, 'canela')).map(x => x.stop), ['1:Bajada', '2:Motero', '4:Pokémon salvajes']);
+  assert.deepEqual(KT.nextStops(NORMAL.stops, 2, 1, mode({})).map(x => x.stop), ['2:Bosque Verde', '2:Pikachu salvaje']);
+  assert.deepEqual(KT.nextStops(NORMAL.stops, 1, 3, mode({}, 'canela')).map(x => x.stop), ['1:Bajada', '2:Motero', '4:Pokémon salvajes']);
   // Morgane au 4ᵉ badge : le 5ᵉ se joue contre Erika ou Koga, le 6ᵉ contre le dernier.
-  const order = st => KT.nextStops(camp.stops, st, 1, mode({ gymOrder: ['sabrina'] })).map(x => x.boss);
+  const order = st => KT.nextStops(NORMAL.stops, st, 1, mode({ gymOrder: ['sabrina'] })).map(x => x.boss);
   assert.deepEqual([order(16), order(20)], [['Sabrina'], ['Erika', 'Koga']]);
-  assert.deepEqual(KT.nextStops(camp.stops, 24, 1, mode({ gymOrder: ['sabrina', 'koga'] })).map(x => x.boss), ['Erika']);
-  assert.equal(KT.nextStops(camp.stops, 1, 3, mode({}, 'safari')).length, 0);
+  assert.deepEqual(KT.nextStops(NORMAL.stops, 24, 1, mode({ gymOrder: ['sabrina', 'koga'] })).map(x => x.boss), ['Erika']);
+  assert.equal(KT.nextStops(NORMAL.stops, 1, 3, mode({}, 'safari')).length, 0);
 });
 
 test('prochain boss de campagne : badges, Ligue et Mewtwo ; champion le plus joué tant qu’il n’est pas choisi', () => {
-  assert.equal(KT.nextBossStop(camp.stops, 13, mode({})).stop, '16:Erika');
-  assert.equal(KT.nextBossStop(camp.stops, 13, mode({ gymOrder: ['sabrina'] })).stop, '16:Sabrina');
-  assert.equal(KT.nextBossStop(camp.stops, 29, mode({})).stop, '33:Lorelei');
-  assert.equal(KT.lastBossFloor(camp.stops, mode({})), 38);
+  assert.equal(KT.nextBossStop(NORMAL.stops, 13, mode({})).stop, '16:Erika');
+  assert.equal(KT.nextBossStop(NORMAL.stops, 13, mode({ gymOrder: ['sabrina'] })).stop, '16:Sabrina');
+  assert.equal(KT.nextBossStop(NORMAL.stops, 29, mode({})).stop, '33:Lorelei');
+  assert.equal(KT.lastBossFloor(NORMAL.stops, mode({})), 38);
   // Cramois'Île : boss du jeu (manches boss:) ; sans table d'arrêts, aucun.
-  assert.equal(KT.nextBossStop(camp.stops, 5, mode({}, 'canela')).stop, '8:Jefe de los moteros');
-  assert.equal(KT.lastBossFloor(camp.stops, mode({}, 'safari')), -Infinity);
+  assert.equal(KT.nextBossStop(NORMAL.stops, 5, mode({}, 'canela')).stop, '8:Jefe de los moteros');
+  assert.equal(KT.lastBossFloor(NORMAL.stops, mode({}, 'safari')), -Infinity);
 });
 
 test('difficulté : poids et « tout jouer » sur le taux de la difficulté lue, sans points retirés', () => {
