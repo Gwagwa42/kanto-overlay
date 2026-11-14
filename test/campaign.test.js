@@ -327,11 +327,12 @@ test('Cramois’Île, événements à Pokémon : trio de la compo cible, puis le
   const units = { ...CANELA.units, k: { id: 'k', line: 'kabuto', star: 2 }, o1: { id: 'o1', line: 'omanyte', star: 1 }, o2: { id: 'o2', line: 'omanyte', star: 1 } };
   const both = { ...lab, units, bench: ['b', 'c', 'e', 'k', 'o1', 'o2', null, null, null] };
   assert.deepEqual(eventPicks(both, [['kabuto', 'omanyte', 'vulpix'], 95, 90]), ['Prends Fossile Nautile : Amonita, du trio de la compo cible : 2 exemplaires', null]);
-  // Troisième carte, seule du trio : chaque critère lit toutes les cartes, pas seulement les deux premières.
+  // Troisième carte : le premier critère lit les trois cartes ; une carte qu'il écarte ne revient pas aux suivants.
   const labMode = mode(lab, 'canela');
   const amber = { ...labMode, adv: { ...labMode.adv, events: { ...labMode.adv.events, 23: [...labMode.adv.events[23], { name: 'Vieil Ambre', mon: 'aerodactyl' }] } } };
-  assert.deepEqual(advise(lab, 'canela', { mode: amber, stats: coresOn(lab, [['aerodactyl', 'growlithe', 'vulpix'], 95, 90]) }).event.map(x => x && x.why),
-    [null, null, 'Ptéra, du trio de la compo cible']);
+  const amberWhy = (save, core) => advise(save, 'canela', { mode: amber, stats: coresOn(save, [core, 95, 90]) }).event.map(x => x && x.why);
+  assert.deepEqual(amberWhy(lab, ['aerodactyl', 'growlithe', 'vulpix']), [null, null, 'Ptéra, du trio de la compo cible']);
+  assert.deepEqual(amberWhy(both, ['kabuto', 'omanyte', 'vulpix']), ['Amonita, du trio de la compo cible : 2 exemplaires', null, null]);
   // Poste de garde : ni Excelangue ni Canarticho dans un trio, Canarticho donne 2 XP.
   assert.deepEqual(eventPicks(choiceAt(4), KABUTO), [null, 'Prends Canarticho : même force, +2 XP']);
   // Excelangue dans le trio des combats d'après la compo cible : la compo suivante.

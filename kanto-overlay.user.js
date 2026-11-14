@@ -1055,8 +1055,8 @@ const KT = (() => {
       ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
     if (!best) return null;
     const strength = lineStrength(coresByStop, stops);
-    // Variantes notées du prochain combat (champions possibles d'une manche, ratedStops), pondérées par leur part. Sans trio
-    // d'au moins MIN_FIGHTS combats sur ce combat, la carte est vide : rien ne change.
+    // Variantes notées du prochain combat (champions possibles d'une manche, ratedStops), pondérées par leur part et leur
+    // difficulté. Sans trio d'au moins MIN_FIGHTS combats sur ce combat, la carte est vide : rien ne change.
     const nextFight = lineStrength(coresByStop, stops.filter(st => st.floor === stops[0].floor));
     const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), { strength, nextFight, previous: previous?.fillers ?? [] });
     if (!best.core.length && !fillers.length) return null;
