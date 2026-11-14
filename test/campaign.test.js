@@ -2,12 +2,13 @@
 // Campagne : aventure Kanto aux trois difficultés, autres aventures. Deux fixtures. campana.json, extrait de modes.camp du
 // 31 octobre au 9 novembre 2026 (copie du 10), toutes difficultés mêlées : tous les stops, lines et stars ; par stop, les 20
 // trios d'au moins 20 combats les plus joués ; les holders d'au moins 50 combats. Elle sert à la Tour, aux règles qui ne
-// dépendent pas des taux et aux tests de Cramois'Île en Normal (CANELA). campana-dif.json, modes.camp de campana.json, ?dif=1
-// et ?dif=2 copiés le 14 novembre 2026 (31 octobre au 13 novembre) : tous les stops, lines et stars ; les 20 trios les plus
-// joués (au moins 20 combats) de chaque arrêt de Kanto et de Cramois'Île dans le fichier complet, et les mêmes trios dans les
-// deux autres quand ils y sont ; les 8 objets les plus portés de chaque forme des lignées de ces trios. Elle donne les taux de
-// chaque difficulté de Kanto, et ceux de Cramois'Île en Légende et de son poste de garde en Normal. Parties de test : une
-// vraie sauvegarde Kanto (save-kanto.json), et la même avec l'équipe du scénario S57 au combat 15.
+// dépendent pas de la difficulté et aux tests de Cramois'Île en Normal (CANELA). campana-dif.json, modes.camp de
+// campana.json, ?dif=1 et ?dif=2 copiés le 14 novembre 2026 (31 octobre au 13 novembre) : tous les stops, lines et stars ;
+// les 20 trios les plus joués (au moins 20 combats) de chaque arrêt de Kanto et de Cramois'Île dans le fichier complet, et
+// les mêmes trios dans les deux autres quand ils y sont ; les 8 objets les plus portés de chaque forme des lignées de ces
+// trios. Elle donne les taux de chaque difficulté de Kanto, ceux de Cramois'Île en Légende et, en Normal, ceux du test du
+// poste de garde. Parties de test : une vraie sauvegarde Kanto (save-kanto.json), et la même avec l'équipe du scénario S57
+// au combat 15.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const KT = require('../kanto-overlay.user.js');
@@ -31,8 +32,8 @@ const mode = (save, adventure = 'kanto') => KT.modeContext(KT.CAMPAIGN, save, ad
 const advise = (save, adventure = 'kanto', extra = {}) => adviseOn(save, { stats: camp, mode: mode(save, adventure), ...extra });
 // Conseils d'une partie de Kanto sur les statistiques de sa difficulté.
 const adviseKanto = (save, extra = {}) => advise(save, 'kanto', { stats: LEAGUES[mode(save).stats], ...extra });
-// État du panneau dont chaque difficulté lit les mêmes statistiques (mêlées par défaut) : les tests de Kanto qui les emploient
-// comparent les règles entre elles, ceux de Cramois'Île en Normal y lisent les taux de Normal.
+// État du panneau dont chaque difficulté lit les mêmes statistiques (mêlées par défaut), pour les tests où la difficulté ne
+// change rien ; ceux de Cramois'Île en Normal y lisent les taux de Normal.
 const panelStats = (c = camp) => ({ torre: modes.torre, camp1: c, camp2: c, camp3: c });
 // État du panneau chargé : chaque difficulté lit les siennes.
 const LEAGUE_PANEL = { torre: modes.torre, ...LEAGUES };
