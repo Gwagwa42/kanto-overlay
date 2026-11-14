@@ -294,6 +294,9 @@ test('Cramois’Île : boss du jeu, Artikodin perdable ; tout jouer seulement su
   assert.match(head(23), /Combat 24 \(Voleur, 18,9 %\) : perdable sans rejouer, garde le palier\./);
   assert.equal(advise(canela(29), 'canela').eco.allIn, true);
   assert.match(head(28), /Combat 30 \(Le fossile s’éveille, 25,1 %\) : tout jouer\./);
+  // En Légende (sous 65 %), le Rival (27, 56 %) passe devant le Voleur perdable, plus proche.
+  const legend = advise(canela(23, { league: 3 }), 'canela').eco;
+  assert.deepEqual([legend.allIn, legend.nextWall.floor], [false, 27]);
 });
 
 test('Cramois’Île : niveaux visés à la taille des équipes adverses, Kanto inchangé', () => {
@@ -319,9 +322,19 @@ test('Cramois’Île, événements à Pokémon : trio de la compo cible, puis le
   assert.match(KT.summaryHtml({ advice: fossil }), /<span class="t" title="Prends Fossile Dôme">/);
   // Amonita, hors du trio retenu, figure dans un trio plus gagnant que ses combats : plus forte que Kabuto, sans trio.
   assert.deepEqual(eventPicks(lab, [['growlithe', 'vulpix', 'ponyta'], 95, 90], [['omanyte', 'abra', 'oddish'], 99, 40]),
-    ['Prends Fossile Hélix : Amonita, plus fort que Kabuto (combats 24–30)', null]);
+    ['Prends Fossile Nautile : Amonita, plus fort que Kabuto (combats 24–30)', null]);
+  // Les deux fossiles dans le trio : Kabuto ★★ tient 3 exemplaires, deux Amonita ★ en tiennent 2.
+  const units = { ...CANELA.units, k: { id: 'k', line: 'kabuto', star: 2 }, o1: { id: 'o1', line: 'omanyte', star: 1 }, o2: { id: 'o2', line: 'omanyte', star: 1 } };
+  const both = { ...lab, units, bench: ['b', 'c', 'e', 'k', 'o1', 'o2', null, null, null] };
+  assert.deepEqual(eventPicks(both, [['kabuto', 'omanyte', 'vulpix'], 95, 90]), ['Prends Fossile Nautile : Amonita, du trio de la compo cible : 2 copies', null]);
   // Poste de garde : ni Excelangue ni Canarticho dans un trio, Canarticho donne 2 XP.
   assert.deepEqual(eventPicks(choiceAt(4), KABUTO), [null, 'Prends Canarticho : même force, +2 XP']);
+  // Excelangue dans le trio des combats d'après la compo cible : la compo suivante.
+  const guard = choiceAt(4);
+  const m = mode(guard, 'canela');
+  const later = KT.nextStops(camp.stops, 5, m.horizon, m, m.horizon).map(s => ({ stop: s.stop, core: ['lickitung', 'abra', 'oddish'], n: 500, win: 95, lo: 90 }));
+  const stats = coresOn(guard, KABUTO);
+  assert.deepEqual(advise(guard, 'canela', { stats: { ...stats, cores: [...stats.cores, ...later] } }).event.map(x => x && x.why), ['Excelangue, du trio de la compo suivante', null]);
 });
 
 test('Cramois’Île, XP contre PV et centre : seuil de PV, plafond de niveau, carte grisée jamais conseillée', () => {
@@ -336,6 +349,8 @@ test('Cramois’Île, XP contre PV et centre : seuil de PV, plafond de niveau, c
   assert.deepEqual(eventPicks(centerAt('care', { hp: 30, gold: 3 })), ['Prends Repos : Soins : 6 pièces, tu en as 3', null]);
   assert.deepEqual(eventPicks(centerAt('care')), ['Prends Repos : PV 60, pas sous le seuil de 40 : garde tes pièces', null]);
   assert.deepEqual(eventPicks(centerAt('top', { hp: 98 })), [null, 'Prends Entraînement : +8 XP ; PV 98 → 90, seuil 40']);
+  // L'entraînement n'est jamais grisé : refusé au seuil de PV, sans « il faut plus de ».
+  assert.deepEqual(eventPicks(centerAt('top', { hp: 6 })), ['Prends Repos : Entraînement : PV 6 → 1, sous le seuil de 40', null]);
   assert.deepEqual(eventPicks(centerAt('full', { hp: 100, level: 9 })), [null, 'Prends Pourboire : niveau 9 atteint : l’XP ne sert plus']);
 });
 

@@ -46,7 +46,7 @@ const STATES = {
   campagne: { save: CAMP, key: SAVE_KANTO, api: 'ok', tip: true },
   'campagne-compo': { save: CAMP, key: SAVE_KANTO, api: 'ok', ui: { tab: 'compo' } },
   'campagne-regles': { save: CAMP, key: SAVE_KANTO, api: 'ok', ui: { tab: 'rules' } },
-  'canela-event': { save: CANELA_EVENT, key: 'kanto-tactics-save-adv-canela', api: 'ok', tip: true, cards: ['Fossile Hélix', 'Fossile Dôme'] },
+  'canela-event': { save: CANELA_EVENT, key: 'kanto-tactics-save-adv-canela', api: 'ok', tip: true, cards: ['Fossile Nautile', 'Fossile Dôme'] },
   'aventure-sans-stats': { save: { ...CAMP, league: 1, gymOrder: [] }, key: 'kanto-tactics-save-adv-safari', api: 'ok', ui: { tab: 'compo' } },
   // Leveinard et Lokhlass, de la compo suivante, en boutique : avec des places libres, ce sont des compléments de la compo cible
   // (★ « place libre »). Sans place libre, les cartes de la compo suivante y deviennent des cartes plus fortes de la compo cible :
@@ -139,7 +139,8 @@ const STYLE = `body{margin:0;min-height:100vh;background:#2b3a2a;color:#eef1ff;f
 .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.card{width:100%;height:96px;border:0;border-radius:8px;background:#dfe2ee;color:#1b2448;display:grid;align-content:end;justify-items:start;padding:8px;font:700 12px system-ui}
 .modals{position:absolute;inset:0;background:rgb(0 0 0/.6);display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center;padding:0 380px 0 24px}
 .modal{background:#232c55;border-radius:12px;padding:32px 16px 16px}.ir-cards,.ev-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.ir-card,.ev-card{height:120px;border:0;border-radius:10px;background:#3a3f8c;color:#eef1ff;font:700 14px system-ui}`;
+.ir-card,.ev-card{height:120px;border:0;border-radius:10px;background:#3a3f8c;color:#eef1ff;font:700 14px system-ui}
+.modals>.evround:only-child{grid-column:1/-1}.evround:not(.tboon) .ev-cards{grid-template-columns:repeat(2,1fr)}`;
 
 // Page « panneau seul » : le gabarit du script rempli comme le ferait render, dans un Shadow DOM déclaratif, sans le script ni
 // les données (quelques dizaines de Ko) : render-html.sh la rend telle quelle. Les pastilles, posées sur le jeu, n'y sont pas ; le

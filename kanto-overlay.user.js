@@ -215,13 +215,13 @@ const KT = (() => {
       // Niveau égal à la taille de l'équipe adverse (route-*.js : 4 unités au combat 6, 5 au 8, 6 au 14, 8 au 24) ; 7 dès
       // Artikodin pour étaler l'achat avant le saut du combat 24. Aucun 9 : aucune équipe n'en aligne autant.
       levelGoals: [[6, 4], [8, 5], [14, 6], [19, 7], [24, 8]],
-      // Événements choice de route-*.js (Is) : coût en PV (hpCost), en pièces (goldCost), XP gagnée, Pokémon reçu (mon) ;
-      // detail : ligne de preuve de la bulle.
+      // Événements choice de route-*.js (Is) : coût en PV (hpCost, carte grisée à ces PV ou moins), en pièces (goldCost),
+      // XP gagnée, Pokémon reçu (mon) ; detail : ligne de preuve de la bulle.
       events: {
         5: [{ name: 'Excelangue', mon: 'lickitung' }, { name: 'Canarticho', mon: 'farfetchd', xp: 2 }],
         13: [{ name: 'Traverser maintenant', xp: 4, hpCost: 6 },
           { name: 'Attendre la marée basse', goldCost: 4, detail: 'Marée basse : pas de pluie aux combats 14 et 16.' }],
-        23: [{ name: 'Fossile Hélix', mon: 'omanyte', detail: 'L’autre fossile se réveille au combat 30 : Kabutops ★3.' },
+        23: [{ name: 'Fossile Nautile', mon: 'omanyte', detail: 'L’autre fossile se réveille au combat 30 : Kabutops ★3.' },
           { name: 'Fossile Dôme', mon: 'kabuto', detail: 'L’autre fossile se réveille au combat 30 : Amonistar ★3.' }],
         26: [{ name: 'Lire le journal', xp: 6, hpCost: 5 }, { name: 'Emporter le carnet' }],
       },
@@ -458,7 +458,7 @@ const KT = (() => {
     const odds = base => shopOdds(data, level, base) / 100;
     // Exemplaires restants de chaque lignée possédée.
     const owned = new Map([...new Set(game.units.map(u => baseLine(u.line)))].map(base => [base, bestStar(game, base) >= 3 ? 0
-      : SHOP_COPIES[cost(base) - 1] - unitsOf(game, base).reduce((sum, u) => sum + 3 ** (u.star - 1), 0)]));
+      : SHOP_COPIES[cost(base) - 1] - shopCopies(game, base)]));
     const left = base => owned.get(base) ?? SHOP_COPIES[cost(base) - 1];
     const sold = base => !game.mode.shopOut.includes(base);
     const pool = c => game.mode.shopLines[c - 1] * SHOP_COPIES[c - 1]
@@ -712,6 +712,8 @@ const KT = (() => {
   }
 
   const unitsOf = (game, base) => game.units.filter(u => baseLine(u.line) === base);
+  // Exemplaires de la boutique que tiennent tes unités d'une lignée : 3 par ★★, 9 par ★★★.
+  const shopCopies = (game, base) => unitsOf(game, base).reduce((sum, u) => sum + 3 ** (u.star - 1), 0);
   // Copie posée en premier d'une lignée : meilleure étoile, shiny, la plus équipée, déjà posée, puis la forme, pour un ordre
   // qui ne dépend pas de la place des copies dans la sauvegarde.
   const fieldOrder = (x, y) => y.star - x.star || Number(!!y.shiny) - Number(!!x.shiny) || (y.items?.length ?? 0) - (x.items?.length ?? 0)
@@ -731,7 +733,7 @@ const KT = (() => {
 
   // « Tout jouer » : le combat courant est un mur à gagner (mustWin ; taux de la manche sous hardWin plus la pénalité du mode :
   // difficulté et résultats du joueur), les PV sont sous lowHp, ou le combat est rejoué (retryFrom du mode). nextWall : premier
-  // mur des combats à venir, à gagner ou non.
+  // mur à gagner des combats à venir, sinon premier mur perdable.
   function economy(game, stops) {
     const { mode } = game;
     const here = stops.find(s => s.floor === game.floor);
@@ -740,7 +742,8 @@ const KT = (() => {
     const lowHp = game.hp < mode.lowHp;
     const retry = game.attempts > 0 && game.floor >= mode.retryFrom;
     const allIn = lowHp || retry || (here !== undefined && here.fightWin < hard && mustWin(here, mode));
-    const nextWall = stops.find(s => s.fightWin < hard) ?? null;
+    const walls = stops.filter(s => s.fightWin < hard);
+    const nextWall = walls.find(s => mustWin(s, mode)) ?? walls[0] ?? null;
     return { gold: game.gold, floor, spend: allIn ? game.gold : Math.max(0, game.gold - floor), allIn, lowHp, retry, nextWall };
   }
 
@@ -1773,8 +1776,9 @@ const KT = (() => {
   }
 
   // Cartes du centre Pokémon selon center (zh de route-*.js) : soins à 6 pièces, grisés en dessous ; entraînement +8 XP pour
-  // 8 PV. Les PV rendus changent selon le mode (Lh) ; la règle n'en dépend pas.
-  const TRAIN = { name: 'Entraînement', xp: 8, hpCost: 8 };
+  // 8 PV (hpLoss : jamais grisé, le jeu laisse 1 PV au moins). Les PV rendus changent selon le mode (Lh) ; la règle n'en
+  // dépend pas.
+  const TRAIN = { name: 'Entraînement', xp: 8, hpLoss: 8 };
   const CENTER = {
     care: [{ name: 'Repos' }, { name: 'Soins', goldCost: 6 }],
     top: [{ name: 'Repos' }, TRAIN],
@@ -1787,11 +1791,11 @@ const KT = (() => {
   function monChoice(game, options, target, next, names) {
     const core = comp => (comp ? comp.core.map(baseLine) : []);
     const name = o => names.line(o.mon);
-    const copies = o => unitsOf(game, o.mon).length;
+    const held = o => shopCopies(game, o.mon);
     const other = o => options.find(x => x !== o);
     const tests = [
       [o => Number(core(target).includes(o.mon)), o => `${name(o)}, du trio de la compo cible`],
-      [o => (core(target).includes(o.mon) ? -copies(o) : 0), o => `${name(o)}, du trio de la compo cible : ${copies(o)} copie${copies(o) > 1 ? 's' : ''}`],
+      [o => (core(target).includes(o.mon) ? -held(o) : 0), o => `${name(o)}, du trio de la compo cible : ${held(o)} copie${held(o) > 1 ? 's' : ''}`],
       [o => Number(core(next).includes(o.mon)), o => `${name(o)}, du trio de la compo suivante`],
       [o => target?.strength.get(o.mon) ?? 0, o => `${name(o)}, plus fort ${elide(name(other(o)))} (${floorRange(target.stops, game.mode)})`],
       [o => o.xp ?? 0, o => `même force, +${o.xp} XP`],
@@ -1810,7 +1814,7 @@ const KT = (() => {
   function xpChoice(game, xp, rest) {
     const { lowHp } = game.mode;
     const cap = maxLevel(game.floor, game.mode);
-    const after = game.hp - xp.hpCost;
+    const after = Math.max(1, game.hp - (xp.hpCost ?? xp.hpLoss));
     if (game.level >= cap) return { o: rest, why: `niveau ${cap} atteint : l’XP ne sert plus` };
     if (game.hp <= xp.hpCost) return { o: rest, why: `${xp.name} : il faut plus de ${xp.hpCost} PV, tu en as ${game.hp}` };
     if (after < lowHp) return { o: rest, why: `${xp.name} : PV ${game.hp} → ${after}, sous le seuil de ${lowHp}` };
@@ -2495,7 +2499,7 @@ const TARGETS = {
   reroll: { sel: 'button.btn-roll', modal: false },
   reward: { sel: '.modal.itemreward .ir-card', modal: true },
   offer: { sel: '.modal.tboon .ev-card', modal: true },
-  event: { sel: '.modal.evround .ev-card', modal: true },
+  event: { sel: '.modal.evround:not(.tboon) .ev-card', modal: true },
 };
 const COMPACT_BELOW = 64;
 // Demi-largeur de la bulle (240 px) : en deçà du bord, elle s'aligne sur la pastille.
