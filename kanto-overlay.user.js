@@ -905,12 +905,13 @@ const KT = (() => {
     return Boolean(two && three) && three.hi - three.exp < two.lo - two.exp;
   }
 
-  // Combats d'une fenêtre qui ont des trios notés, leur poids total et les trios de la fenêtre (cores, de coresAt). Seuls ces
-  // combats entrent dans les moyennes de coreScore et de lineStrength : un combat sans statistiques, manche peu jouée de
-  // campagne, les tirerait vers zéro (dans coreScore, les bonus de possession l'emporteraient alors).
+  // Combats d'une fenêtre qui ont des trios notés, leur poids total et leurs trios (cores, tirés de coresAt) : bestCore prend
+  // ses candidats dans cores, qui ne doit donc couvrir que ces combats. Seuls eux entrent dans les moyennes de coreScore et
+  // de lineStrength : un combat sans statistiques, manche peu jouée de campagne, les tirerait vers zéro (dans coreScore, les
+  // bonus de possession l'emporteraient alors).
   function ratedStops(stops, cores) {
     const rated = stops.filter(st => cores.get(st.stop)?.size);
-    return { stops: rated, total: totalWeight(rated), cores };
+    return { stops: rated, total: totalWeight(rated), cores: new Map(rated.map(st => [st.stop, cores.get(st.stop)])) };
   }
 
   // Note d'un trio : borne basse de son taux, en moyenne pondérée par la difficulté sur les combats notés (rated, de
@@ -1798,24 +1799,26 @@ const KT = (() => {
   // Pokémon offert : la lignée du trio de la compo cible dont tu tiens le moins d’exemplaires (shopCopies), puis celle du trio de la compo suivante,
   // puis la plus forte sur les combats de la compo cible (lineStrength) ; à égalité, celle qui donne de l'XP. Chaque critère
   // garde les meilleures des options restantes ; la première seule en tête est conseillée, avec le motif de ce critère
-  // (rivals : les options qu'elle devance) ; null si les critères n'en séparent aucune, ou s'il n'y a qu'une option.
+  // (rivals : les options qu'elle devance) ; null si les critères n'en séparent aucune. Une option seule gagnerait d'office
+  // chaque critère, avec un motif faux : elle n'est conseillée que par un critère d'appartenance à un trio (alone), qui ne la
+  // compare à rien.
   function monChoice(game, options, target, next, names) {
     const core = comp => (comp ? comp.core.map(baseLine) : []);
     const name = o => names.line(o.mon);
     const held = o => shopCopies(game, o.mon);
     const tests = [
-      [o => Number(core(target).includes(o.mon)), o => `${name(o)}, du trio de la compo cible`],
+      [o => Number(core(target).includes(o.mon)), o => `${name(o)}, du trio de la compo cible`, true],
       [o => (core(target).includes(o.mon) ? -held(o) : 0), o => `${name(o)}, du trio de la compo cible : ${held(o)} exemplaire${held(o) > 1 ? 's' : ''}`],
-      [o => Number(core(next).includes(o.mon)), o => `${name(o)}, du trio de la compo suivante`],
+      [o => Number(core(next).includes(o.mon)), o => `${name(o)}, du trio de la compo suivante`, true],
       [o => target?.strength.get(o.mon) ?? 0, (o, rivals) => `${name(o)}, plus fort ${elide(rivals.map(name).join(', '))} (${floorRange(target.stops, game.mode)})`],
       [o => o.xp ?? 0, o => `même force, +${o.xp} XP`],
     ];
     let left = options;
-    for (const [score, why] of tests) {
+    for (const [score, why, alone] of tests) {
       const scores = left.map(score);
       const top = Math.max(...scores);
       const best = left.filter((_, i) => scores[i] === top);
-      if (best.length === 1 && left.length > 1) return { o: best[0], why: why(best[0], left.filter(o => o !== best[0])) };
+      if (best.length === 1 && (left.length > 1 || (alone && top > 0))) return { o: best[0], why: why(best[0], left.filter(o => o !== best[0])) };
       left = best;
     }
     return null;
@@ -1834,7 +1837,8 @@ const KT = (() => {
 
   // Événements à choix de l'aventure (events) et centres Pokémon : une carte conseillée, jamais une carte que le jeu grise
   // (pièces sous goldCost, PV au plus hpCost). Seulement dans une aventure qui décrit ses événements : les cartes du centre
-  // y sont relevées, pas ailleurs. Dans un événement à Pokémon, seules les cartes qui en donnent un se comparent (monChoice).
+  // y sont relevées, pas ailleurs. Dans un événement à Pokémon, seules les cartes qui en donnent un se comparent (monChoice) :
+  // une carte sans Pokémon n'y est conseillée qu'en repli d'une carte grisée.
   function eventMarks(game, target, next, names) {
     const { event, mode } = game;
     if (!event || !mode.adv?.events) return [];
