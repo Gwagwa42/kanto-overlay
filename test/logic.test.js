@@ -193,7 +193,7 @@ test('stratégie : tout jouer prudent ou audacieux', () => {
   assert.deepEqual([eco('normal', 1056, 35).allIn, eco('bold', 1056, 35).allIn], [true, false]);
   // Électhor (étage 60, 40,8 %) : sous 45, pas sous 40.
   assert.deepEqual([eco('normal', 1059, 62).allIn, eco('bold', 1059, 62).allIn], [true, false]);
-  assert.ok(KT.goldRules(strategy({ allIn: 'careful' })).includes('Tout jouer sur un combat sous 50 % de victoires, sous 50 PV, ou sur un étage rejoué à partir de l’étage 50.'));
+  assert.ok(KT.goldRules(strategy({ allIn: 'careful' })).includes('Tout jouer sur un étage sous 50 % de victoires, sous 50 PV, ou sur un étage rejoué à partir de l’étage 50.'));
   const head = headHtml({ advice: advise({ ...S57, hp: 45 }, { mode: strategy({ allIn: 'careful' }) }), stats: { torre }, mode: strategy({ allIn: 'careful' }), floor: 57 });
   assert.match(head, /Tout jouer : PV sous 50./);
   const camp = strategy({ allIn: 'bold' }, KT.modeContext(KT.CAMPAIGN, { league: 3 }, 'kanto'));
@@ -667,6 +667,15 @@ test('actualiser : lignée introuvable à ce niveau → XP ; fusion à une copie
   const late9 = high(9, strategy({ pace: 'late' }));
   assert.deepEqual([late9.reroll, brief(late9.xp)], [null, 'do Monte']);
   assert.equal(why(high(10).reroll), 'do Actualise : cherche Onix, Kabuto, Rhinocorne, Rattata : 38 % par actualisation au niveau 10');
+});
+
+test('compo cible : note statistique sur les seuls combats qui ont des trios notés', () => {
+  const game = readGame({ ...save, round: 1004, level: 9, units: {}, board: {}, bench: [], shop: [] });
+  const core = ['newa', 'newb', 'newc'];
+  const stops = [{ stop: '5:a', weight: 30 }, { stop: '6:b', weight: 70 }, { stop: '7:c', weight: 50 }];
+  const cores = new Map([['5:a', new Map([[KT.coreKey(core), { lo: 80 }]])], ['6:b', new Map()], ['7:c', new Map([['x', { lo: 50 }]])]]);
+  // (30 × 80 + 50 × 0) / (30 + 50) : le combat 6, sans trio noté, ne dilue pas la note ; le 7, où le trio n'est pas noté, oui.
+  assert.equal(KT.coreScore(core, stops, cores, game, data), 30);
 });
 
 test('lignée du trio inconnue des données : ni malus, ni actualisation pour elle, pas d’erreur', () => {
@@ -1623,7 +1632,7 @@ test('tranches et règles d’or corrigées', () => {
   assert.ok(KT.goldRules(KT.TOWER_MODE).some(r => r.includes('+3 au plus') && r.includes('30 pièces')));
   assert.ok(KT.goldRules(KT.TOWER_MODE).every(r => !r.includes('+5')));
   assert.ok(KT.goldRules(KT.TOWER_MODE).some(r => r.includes('XP jusqu’au niveau visé (5 dès l’étage 5, 6 dès l’étage 11, 7 dès l’étage 21, 8 dès l’étage 29, 9 dès l’étage 44, 10 dès l’étage 60)')));
-  assert.ok(KT.goldRules(KT.TOWER_MODE).some(r => r === 'Tout jouer sur un combat sous 45 % de victoires, sous 40 PV, ou sur un étage rejoué à partir de l’étage 50.'));
+  assert.ok(KT.goldRules(KT.TOWER_MODE).some(r => r === 'Tout jouer sur un étage sous 45 % de victoires, sous 40 PV, ou sur un étage rejoué à partir de l’étage 50.'));
 });
 
 test('en-tête du panneau : raison du tout jouer', () => {

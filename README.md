@@ -44,7 +44,8 @@ barre le remet en haut à droite.
 Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change quatre ([Stratégie](#stratégie)).
 
 - **Compo cible** : parmi les trios d'au moins 20 combats des 9 prochains combats (élites comprises, environ 20 étages), celui dont la
-  borne basse du taux de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat, avec un bonus pour
+  borne basse du taux de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat qui a des trios
+  notés (un combat sans trio, manche peu jouée de campagne, ne compte pas), avec un bonus pour
   les Pokémon que tu possèdes déjà et un malus de 10 points par Pokémon à trouver dont le coût sort à moins de 15 % en boutique à ton
   niveau. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
   Le reste du plateau est rempli par tes unités les mieux notées, puis par la boutique pour les places restantes (★ « place libre »).
@@ -207,8 +208,8 @@ Changer un préréglage recalcule tout de suite les conseils et les règles d'or
 
 | Réglage | Valeurs | Effet |
 | --- | --- | --- |
-| Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 4, 6 dès 8, 7 dès 16, 8 dès 22, 9 dès 33, 10 dès 60 ; plus tard : 6, 14, 26, 36, 55, 75. Campagne plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38, sous la taille des équipes des champions (8 au 6ᵉ badge, 9 contre Mewtwo). Le niveau maximal ne change pas : le niveau 10 n'est jamais visé avant l'étage 60 en Tour. |
-| Tout jouer | Prudent, Normal, Audacieux | Combat sous 50, 45 ou 40 % de victoires (plus la pénalité de difficulté en campagne et l'écart appris sur [tes résultats](#tes-résultats)), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
+| Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 4, 6 dès 8, 7 dès 16, 8 dès 22, 9 dès 33, 10 dès 60 ; plus tard : 6, 14, 26, 36, 55, 75. Kanto plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38, sous la taille des équipes des champions (8 au 6ᵉ badge, 9 contre Mewtwo). Cap sur Cramois'Île plus tôt : 5, 6, 11, 14, 18 ; plus tard : 8, 10, 18, 24, 30. Le niveau maximal ne change pas : le niveau 10 n'est jamais visé avant l'étage 60 en Tour. |
+| Tout jouer | Prudent, Normal, Audacieux | Étage, ou boss à gagner en campagne, sous 50, 45 ou 40 % de victoires (plus la pénalité de difficulté en campagne et l'écart appris sur [tes résultats](#tes-résultats)), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
 | Compo cible | Réactive, Normale, Stable | Combats vus d'avance (6, 9 ou 12, la compo suivante sur autant d'après) et gain minimal pour changer de trio (15, 30 ou 45 points). |
 | Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver introuvable à ton niveau (autant). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
 
@@ -251,12 +252,27 @@ Mêmes conseils qu'en Tour, sur les combats de l'aventure en cours, avec les rè
   panneau garde les combats de la tienne (table relevée dans le jeu pour Kanto, Cap sur Cramois'Île et « Je te choisis ! »). Une
   manche aux variantes tirées au sort (combat 11 : Marin, Gentleman ou Pêcheur) compte chacune selon sa part des combats. Aux
   4ᵉ, 5ᵉ et 6ᵉ badges, le champion est celui que tu as choisi (`gymOrder`), sinon un de ceux qui restent.
-- **Boss** (Kanto) : les 8 badges, le Conseil 4, le Maître de la Ligue et Mewtwo ; dans les autres aventures, chaque combat.
+- **Boss** : ceux du jeu. Kanto : les 8 badges, le Conseil 4, le Maître de la Ligue et Mewtwo ; Cap sur Cramois'Île : Chef des
+  motards (8), Artikodin (19), Rival (27), Sous-sol (29) et Le fossile s'éveille (30) ; « Je te choisis ! » : chaque combat.
+- **Tout jouer** sur un taux bas seulement contre un boss que le jeu fait rejouer tant qu'il est perdu. Une manche ordinaire perdue
+  avance quand même, comme Artikodin, que le jeu laisse perdre : l'or y garde ses intérêts, et l'en-tête le dit (« Combat 24
+  (Voleur, 18,9 %) : perdable sans rejouer, garde le palier »), sauf si un boss à gagner sous le seuil suit dans les 3 combats
+  à venir : l'en-tête annonce alors celui-ci. PV bas et combat rejoué font tout jouer partout.
 - **Économie** : intérêts plafonnés à +4, donc palier de 40 pièces ; +1 pièce par victoire à partir de la 2ᵉ de suite ; 2 XP
-  gratuites par manche, niveau 9 au plus. Niveaux visés
-  (choix de jeu, d'après la taille des équipes des champions) : 4 dès le combat 4, 5 dès 8, 6 dès 12, 7 dès 16, 8 dès 24, 9 dès 30.
+  gratuites par manche, niveau 9 au plus. Niveaux visés (choix de jeu, d'après la taille des équipes adverses) : Kanto, 4 dès le
+  combat 4, 5 dès 8, 6 dès 12, 7 dès 16, 8 dès 24, 9 dès 30 ; Cap sur Cramois'Île, 4 dès 6, 5 dès 8, 6 dès 14, 7 dès 19 (pour
+  étaler l'achat avant le saut du combat 24), 8 dès 24, et pas de 9 : aucune équipe n'aligne plus de 8 Pokémon.
   Sur un combat obligatoire (badge, Ligue, boss), une deuxième défaite ne rapporte plus d'intérêts : un combat rejoué se joue à fond
   dès le premier échec. Ni bénédiction ni sceau.
+- **Événements** (Cap sur Cramois'Île) : une pastille ★ « Prends » sur la carte conseillée, jamais sur une carte grisée par le
+  jeu, et la même ligne en tête de l'onglet Tour.
+  - Pokémon offert (Poste de garde au combat 5, fossile au 23) : celui du trio de la compo cible dont tu tiens le moins d'exemplaires (3 par ★★), puis
+    celui du trio de la compo suivante, puis le plus fort sur les combats de la compo cible ; à égalité, celui qui donne de l'XP
+    (Canarticho, +2). La bulle du fossile dit quel boss final il laisse : Kabutops ★3 ou Amonistar ★3.
+  - XP contre PV (le courant au combat 13, le journal au 26, entraînement du centre) : l'XP si les PV restent à 40 ou plus
+    après son coût et si le niveau est sous 9 ; sinon l'autre carte (marée basse, carnet, repos ou pourboire).
+  - Centre Pokémon (combats 7, 18 et 25) : soins payants (6 pièces) sous 40 PV, sinon repos.
+  - Sans conseil : l'assistant du Prof. Chen (3), les Safari (11, 20) et les magasins (15, 28).
 - **Difficulté** : lue dans la sauvegarde (Normal, Vétéran, Légende) et affichée en tête du panneau. Les taux de l'API mêlent les
   trois ; or le jeu renforce les adversaires (textes du jeu, roster-*.js : en Vétéran, rivaux +5 % à toutes les stats, équipes
   variées et objets ; au-delà, as à une étoile de plus, objets combinés, boucliers et rage des boss, selon l'aventure). Le panneau
@@ -309,7 +325,11 @@ shinies à saisir par tranche d'étages vient d'un guide et n'est pas vérifiée
 `modes.camp` ne dit ni l'aventure ni la difficulté d'un combat (`difficulty: "todas"`) : deux aventures qui partagent un arrêt
 (`1:Pokémon salvajes`, `9:Pokémon salvajes` pour Kanto et « Je te choisis ! », peut-être d'autres avec les aventures chiffrées)
 y sont confondues, et la table des arrêts de Cap sur
-Cramois'Île et de « Je te choisis ! » ne couvre que les manches relevées dans le code du jeu.
+Cramois'Île et de « Je te choisis ! » ne couvre que les manches relevées dans le code du jeu. Pour Cramois'Île, l'arrêt 20 (Pris
+dans la glace, un Safari) n'a pas de statistiques, et l'arrêt 4 (`4:Pokémon salvajes`, 113 000 combats contre 30 000 à 50 000
+pour ses voisins, 9 novembre 2026) mêle sans doute d'autres aventures. Les événements, leurs coûts et le centre Pokémon sont
+relevés dans `route-*.js` et `EventRound-*.js` ; les PV rendus par le centre changent selon une condition du jeu non
+identifiée, et aucune règle du panneau n'en dépend.
 
 Projet de fan, sans lien avec Einoow, Nintendo, Game Freak, Creatures ni The Pokémon Company.
 

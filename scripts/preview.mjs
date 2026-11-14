@@ -36,6 +36,8 @@ const CAMP = { ...S57, mode: 'campaign', round: 14, league: 3, gymOrder: ['sabri
 const SAVE_KANTO = 'kanto-tactics-save';
 // 33 pièces : Abo, puis Chenipan pour la compo des étages 19–27 (test « boutique : ◆ pour la compo suivante… »).
 const PREPARE = { ...NEXT_SHOP, gold: 33, items: [] };
+// Cap sur Cramois'Île, combat 23 (laboratoire) : fenêtre du fossile, aucun choix fait (maquette 2026-11-14-evenements-cramoisile).
+const CANELA_EVENT = { ...CAMP, round: 22, league: 1, gymOrder: [], gold: 31, hp: 60, event: { round: 22, kind: 'choice', picked: null } };
 // Abra ★★ porteur à distance, Onix et Racaillou au banc (test « parade aux assassins adverses : porteur du fond avancé… »).
 const PARADE = brockSave(ownedGame({ abra: 2, onix: 1, geodude: 1 }));
 
@@ -44,6 +46,7 @@ const STATES = {
   campagne: { save: CAMP, key: SAVE_KANTO, api: 'ok', tip: true },
   'campagne-compo': { save: CAMP, key: SAVE_KANTO, api: 'ok', ui: { tab: 'compo' } },
   'campagne-regles': { save: CAMP, key: SAVE_KANTO, api: 'ok', ui: { tab: 'rules' } },
+  'canela-event': { save: CANELA_EVENT, key: 'kanto-tactics-save-adv-canela', api: 'ok', tip: true, cards: ['Fossile Nautile', 'Fossile Dôme'] },
   'aventure-sans-stats': { save: { ...CAMP, league: 1, gymOrder: [] }, key: 'kanto-tactics-save-adv-safari', api: 'ok', ui: { tab: 'compo' } },
   // Leveinard et Lokhlass, de la compo suivante, en boutique : avec des places libres, ce sont des compléments de la compo cible
   // (★ « place libre »). Sans place libre, les cartes de la compo suivante y deviennent des cartes plus fortes de la compo cible :
@@ -113,7 +116,7 @@ function slim(s, key, stats = null) {
 }
 
 const card = (name, cost) => `<div class="cardwrap"><button class="card"><span class="cname">${name}</span><span class="cost">${cost}</span></button></div>`;
-const decor = (s, modal) => `
+const decor = (s, modal, cards) => `
 <div class="topbar">${s.mode === 'campaign' ? `<div class="rtrack ph-gyms"><span>Combat ${s.round + 1}</span></div>`
   : `<div class="rtrack tw"><span class="st-place-l">Étage ${s.round - 999}</span></div>`}</div>
 <div class="bottom">
@@ -123,7 +126,8 @@ const decor = (s, modal) => `
   <div class="cards">${s.shop.map(b => (b ? card(KT.namer(lang).line(b), KT.lineInfo(data, b).c) : '<div class="cardwrap"></div>')).join('')}</div></div>
 </div>
 ${modal ? `<div class="modals"><div class="modal itemreward"><div class="ir-cards">${s.itemReward.map(id => `<button class="ir-card">${lang.items[id].name}</button>`).join('')}</div></div>
-<div class="modal evround tboon"><div class="ev-cards">${s.tower.offer.ids.map(id => `<button class="ev-card">${KT.BOONS[id][1]}</button>`).join('')}</div></div></div>` : ''}`;
+<div class="modal evround tboon"><div class="ev-cards">${s.tower.offer.ids.map(id => `<button class="ev-card">${KT.BOONS[id][1]}</button>`).join('')}</div></div></div>` : ''}
+${cards ? `<div class="modals"><div class="modal evround"><div class="ev-cards">${cards.map(c => `<button class="ev-card">${c}</button>`).join('')}</div></div></div>` : ''}`;
 
 const STYLE = `body{margin:0;min-height:100vh;background:#2b3a2a;color:#eef1ff;font:14px system-ui}
 .topbar{position:absolute;top:16px;left:50%;translate:-50%;background:#1b2448;padding:4px 16px;border-radius:8px}
@@ -135,7 +139,8 @@ const STYLE = `body{margin:0;min-height:100vh;background:#2b3a2a;color:#eef1ff;f
 .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.card{width:100%;height:96px;border:0;border-radius:8px;background:#dfe2ee;color:#1b2448;display:grid;align-content:end;justify-items:start;padding:8px;font:700 12px system-ui}
 .modals{position:absolute;inset:0;background:rgb(0 0 0/.6);display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center;padding:0 380px 0 24px}
 .modal{background:#232c55;border-radius:12px;padding:32px 16px 16px}.ir-cards,.ev-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.ir-card,.ev-card{height:120px;border:0;border-radius:10px;background:#3a3f8c;color:#eef1ff;font:700 14px system-ui}`;
+.ir-card,.ev-card{height:120px;border:0;border-radius:10px;background:#3a3f8c;color:#eef1ff;font:700 14px system-ui}
+.modals>.evround:only-child{grid-column:1/-1}.evround:not(.tboon) .ev-cards{grid-template-columns:repeat(2,1fr)}`;
 
 // Page « panneau seul » : le gabarit du script rempli comme le ferait render, dans un Shadow DOM déclaratif, sans le script ni
 // les données (quelques dizaines de Ko) : render-html.sh la rend telle quelle. Les pastilles, posées sur le jeu, n'y sont pas ; le
@@ -201,7 +206,7 @@ ${s.tip ? `setTimeout(() => { const r = [...document.body.children].find(e => e.
   r?.append(Object.assign(document.createElement('style'), { textContent: '.kp:nth-child(1) { z-index: 1; } .kp:nth-child(1) .kp-tip { display: block; }' })); }, 50);` : ''}
 `;
   const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Aperçu ${name}</title><style>${STYLE}</style></head>
-<body>${s.save ? decor(s.save, s.modal) : '<p style="padding:24px">Jeu (fond simulé) · aucune partie Tour</p>'}
+<body>${s.save ? decor(s.save, s.modal, s.cards) : '<p style="padding:24px">Jeu (fond simulé) · aucune partie Tour</p>'}
 <script>${stub}</script>
 <script>${script}</script></body></html>`;
   writeFileSync(`${root}build/preview-${name}.html`, html);
