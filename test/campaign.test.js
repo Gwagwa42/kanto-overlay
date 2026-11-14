@@ -370,6 +370,21 @@ test('Légende déduite : comptes soustraits, entrée manquante comptée en 9 co
   assert.deepEqual(KT.legendStats(one, sub(DIF.normal), sub(DIF.veteran)).stops, []);
 });
 
+test('Légende déduite malgré des trios à first nul (API du 14 novembre 2026) : leur first reste nul, le reste est compté', () => {
+  const key = c => `${c.stop}|${KT.coreKey(c.core)}`;
+  // Un trio à first nul dans campana.json, un autre dans ?dif=1 seulement : chacun suffit à rendre nul le first de Légende.
+  const kept = new Set(KT.legendStats(DIF.all, DIF.normal, DIF.veteran).cores.map(key));
+  const inAll = DIF.all.cores.find(c => kept.has(key(c)));
+  const inNormal = DIF.normal.cores.find(c => kept.has(key(c)) && key(c) !== key(inAll));
+  const nulled = (f, c) => ({ ...f, cores: f.cores.map(x => (x === c ? { ...x, first: null } : x)) });
+  const L = KT.leagueStats(nulled(DIF.all, inAll), nulled(DIF.normal, inNormal), DIF.veteran).camp3;
+  assert.ok(L);
+  const [a, n] = [inAll, inNormal].map(c => L.cores.find(x => key(x) === key(c)));
+  assert.deepEqual([a.first, n.first], [null, null]);
+  assert.equal(a.n, KT.legendStats(DIF.all, DIF.normal, DIF.veteran).cores.find(x => key(x) === key(inAll)).n);
+  assert.ok(L.cores.filter(x => x !== a && x !== n).every(x => Number.isFinite(x.first)));
+});
+
 test('en-tête de la Tour sans aucun arrêt : format de l’API, pas « cette aventure »', () => {
   const head = KT.headHtml({ advice: null, stats: { torre: { ...modes.torre, stops: [] } }, mode: KT.TOWER_MODE, floor: 5 });
   assert.match(head, /Aucun boss de la Tour dans les statistiques publiques/);
