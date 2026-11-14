@@ -59,11 +59,11 @@ test('ligne de journal : taux attendu, trio posé ou non, rien sans taux public'
   const benched = adviseOn({ ...S10, board: { 38: 'u1' }, bench: ['u2', 'u5', 'u6'] }, { mode: T, stats });
   assert.equal(KT.fightEntry(benched, stats, false).c, 0);
   assert.equal(KT.fightEntry(adviseOn({ ...S10, round: 1010 }, { mode: T, stats }), stats, true), null);
-  // Campagne en Légende : taux public moins 20 points, clé par aventure et difficulté.
+  // Campagne en Légende : taux public de la difficulté (statistiques passées), clé par aventure et difficulté.
   const camp = KT.modeContext(KT.CAMPAIGN, kanto, 'kanto');
   const entry = KT.fightEntry(adviseOn(kanto, { mode: camp, stats: modes.camp }), modes.camp, true);
   const here = KT.nextStops(modes.camp.stops, 5, 1, camp)[0];
-  assert.deepEqual([entry.k, entry.f, entry.p], ['kanto:3', 5, Math.round(10 * Math.max(1, here.fightWin - 20)) / 10]);
+  assert.deepEqual([entry.k, entry.f, entry.p], ['kanto:3:dif', 5, Math.round(10 * here.fightWin) / 10]);
 });
 
 test('combat noté : une ligne par combat fini, rien sans conseil ni combat', () => {
@@ -79,12 +79,12 @@ test('combat noté : une ligne par combat fini, rien sans conseil ni combat', ()
 test('journal : 300 combats au plus par mode et difficulté, sans évincer les autres modes', () => {
   const entry = { r: 7, k: 'tower', f: 10, p: 50, w: 1 };
   assert.deepEqual(KT.addFight([], entry), [entry]);
-  const camp = fights(5, 5, { k: 'kanto:3' });
+  const camp = fights(5, 5, { k: 'kanto:3:dif' });
   // 302 combats de Tour numérotés par leur étage (journal d'une autre version) : les 3 plus anciens sortent.
   const old = fights(302, 0).map((f, i) => ({ ...f, f: i }));
   const full = KT.addFight([...camp, ...old], entry);
   const towers = full.filter(f => f.k === 'tower');
-  assert.deepEqual([full.length, full.filter(f => f.k === 'kanto:3').length, towers.length, towers[0].f, full.at(-1)], [305, 5, 300, 3, entry]);
+  assert.deepEqual([full.length, full.filter(f => f.k === 'kanto:3:dif').length, towers.length, towers[0].f, full.at(-1)], [305, 5, 300, 3, entry]);
 });
 
 test('journal relu : illisible ou d’un autre format, repris à vide ou sans la ligne', t => {
@@ -98,6 +98,10 @@ test('journal relu : illisible ou d’un autre format, repris à vide ou sans la
   assert.equal(warn.mock.callCount(), 2);
   assert.deepEqual(KT.readJournal(JSON.stringify([{ k: 'tower', p: 50, w: 1 }, { k: 'tower', p: 'x', w: 1 }, null])), [{ k: 'tower', p: 50, w: 1 }]);
   assert.equal(warn.mock.callCount(), 3);
+  // Campagne d'avant la 2.13.0 (clé sans « :dif », taux des trois difficultés mêlées) : écartée ; la Tour reste.
+  const lines = [{ k: 'canela:3', p: 20, w: 0 }, { k: 'canela:3:dif', p: 9, w: 0 }, { k: 'tower', p: 50, w: 1 }];
+  assert.deepEqual(KT.readJournal(JSON.stringify(lines)), lines.slice(1));
+  assert.equal(warn.mock.callCount(), 4);
 });
 
 test('écart appris : rétréci par 50 combats fictifs, borné à 20 points, par mode et difficulté', () => {
@@ -116,25 +120,25 @@ test('écart appris : rétréci par 50 combats fictifs, borné à 20 points, par
   assert.equal(KT.ownResults(fights(100, 100), T).shift, 20);
   assert.equal(KT.ownResults([], T).shift, 0);
   // Les combats d'un autre mode ne comptent pas.
-  assert.equal(KT.ownResults(fights(100, 30, { k: 'kanto:1' }), T).n, 0);
+  assert.equal(KT.ownResults(fights(100, 30, { k: 'kanto:1:dif' }), T).n, 0);
   const runs = [...fights(3, 3), ...fights(2, 0, { r: 2 })];
   assert.equal(KT.ownResults(runs, T).runs, 2);
 });
 
-test('écart appris : il déplace le seuil de « tout jouer » et s’ajoute à la pénalité de difficulté', () => {
+test('écart appris : il déplace le seuil de « tout jouer », en Tour comme dans chaque difficulté', () => {
   const poll = journal => KT.pollState({ mode: T, saveKey: undefined, lastAuto: undefined, floor: null, source: 'manuel' },
     { key: 'kanto-tactics-save-tower', raw: JSON.stringify(S10), mode: T }, 'tower', KT.STRATEGY_DEFAULTS, journal).mode;
-  assert.deepEqual([poll([]).penalty, poll([]).ownPenalty], [0, 0]);
+  assert.equal(poll([]).penalty, 0);
   const weak = poll(fights(100, 30));
-  assert.deepEqual([weak.penalty, weak.ownPenalty], [13, 13]);
+  assert.equal(weak.penalty, 13);
   // Pierre à 50 % : pas un mur au seuil de 45 %, un mur une fois le taux compté 13 points plus bas.
   assert.equal(adviseOn(S10, { mode: poll([]), stats }).eco.allIn, false);
   assert.equal(adviseOn(S10, { mode: weak, stats }).eco.allIn, true);
   assert.ok(KT.goldRules(weak).includes('Tout jouer sur un étage sous 58 % de victoires (plus 13 points d’après tes résultats), sous 40 PV, ou sur un étage rejoué à partir de l’étage 50.'));
   assert.ok(KT.goldRules(poll(fights(100, 70))).some(r => r.includes('sous 32 % de victoires (moins 13 points d’après tes résultats)')));
-  const camp = KT.withResults(KT.modeContext(KT.CAMPAIGN, kanto, 'kanto'), fights(100, 30, { k: 'kanto:3' }));
-  assert.deepEqual([camp.leaguePenalty, camp.ownPenalty, camp.penalty], [20, 13, 33]);
-  assert.ok(KT.goldRules(camp).some(r => r.includes('(Légende : 45 % plus 20 points, les taux publics mêlant les trois difficultés ; plus 13 points d’après tes résultats)')));
+  const camp = KT.withResults(KT.modeContext(KT.CAMPAIGN, kanto, 'kanto'), fights(100, 30, { k: 'kanto:3:dif' }));
+  assert.deepEqual([camp.penalty, camp.advance], [13, 2]);
+  assert.ok(KT.goldRules(camp).some(r => r.includes('sous 58 % de victoires (Légende, taux déduits : toutes difficultés moins Normal et Vétéran ; plus 13 points d’après tes résultats)')));
   // En-tête : le seuil déplacé est dit en Tour aussi, et seulement quand un écart est compté.
   const head = mode => KT.headHtml({ advice: null, stats: { torre: stats }, mode, floor: 10 });
   assert.match(head(weak), /Tour · tout jouer sous 58 %/);

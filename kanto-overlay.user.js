@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour et campagne
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.12.0
+// @version      2.13.0
 // @description  Tour de combat et campagne (aventures, trois difficultés) de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -30,9 +30,14 @@
 const KT = (() => {
   // Version du script, notée dans le journal des combats ; égale à @version (un test le vérifie) : GM_info n'est pas garanti
   // avec @grant none.
-  const VERSION = '2.12.0';
+  const VERSION = '2.13.0';
   const API = 'https://einoow.com/api/meta/kanto/';
-  const SOURCES = { stats: `${API}campana.json`, data: `${API}data.json`, lang: `${API}lang.json?lang=fr` };
+  // campana.json mêle les trois difficultés de la campagne ; ?dif=1 et ?dif=2 n'en gardent qu'une (Normal, Vétéran) ; Légende
+  // se déduit des trois (legendStats).
+  const SOURCES = {
+    stats: `${API}campana.json`, normal: `${API}campana.json?dif=1`, veteran: `${API}campana.json?dif=2`,
+    data: `${API}data.json`, lang: `${API}lang.json?lang=fr`,
+  };
   const CACHE_NAME = 'kt-overlay';
   // Conditions de l'API : au plus une requête par heure, avec un cache côté client.
   const CACHE_MAX_AGE = 3600 * 1000;
@@ -51,12 +56,15 @@ const KT = (() => {
   // Le jeu numérote les manches de la Tour à partir de 1000 : étage = round − 1000 + 1 (assets/route-*.js).
   const ROUND_BASE = 1000;
   const MIN_FIGHTS = 20;
-  // Difficulté de la campagne (league de la sauvegarde) : l'API mélange les trois (difficulty « todas »), ses taux surestiment
-  // Vétéran et Légende. Points retirés au taux de chaque combat par cran de difficulté (choix de jeu, aucune statistique par
-  // difficulté) : « tout jouer » sous 45, 55 puis 65 % en stratégie normale. Les niveaux visés avancent avec la pénalité
+  // Difficulté de la campagne (league de la sauvegarde) : les statistiques lues sont celles de cette difficulté (stats de
+  // modeContext). Les niveaux visés avancent d'un combat par cran de difficulté, et d'un par ADVANCE_POINTS d'écart appris
   // (advanceOf).
   const LEAGUES = { 1: 'Normal', 2: 'Vétéran', 3: 'Légende' };
-  const LEAGUE_PENALTY = 10;
+  const ADVANCE_POINTS = 10;
+  // Un trio, une lignée, un objet porté joués moins de PUBLISHED_MIN fois dans une difficulté manquent à son fichier (relevé
+  // du 14 novembre 2026 : aucune entrée sous 10 combats dans ?dif=1 ni ?dif=2). Pour déduire Légende, une entrée manquante
+  // compte PUBLISHED_MIN − 1 combats, tous gagnés : Légende n'est jamais surestimée.
+  const PUBLISHED_MIN = 10;
   // Stratégie réglable dans le menu ⚙ (choix de jeu, aucune statistique ne les départage), mêmes champs qu'OPTIONS ; le
   // troisième élément de chaque valeur rejoint le mode (withStrategy). Valeurs normales :
   // - pace : facteur sur l'étage de chaque niveau visé (levelGoals des règles du mode) ;
@@ -344,25 +352,26 @@ const KT = (() => {
     fortuneNote: '', streakNote: ' Série : +1 pièce par victoire à partir de la 2ᵉ de suite.', xpNote: ' La campagne donne 2 XP par combat.', retryNote: 'sur un combat rejoué', wallNote: 'un boss rejoué tant qu’il est perdu', hasLeague: true,
   };
 
-  // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null), difficulté et stratégie normale
-  // (withStrategy). Sans league (sauvegarde d'avant les difficultés), Normal ; une valeur hors de 1 à 3 est signalée en console et comptée Normal.
+  // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null), difficulté, statistiques à lire (stats : clé
+  // de l'état du panneau, camp1 à camp3 en campagne) et stratégie normale (withStrategy). penalty : points retirés aux taux
+  // publics, l'écart appris (withResults). Sans league (sauvegarde d'avant les difficultés), Normal ; une valeur hors de 1 à 3
+  // est signalée en console et comptée Normal.
   function modeContext(rules, save = {}, adventure = null) {
     const known = [1, 2, 3].includes(save.league);
     if (rules === CAMPAIGN && !known && save.league !== undefined) console.warn('kanto-overlay : difficulté inconnue, comptée Normal', save.league);
     const league = rules === CAMPAIGN && known ? save.league : 1;
-    const leaguePenalty = (league - 1) * LEAGUE_PENALTY;
     const adv = adventure ? ADVENTURES[adventure] ?? null : null;
     return withStrategy({
-      ...rules, shopLines: adv?.shopLines ?? rules.shopLines, shopOut: adv?.shopOut ?? rules.shopOut,
-      baseGoals: adv?.levelGoals ?? rules.levelGoals, adventure, adv, league,
-      leaguePenalty, ownPenalty: 0, penalty: leaguePenalty, advance: advanceOf(rules, leaguePenalty),
-      gymOrder: Array.isArray(save.gymOrder) ? save.gymOrder : [],
+      ...rules, stats: rules === CAMPAIGN ? `camp${league}` : rules.stats, shopLines: adv?.shopLines ?? rules.shopLines,
+      shopOut: adv?.shopOut ?? rules.shopOut, baseGoals: adv?.levelGoals ?? rules.levelGoals, adventure, adv, league,
+      penalty: 0, advance: advanceOf(rules, league, 0), gymOrder: Array.isArray(save.gymOrder) ? save.gymOrder : [],
     }, STRATEGY_DEFAULTS);
   }
 
-  // Combats d'avance des niveaux visés dans un mode à difficultés : un par LEAGUE_PENALTY points de pénalité (difficulté moins
-  // écart appris), de 0 à 2 ; la Tour n'en a pas.
-  const advanceOf = (rules, penalty) => (rules.hasLeague ? Math.max(0, Math.min(2, Math.round(penalty / LEAGUE_PENALTY))) : 0);
+  // Combats d'avance des niveaux visés dans un mode à difficultés, de 0 à 2 : un par cran de difficulté, plus un par
+  // ADVANCE_POINTS points de pénalité (écart appris) ; la Tour n'en a pas.
+  const advanceOf = (rules, league, penalty) => (rules.hasLeague
+    ? Math.max(0, Math.min(2, league - 1 + Math.round(penalty / ADVANCE_POINTS))) : 0);
 
   // Mode avec la stratégie choisie (choice : clé de STRATEGY → valeur connue, l'objet ui passé par checkUi) ; les niveaux visés repartent de ceux des
   // règles (baseGoals), pour qu'un nouveau choix remplace le précédent. Un niveau n'est pas visé avant l'étage où le jeu
@@ -483,8 +492,8 @@ const KT = (() => {
   ];
   const leagueLabel = mode => `${mode.adv?.name ?? mode.adventure} · ${LEAGUES[mode.league]}`;
 
-  // En-tête : aventure et difficulté en campagne, Tour sinon, et seuil de « tout jouer » déplacé par la pénalité du mode
-  // (raison dans l'onglet Règles).
+  // En-tête : aventure et difficulté en campagne, Tour sinon, et seuil de « tout jouer » déplacé par l'écart appris (raison
+  // dans l'onglet Règles).
   function leagueNote(mode) {
     const where = mode.hasLeague ? leagueLabel(mode) : mode.name;
     return mode.penalty ? `${where} · tout jouer sous ${mode.hardWin + mode.penalty} %` : where;
@@ -495,10 +504,9 @@ const KT = (() => {
     const hard = mode.hardWin + mode.penalty;
     const notes = [];
     if (mode.hasLeague) {
-      notes.push(mode.leaguePenalty ? `${LEAGUES[mode.league]} : ${mode.hardWin} % plus ${mode.leaguePenalty} points, les taux publics mêlant les trois difficultés`
-        : LEAGUES[mode.league]);
+      notes.push(mode.league === 3 ? `${LEAGUES[3]}, taux déduits : toutes difficultés moins Normal et Vétéran` : `taux de ${LEAGUES[mode.league]}`);
     }
-    if (mode.ownPenalty) notes.push(`${mode.ownPenalty > 0 ? 'plus' : 'moins'} ${Math.abs(mode.ownPenalty)} points d’après tes résultats`);
+    if (mode.penalty) notes.push(`${mode.penalty > 0 ? 'plus' : 'moins'} ${Math.abs(mode.penalty)} points d’après tes résultats`);
     return [
       `Intérêts : +1 pièce par tranche de 10, +${mode.interest} au plus ${mode.where} → garder ${10 * mode.interest} pièces${mode.fortuneNote}.${mode.streakNote}`,
       `L’or au-dessus du palier ne rapporte rien : XP jusqu’au niveau visé (${goals}), puis actualisation si elle montre une copie cherchée à ${REROLL_CHANCE} % ou plus, puis XP.${mode.xpNote}`,
@@ -557,6 +565,64 @@ const KT = (() => {
       && Array.isArray(t.stars) && t.stars.every(s => typeof s?.line === 'string' && [s.star, s.lo, s.hi, s.exp].every(Number.isFinite))
       && t.holders.every(h => typeof h?.line === 'string' && typeof h.id === 'string' && [h.n, h.lo].every(Number.isFinite));
   }
+
+  // Intervalle de Wilson à 95 % (%) de wins victoires sur n combats. L'API élargit le sien (n effectif plus petit, méthode
+  // non publiée) : les bornes déduites sont un peu plus étroites, et ne se comparent qu'entre elles.
+  function wilson(wins, n) {
+    const z = 1.96;
+    const p = wins / n;
+    const mid = p + z * z / (2 * n);
+    const half = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n));
+    const den = 1 + z * z / n;
+    return [100 * (mid - half) / den, 100 * (mid + half) / den];
+  }
+
+  // Statistiques de campagne de Légende : celles de toutes les difficultés (all) moins celles de Normal et de Vétéran, mode camp
+  // de chaque fichier. Les comptes se soustraient par entrée : combats n, victoires (n × win), combats notés m (ne, sinon n),
+  // victoires attendues (m × exp), écart (m × d), victoires au premier essai (n × first, pondérées par n faute du nombre de
+  // premiers essais). Une entrée absente d'un sous-fichier y compte PUBLISHED_MIN − 1 combats gagnés ; victoires bornées à
+  // [0, n] (taux de l'API arrondis au dixième) ; une entrée sans combat (ou sans combat noté) restant est retirée.
+  function legendStats(all, normal, veteran) {
+    const hidden = PUBLISHED_MIN - 1;
+    const counts = x => {
+      const m = x.ne ?? x.n;
+      return { n: x.n, m, wins: x.n * x.win / 100, first: x.n * (x.first ?? 0) / 100, exp: m * (x.exp ?? 0), d: m * (x.d ?? 0) };
+    };
+    const minus = (list, key) => {
+      const subs = [normal, veteran].map(f => new Map(f[list].map(x => [key(x), x])));
+      return all[list].flatMap(x => {
+        const c = counts(x);
+        for (const sub of subs) {
+          const y = sub.get(key(x));
+          const h = y ? counts(y) : { n: hidden, m: hidden, wins: hidden, first: hidden, exp: hidden * (x.exp ?? 0), d: hidden * (100 - (x.exp ?? 0)) };
+          for (const k of Object.keys(c)) c[k] -= h[k];
+        }
+        if (c.n <= 0 || c.m <= 0) return [];
+        const wins = Math.max(0, Math.min(c.n, c.wins));
+        const [lo, hi] = wilson(wins, c.n);
+        const out = { ...x, n: c.n, win: 100 * wins / c.n, lo, hi };
+        if (x.ne !== undefined) out.ne = c.m;
+        if (x.exp !== undefined) Object.assign(out, { exp: c.exp / c.m, d: c.d / c.m });
+        // Arrêts seulement : tries vaut n / victoires dans l'API (essais par victoire), Infinity sans victoire.
+        if (x.first !== undefined) Object.assign(out, { first: 100 * Math.max(0, Math.min(c.n, c.first)) / c.n, tries: c.n / wins });
+        return [out];
+      });
+    };
+    return {
+      ...all, stops: minus('stops', s => s.stop), cores: minus('cores', c => `${c.stop}|${coreKey(c.core)}`), lines: minus('lines', l => l.line),
+      stars: minus('stars', s => `${s.line}:${s.star}`), holders: minus('holders', h => `${h.line}:${h.id}`),
+    };
+  }
+
+  // Les trois fichiers couvrent les mêmes jours : une copie gardée d'un autre jour fausserait la soustraction.
+  const sameDays = (...files) => files.every(f => f.from === files[0].from && f.to === files[0].to);
+
+  // Statistiques de campagne de chaque difficulté (clés stats de modeContext) : null pour une difficulté dont un fichier manque,
+  // et pour Légende si les fichiers ne couvrent pas les mêmes jours.
+  const leagueStats = (all, normal, veteran) => ({
+    camp1: normal, camp2: veteran,
+    camp3: all && normal && veteran && sameDays(all, normal, veteran) ? legendStats(all, normal, veteran) : null,
+  });
 
   function isGameData(d) {
     return isObject(d?.lines) && isObject(d.items) && Array.isArray(d.recipes) && isObject(d.traits) && isObject(d.seals)
@@ -731,8 +797,8 @@ const KT = (() => {
     return 10 * (mode.interest + (pathCount(boons, 'fortune') >= PATH_SIZE ? FORTUNE_INTEREST : 0));
   }
 
-  // « Tout jouer » : le combat courant est un mur à gagner (mustWin ; taux de la manche sous hardWin plus la pénalité du mode :
-  // difficulté et résultats du joueur), les PV sont sous lowHp, ou le combat est rejoué (retryFrom du mode). nextWall : premier
+  // « Tout jouer » : le combat courant est un mur à gagner (mustWin ; taux de la manche, dans la difficulté de la partie, sous
+  // hardWin plus la pénalité du mode, l'écart appris), les PV sont sous lowHp, ou le combat est rejoué (retryFrom du mode). nextWall : premier
   // mur à gagner des combats à venir, sinon premier mur perdable.
   function economy(game, stops) {
     const { mode } = game;
@@ -748,7 +814,7 @@ const KT = (() => {
   }
 
   // Journal des combats joués avec le panneau ouvert : { r: partie (runSeed), k: la Tour, ou l'aventure et sa difficulté (cellOf), f: étage ou
-  // combat, p: taux attendu en % (taux public moins la pénalité de difficulté), w: 1 gagné, c: 1 si le trio de la compo
+  // combat, p: taux attendu en % (taux public du combat, dans sa difficulté en campagne), w: 1 gagné, c: 1 si le trio de la compo
   // cible était posé à la dernière lecture avant le combat (2 s au plus), absent sans trio ; à cette lecture, l: niveau,
   // g: niveau visé, o: or, h: PV ; v: VERSION, s: préréglages de stratégie dans l'ordre de STRATEGY }. Les lignes écrites
   // avant la 2.11.0 n'ont ni l, g, o, h, v ni s. Par clé k, les plus anciens sortent au-delà de JOURNAL_MAX : l'écart suit
@@ -763,22 +829,26 @@ const KT = (() => {
   // Écart compté au plus, en points : le journal ne note pas tous les combats (dernier combat d'une campagne), et un seuil de
   // « tout jouer » proche de 100 % ferait tout jouer en permanence.
   const OWN_MAX = 20;
+  // Fin de la clé d'une ligne de campagne (cellOf), dont le taux attendu est celui de sa difficulté.
+  const CAMP_CELL = 'dif';
 
   const parseList = raw => {
     const list = parseJson(raw);
     return Array.isArray(list) ? list : null;
   };
 
-  // Un journal illisible repart à vide, une ligne d'un autre format est écartée ; les deux sont signalés en console.
+  // Un journal illisible repart à vide, une ligne d'un autre format est écartée ; les deux sont signalés en console. Les lignes
+  // de campagne d'avant la 2.13.0 (clé sans CAMP_CELL) le sont aussi : leur taux attendu venait des trois difficultés mêlées.
   function readJournal(raw) {
     const list = parseList(raw);
     if (raw != null && !list) console.warn('kanto-overlay : journal des combats illisible, repris à vide');
-    const fights = (list ?? []).filter(f => typeof f?.k === 'string' && Number.isFinite(f.p) && (f.w === 0 || f.w === 1));
+    const fights = (list ?? []).filter(f => typeof f?.k === 'string' && (f.k === TOWER.id || f.k.endsWith(`:${CAMP_CELL}`))
+      && Number.isFinite(f.p) && (f.w === 0 || f.w === 1));
     if (list && fights.length < list.length) console.warn('kanto-overlay : lignes du journal d’un autre format écartées', list.length - fights.length);
     return fights;
   }
 
-  const cellOf = mode => (mode.id === TOWER.id ? TOWER.id : `${mode.adventure}:${mode.league}`);
+  const cellOf = mode => (mode.id === TOWER.id ? TOWER.id : `${mode.adventure}:${mode.league}:${CAMP_CELL}`);
 
   // Résultat du combat joué depuis la sauvegarde before : true gagné, false perdu, null sans combat fini. Le jeu change
   // streak à chaque combat (un de plus ou 1 après une victoire, un de moins ou −1 après une défaite), avance d'une manche après
@@ -810,7 +880,7 @@ const KT = (() => {
     if (here.reduce((n, s) => n + s.n, 0) < MIN_FIGHTS) return null;
     const core = target?.core ?? [];
     const placed = new Set(game.units.filter(u => u.cell !== undefined).map(u => baseLine(u.line)));
-    const p = Math.round(10 * Math.min(99, Math.max(1, here[0].fightWin - game.mode.leaguePenalty))) / 10;
+    const p = Math.round(10 * Math.min(99, Math.max(1, here[0].fightWin))) / 10;
     return {
       r: advice.run, k: cellOf(game.mode), f: game.floor, p, w: Number(won),
       ...(core.length ? { c: Number(core.every(id => placed.has(baseLine(id)))) } : {}),
@@ -855,12 +925,12 @@ const KT = (() => {
 
   // Mode dont la pénalité suit les résultats du joueur : ses taux comptent shift points de plus ou de moins que les taux
   // publics, pour le seuil de « tout jouer », la couleur des taux, le poids des combats dans la compo cible et l'avance des
-  // niveaux visés (advanceOf).
+  // niveaux visés (advanceOf, qui ajoute celle de la difficulté).
   function withResults(mode, fights) {
     const { shift } = ownResults(fights, mode);
     // 0 - shift : un écart nul donne 0 et non −0, que Object.is et deepStrictEqual distinguent.
-    const penalty = mode.leaguePenalty - shift;
-    return { ...mode, ownPenalty: 0 - shift, penalty, advance: advanceOf(mode, penalty) };
+    const penalty = 0 - shift;
+    return { ...mode, penalty, advance: advanceOf(mode, mode.league, penalty) };
   }
 
   const decimal = x => x.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
@@ -914,9 +984,22 @@ const KT = (() => {
     return { stops: rated, total: totalWeight(rated), cores: new Map(rated.map(st => [st.stop, cores.get(st.stop)])) };
   }
 
+  // Lignée à trouver pour les combats notés (rated) qui ne sort pas assez en boutique : jugée au niveau visé au premier boss à
+  // gagner de ces combats (au niveau du joueur s'il est plus haut, ou sans boss à gagner), le trio servant contre ce boss. Une
+  // lignée offerte par un événement de l'aventure d'ici là (au combat en cours s'il attend son choix) se trouve toujours.
+  function scarce(rated, game, data, base) {
+    const boss = rated.stops.find(st => mustWin(st, game.mode));
+    const level = Math.max(game.level, boss ? levelGoal(boss.floor, game.mode) : 0);
+    if (!lineInfo(data, base) || findable(data, level, base)) return false;
+    const until = boss?.floor ?? rated.stops.at(-1)?.floor ?? game.floor;
+    const gifts = Object.entries(game.mode.adv?.events ?? {})
+      .filter(([f]) => (Number(f) > game.floor || (Number(f) === game.floor && game.event?.kind === 'choice')) && Number(f) <= until);
+    return !gifts.some(([, options]) => options.some(o => o.mon === base));
+  }
+
   // Note d'un trio : borne basse de son taux, en moyenne pondérée par la difficulté sur les combats notés (rated, de
-  // ratedStops ; 0 sans aucun), plus les bonus de possession. Une lignée à trouver dont le coût, connu, ne sort pas assez au
-  // niveau du joueur coûte ce qu'une lignée possédée rapporte.
+  // ratedStops ; 0 sans aucun), plus les bonus de possession. Une lignée à trouver rare (scarce) coûte ce qu'une lignée
+  // possédée rapporte.
   function coreScore(core, rated, game, data) {
     const { ownedBonus } = game.mode;
     const { stops, total, cores } = rated;
@@ -925,7 +1008,7 @@ const KT = (() => {
     const owned = core.reduce((s, id) => {
       const base = baseLine(id);
       const star = bestStar(game, base);
-      if (star === 0) return s - (lineInfo(data, base) && !findable(data, game.level, base) ? ownedBonus : 0);
+      if (star === 0) return s - (scarce(rated, game, data, base) ? ownedBonus : 0);
       return s + ownedBonus + (star >= 2 ? ownedBonus : 0) + (shinyLine(game, base) ? SHINY_BONUS : 0);
     }, 0);
     return stat + owned;
@@ -2175,7 +2258,7 @@ const KT = (() => {
     return ['KT1', `r${rules}`, `xm=${mode.xm}`, `xn=${encodeURIComponent(PLAN_NAME)}`, ...parts].join(';');
   }
 
-  // stats : le mode de campana.json de la partie (torre ou camp) ; mode : modeContext de la partie. previous : { key, run, next,
+  // stats : statistiques du mode de la partie (torre, ou camp de sa difficulté) ; mode : modeContext de la partie. previous : { key, run, next,
   // fillers } du dernier conseil (trio et compléments de la compo cible, trio de la compo suivante) ; l'inertie ne vaut que
   // dans la même partie (runSeed).
   // dive : le joueur a signalé des assassins adverses pour ce combat (formation, guard).
@@ -2292,7 +2375,7 @@ const KT = (() => {
   return {
     SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, leagueLabel, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, STRATEGY_DEFAULTS, latestSave, shownMode, pollState,
     VERSION, JOURNAL_KEY, TOWER_RUNS_KEY, readJournal, fightWon, fightEntry, notedFight, addFight, ownResults, withResults, resultsNote,
-    parseSave, floorFromSave, isStatsData, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss, mustWin,
+    parseSave, floorFromSave, isStatsData, legendStats, leagueStats, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss, mustWin,
     baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, rerollChance, ratedStops, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, touching, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
   };
@@ -2532,7 +2615,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
 // Conseils de partie seulement à l'étage ou au combat de la sauvegarde : saisi à la main, il ne sert qu'au prochain boss.
 const onSaveFloor = state => state.save !== null && state.floor === KT.floorFromSave(state.lastRaw, state.mode);
-// Statistiques du mode de la partie (torre ou camp de campana.json) ; null avant leur chargement ou sans elles.
+// Statistiques du mode de la partie (Tour, ou campagne dans sa difficulté) ; null avant leur chargement ou sans elles.
 const modeStats = state => state.stats?.[state.mode.stats] ?? null;
 const UNSUPPORTED = '<p class="kt-msg"><strong>Nuzlocke : pas de conseils</strong>Le panneau conseille la Tour et les aventures de la campagne.</p>';
 
@@ -2631,7 +2714,7 @@ function nextBossOf(state) {
   return { stats, stop: stats && KT.nextBossStop(stats.stops, state.floor, state.mode) };
 }
 
-// Taux coloré au taux moins la pénalité du mode (difficulté et résultats du joueur), comme le seuil de « tout jouer ».
+// Taux coloré au taux moins la pénalité du mode (écart appris), comme le seuil de « tout jouer ».
 function rateHtml(win, mode, label = '') {
   const l = KT.rateLevel(win - mode.penalty);
   return `<span class="kt-rate ${l.cls}">${l.sym} ${KT.pct(win)}${label}</span>`;
@@ -2697,7 +2780,7 @@ function headHtml(state) {
     else if (e.nextWall) wall = `${mode.label} ${e.nextWall.floor} (${esc(KT.fightName(e.nextWall))}, ${KT.pct(e.nextWall.fightWin)}) : ${KT.mustWin(e.nextWall, mode) ? 'tout jouer' : 'perdable sans rejouer, garde le palier'}.`;
     if (wall) parts.push(`<p class="kt-warn"><span class="kt-sym kp-no" aria-hidden="true">▼</span>${wall}</p>`);
   }
-  if (mode.hasLeague || mode.ownPenalty) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);
+  if (mode.hasLeague || mode.penalty) parts.push(`<p class="kt-hint">${esc(KT.leagueNote(mode))}</p>`);
   const { stats, stop } = nextBossOf(state);
   if (stop) {
     const dist = stop.floor - state.floor;
@@ -2771,10 +2854,11 @@ function optionsHtml(ui) {
 <p class="kt-hint">Alt+K replie le panneau ; double-clic sur la barre pour le remettre en haut à droite.</p>`;
 }
 
-// Statistiques de campagne refusées : signalées seulement pendant une partie de campagne, la Tour n'en a pas besoin.
+// Statistiques de campagne de la difficulté jouée absentes : signalées seulement pendant une partie de campagne, la Tour n'en a
+// pas besoin, ni une autre difficulté.
 function alertHtml(state) {
-  const camp = state.campBroken && state.mode.id !== KT.TOWER.id;
-  const errors = [state.error, camp && 'campana.json : statistiques de campagne au format inattendu'].filter(Boolean);
+  const camp = state.mode.id !== KT.TOWER.id && state.stats !== null && !modeStats(state);
+  const errors = [state.error, camp && state.campError].filter(Boolean);
   if (!errors.length) return '';
   const effects = [];
   if (state.failed.some(k => k !== 'lang')) effects.push('Sans ces données, pas de compo cible : seuls l’économie et les évolutions sont conseillées.');
@@ -2969,32 +3053,47 @@ function pinLayer(layer, hud) {
 }
 
 // Sources indépendantes : sans data.json ou lang.json, le prochain boss et les trios restent affichés. campana.json est
-// accepté avec la Tour seule : sans modes.camp valide, la campagne n'a que les conseils d'économie.
+// accepté avec la Tour seule : sans modes.camp valide, la campagne n'a que les conseils d'économie. normal et veteran
+// (CAMP_FILES) ne servent qu'à la campagne : leur échec prive de statistiques leur difficulté et Légende, pas la Tour.
 const SOURCE_FILES = [
   ['stats', 'campana.json', KT.SOURCES.stats, j => KT.isStatsData(j?.modes?.torre),
     j => ({ torre: j.modes.torre, camp: KT.isStatsData(j.modes.camp) ? j.modes.camp : null })],
+  ['normal', 'campana.json?dif=1', KT.SOURCES.normal, j => KT.isStatsData(j?.modes?.camp), j => j.modes.camp],
+  ['veteran', 'campana.json?dif=2', KT.SOURCES.veteran, j => KT.isStatsData(j?.modes?.camp), j => j.modes.camp],
   ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j],
   ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j],
 ];
+const CAMP_FILES = ['normal', 'veteran'];
 
 // Champs de l'état tirés du chargement : results, issus de Promise.allSettled sur loadJson, dans l'ordre de SOURCE_FILES.
+// stats : la Tour et les statistiques de campagne de chaque difficulté (leagueStats) ; campError : ce qui manque à la
+// campagne, affiché seulement quand la difficulté jouée n'a pas ses statistiques (alertHtml).
 function sourcesState(results) {
-  const loaded = { stats: null, data: null, lang: null, failed: [], uncached: false };
+  const loaded = { stats: null, normal: null, veteran: null, data: null, lang: null, failed: [], uncached: false };
   const errors = [];
+  const campErrors = [];
   const stale = [];
   results.forEach((r, i) => {
     const [key, file, , , pick] = SOURCE_FILES[i];
     if (r.status === 'rejected') {
-      loaded.failed.push(key);
-      errors.push(`${file} : ${r.reason.message}`);
+      if (CAMP_FILES.includes(key)) campErrors.push(`${file} : ${r.reason.message}`);
+      else {
+        loaded.failed.push(key);
+        errors.push(`${file} : ${r.reason.message}`);
+      }
       return;
     }
     loaded[key] = pick(r.value.json);
     if (r.value.stale) stale.push(r.value.at);
     if (r.value.uncached) loaded.uncached = true;
   });
+  const { stats: all, normal, veteran, ...rest } = loaded;
+  if (all && !all.camp) campErrors.unshift('campana.json : statistiques de campagne au format inattendu');
+  const camps = all && KT.leagueStats(all.camp, normal, veteran);
+  if (all?.camp && normal && veteran && !camps.camp3) campErrors.push('Légende : copies de campana.json de jours différents');
   return {
-    ...loaded, campBroken: loaded.stats !== null && !loaded.stats.camp, error: errors.length ? errors.join(' ; ') : null,
+    ...rest, stats: all && { torre: all.torre, ...camps },
+    campError: campErrors.length ? campErrors.join(' ; ') : null, error: errors.length ? errors.join(' ; ') : null,
     stale: stale.length ? Math.min(...stale) : null,
   };
 }
@@ -3060,7 +3159,7 @@ function rememberedTarget(a, target) {
 function mount() {
   const ui = { ...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(KT.UI_KEY) ?? '{}') };
   KT.checkUi(ui);
-  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: undefined, save: null, saveKey: undefined, mode: KT.withStrategy(KT.TOWER_MODE, ui), unsupported: false, stats: null, campBroken: false, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, fights: KT.readJournal(localStorage.getItem(KT.JOURNAL_KEY)), copied: null, planner: { code: null, error: null, running: false } };
+  const state = { floor: null, source: 'manuel', lastRaw: undefined, lastAuto: undefined, save: null, saveKey: undefined, mode: KT.withStrategy(KT.TOWER_MODE, ui), unsupported: false, stats: null, campError: null, data: null, lang: null, failed: [], error: null, stale: null, uncached: false, advice: null, fights: KT.readJournal(localStorage.getItem(KT.JOURNAL_KEY)), copied: null, planner: { code: null, error: null, running: false } };
 
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });

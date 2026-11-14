@@ -199,7 +199,7 @@ test('stratégie : tout jouer prudent ou audacieux', () => {
   const head = headHtml({ advice: advise({ ...S57, hp: 45 }, { mode: strategy({ allIn: 'careful' }) }), stats: { torre }, mode: strategy({ allIn: 'careful' }), floor: 57 });
   assert.match(head, /Tout jouer : PV sous 50./);
   const camp = strategy({ allIn: 'bold' }, KT.modeContext(KT.CAMPAIGN, { league: 3 }, 'kanto'));
-  assert.equal(KT.leagueNote(camp), 'Kanto · Légende · tout jouer sous 60 %');
+  assert.ok(KT.goldRules(camp).some(r => r.includes('sous 40 % de victoires (Légende')));
 });
 
 test('stratégie : compo réactive ou stable (combats vus d’avance, inertie)', () => {
