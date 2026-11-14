@@ -1,14 +1,14 @@
 'use strict';
 // Campagne : aventure Kanto aux trois difficultés, autres aventures. Deux fixtures. campana.json, extrait de modes.camp du
 // 31 octobre au 9 novembre 2026 (copie du 10), toutes difficultés mêlées : tous les stops, lines et stars ; par stop, les 20
-// trios d'au moins 20 combats les plus joués ; les holders d'au moins 50 combats. Elle sert à la Tour, aux règles qui ne
-// dépendent pas de la difficulté et aux tests de Cramois'Île en Normal (CANELA). campana-dif.json, modes.camp de
-// campana.json, ?dif=1 et ?dif=2 copiés le 14 novembre 2026 (31 octobre au 13 novembre) : tous les stops, lines et stars ;
-// les 20 trios les plus joués (au moins 20 combats) de chaque arrêt de Kanto et de Cramois'Île dans le fichier complet, et
-// les mêmes trios dans les deux autres quand ils y sont ; les 8 objets les plus portés de chaque forme des lignées de ces
-// trios. Elle donne les taux de chaque difficulté de Kanto, ceux de Cramois'Île en Légende et, en Normal, ceux du test du
-// poste de garde. Parties de test : une vraie sauvegarde Kanto (save-kanto.json), et la même avec l'équipe du scénario S57
-// au combat 15.
+// trios d'au moins 20 combats les plus joués ; les holders d'au moins 50 combats. Ses taux ne sont ceux d'aucune difficulté :
+// elle sert à la Tour, au format de l'API, aux poids à statistiques égales et aux porteurs de Mystherbe (Lentilscope n'est
+// pas parmi les trois meilleurs en Légende). campana-dif.json, modes.camp de campana.json, ?dif=1 et ?dif=2 copiés le
+// 14 novembre 2026 (31 octobre au 13 novembre) : tous les stops, lines et stars ; les 20 trios les plus joués (au moins 20
+// combats) de chaque arrêt de Kanto et de Cramois'Île dans le fichier complet, et les mêmes trios dans les deux autres quand
+// ils y sont ; les 8 objets les plus portés de chaque forme des lignées de ces trios. Elle donne les taux de chaque
+// difficulté, Kanto et Cramois'Île. Parties de test : une vraie sauvegarde Kanto (save-kanto.json), et la même avec l'équipe
+// du scénario S57 au combat 15.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const KT = require('../kanto-overlay.user.js');
@@ -21,6 +21,7 @@ const S57 = require('./fixtures/s57.js');
 const camp = modes.camp;
 // Statistiques de chaque difficulté, Légende déduite, comme les lit le panneau (sourcesState).
 const LEAGUES = KT.leagueStats(DIF.all, DIF.normal, DIF.veteran);
+const NORMAL = LEAGUES.camp1;
 const LEGEND = LEAGUES.camp3;
 // Vraie sauvegarde Kanto : Légende, combat 5, relevée le 10 novembre 2026.
 const KANTO = require('./fixtures/save-kanto.json');
@@ -29,12 +30,11 @@ const KANTO = require('./fixtures/save-kanto.json');
 const TEAM = ['units', 'board', 'bench', 'shop', 'shopShiny', 'items', 'xp', 'hp', 'anchor'];
 const CAMP = { ...KANTO, ...Object.fromEntries(TEAM.map(k => [k, S57[k]])), round: 14, gymOrder: ['sabrina', 'koga'], level: 6, gold: 47 };
 const mode = (save, adventure = 'kanto') => KT.modeContext(KT.CAMPAIGN, save, adventure);
-const advise = (save, adventure = 'kanto', extra = {}) => adviseOn(save, { stats: camp, mode: mode(save, adventure), ...extra });
-// Conseils d'une partie de Kanto sur les statistiques de sa difficulté.
-const adviseKanto = (save, extra = {}) => advise(save, 'kanto', { stats: LEAGUES[mode(save).stats], ...extra });
-// État du panneau dont chaque difficulté lit les mêmes statistiques (mêlées par défaut), pour les tests où la difficulté ne
-// change rien ; ceux de Cramois'Île en Normal y lisent les taux de Normal.
-const panelStats = (c = camp) => ({ torre: modes.torre, camp1: c, camp2: c, camp3: c });
+// Conseils d'une partie sur les statistiques de sa difficulté.
+const advise = (save, adventure = 'kanto', extra = {}) => {
+  const m = mode(save, adventure);
+  return adviseOn(save, { stats: LEAGUES[m.stats], mode: m, ...extra });
+};
 // État du panneau chargé : chaque difficulté lit les siennes.
 const LEAGUE_PANEL = { torre: modes.torre, ...LEAGUES };
 
@@ -78,7 +78,7 @@ test('vraie sauvegarde Kanto (Légende, combat 5) : lue, économie, compo et cod
   const raw = JSON.stringify(KANTO);
   const found = KT.latestSave(storage({ 'kanto-tactics-save': raw }));
   assert.deepEqual([found.mode.id, found.mode.adventure, found.mode.league, KT.floorFromSave(raw, found.mode)], ['campaign', 'kanto', 3, 5]);
-  const a = adviseKanto(KT.parseSave(raw));
+  const a = advise(KT.parseSave(raw));
   assert.deepEqual([a.eco.floor, a.eco.spend, a.eco.allIn], [40, 0, false]);
   assert.deepEqual([a.target.core, a.target.fillers], [['bulbasaur', 'oddish', 'paras'], ['ponyta']]);
   assert.match(a.code, /^KT1;r41;xm=adv;xn=Plan%20kanto-overlay;paras:1:2;bulbasaur:2:3:/);
@@ -97,30 +97,30 @@ test('combat de campagne = manche + 1 ; statistiques de campagne acceptées', ()
 });
 
 test('arrêts Kanto : ceux de l’aventure, variantes pondérées par leurs combats, champion fixé par gymOrder', () => {
-  const s = KT.nextStops(camp.stops, 15, 3, mode({}));
+  const s = KT.nextStops(NORMAL.stops, 15, 3, mode({}));
   assert.deepEqual(s.map(x => x.stop), ['15:Recluta', '16:Erika', '16:Koga', '16:Sabrina', '17:Médium', '17:Recluta']);
   const gym = s.filter(x => x.floor === 16);
   assert.ok(Math.abs(gym.reduce((t, x) => t + x.share, 0) - 1) < 1e-9);
-  // Erika 54,4 % (100 424 combats), Koga 70,5 % (25 755), Morgane 27,7 % (56 018).
-  assert.equal(gym[0].fightWin.toFixed(2), '48.47');
+  // Erika 52,8 % (75 531 combats), Koga 73,0 % (18 237), Morgane 27,3 % (40 823).
+  assert.equal(gym[0].fightWin.toFixed(2), '47.80');
   // Canela a aussi un combat 2 (Motard) : absent de Kanto.
-  assert.deepEqual(KT.nextStops(camp.stops, 2, 1, mode({})).map(x => x.stop), ['2:Bosque Verde', '2:Pikachu salvaje']);
-  assert.deepEqual(KT.nextStops(camp.stops, 1, 3, mode({}, 'canela')).map(x => x.stop), ['1:Bajada', '2:Motero', '4:Pokémon salvajes']);
+  assert.deepEqual(KT.nextStops(NORMAL.stops, 2, 1, mode({})).map(x => x.stop), ['2:Bosque Verde', '2:Pikachu salvaje']);
+  assert.deepEqual(KT.nextStops(NORMAL.stops, 1, 3, mode({}, 'canela')).map(x => x.stop), ['1:Bajada', '2:Motero', '4:Pokémon salvajes']);
   // Morgane au 4ᵉ badge : le 5ᵉ se joue contre Erika ou Koga, le 6ᵉ contre le dernier.
-  const order = st => KT.nextStops(camp.stops, st, 1, mode({ gymOrder: ['sabrina'] })).map(x => x.boss);
+  const order = st => KT.nextStops(NORMAL.stops, st, 1, mode({ gymOrder: ['sabrina'] })).map(x => x.boss);
   assert.deepEqual([order(16), order(20)], [['Sabrina'], ['Erika', 'Koga']]);
-  assert.deepEqual(KT.nextStops(camp.stops, 24, 1, mode({ gymOrder: ['sabrina', 'koga'] })).map(x => x.boss), ['Erika']);
-  assert.equal(KT.nextStops(camp.stops, 1, 3, mode({}, 'safari')).length, 0);
+  assert.deepEqual(KT.nextStops(NORMAL.stops, 24, 1, mode({ gymOrder: ['sabrina', 'koga'] })).map(x => x.boss), ['Erika']);
+  assert.equal(KT.nextStops(NORMAL.stops, 1, 3, mode({}, 'safari')).length, 0);
 });
 
 test('prochain boss de campagne : badges, Ligue et Mewtwo ; champion le plus joué tant qu’il n’est pas choisi', () => {
-  assert.equal(KT.nextBossStop(camp.stops, 13, mode({})).stop, '16:Erika');
-  assert.equal(KT.nextBossStop(camp.stops, 13, mode({ gymOrder: ['sabrina'] })).stop, '16:Sabrina');
-  assert.equal(KT.nextBossStop(camp.stops, 29, mode({})).stop, '33:Lorelei');
-  assert.equal(KT.lastBossFloor(camp.stops, mode({})), 38);
+  assert.equal(KT.nextBossStop(NORMAL.stops, 13, mode({})).stop, '16:Erika');
+  assert.equal(KT.nextBossStop(NORMAL.stops, 13, mode({ gymOrder: ['sabrina'] })).stop, '16:Sabrina');
+  assert.equal(KT.nextBossStop(NORMAL.stops, 29, mode({})).stop, '33:Lorelei');
+  assert.equal(KT.lastBossFloor(NORMAL.stops, mode({})), 38);
   // Cramois'Île : boss du jeu (manches boss:) ; sans table d'arrêts, aucun.
-  assert.equal(KT.nextBossStop(camp.stops, 5, mode({}, 'canela')).stop, '8:Jefe de los moteros');
-  assert.equal(KT.lastBossFloor(camp.stops, mode({}, 'safari')), -Infinity);
+  assert.equal(KT.nextBossStop(NORMAL.stops, 5, mode({}, 'canela')).stop, '8:Jefe de los moteros');
+  assert.equal(KT.lastBossFloor(NORMAL.stops, mode({}, 'safari')), -Infinity);
 });
 
 test('difficulté : poids et « tout jouer » sur le taux de la difficulté lue, sans points retirés', () => {
@@ -128,24 +128,24 @@ test('difficulté : poids et « tout jouer » sur le taux de la difficulté lue,
   const at = league => KT.nextStops(camp.stops, 15, 1, mode({ league }))[0];
   assert.deepEqual([at(1).weight, at(3).weight], [100 - 82.5, 100 - 82.5]);
   // Légende : Morgane (26,9 %) au combat 16 est un mur ; Sbire Rocket (78,7 %) n'en est pas un.
-  const wall = adviseKanto({ ...CAMP, round: 15 }).eco;
+  const wall = advise({ ...CAMP, round: 15 }).eco;
   assert.deepEqual([wall.allIn, wall.nextWall.stop], [true, '16:Sabrina']);
-  assert.equal(adviseKanto(CAMP).eco.allIn, false);
+  assert.equal(advise(CAMP).eco.allIn, false);
   // Combat 16 avant le choix du champion, taux moyen de la manche : 47,8 % en Normal, 51,0 % en Vétéran, 47,1 % en Légende
   // (Erika 55,2 %, Koga 64,4 %, Morgane 26,9 %). Au-dessus de 45 % dans chaque difficulté.
-  const c16 = league => adviseKanto({ ...CAMP, round: 15, league, gymOrder: [] }).eco;
+  const c16 = league => advise({ ...CAMP, round: 15, league, gymOrder: [] }).eco;
   assert.deepEqual([c16(1).allIn, c16(2).allIn, c16(3).allIn], [false, false, false]);
 });
 
 test('économie de campagne : palier 40 (+4), combat rejoué joué à fond dès le premier échec, niveau 9 au plus', () => {
-  const a = adviseKanto(CAMP);
+  const a = advise(CAMP);
   assert.deepEqual([a.eco.floor, a.eco.spend], [40, 7]);
-  assert.deepEqual([adviseKanto({ ...CAMP, attempts: 1, round: 3 }).eco.allIn, adviseKanto({ ...CAMP, attempts: 1, round: 3 }).eco.retry], [true, true]);
+  assert.deepEqual([advise({ ...CAMP, attempts: 1, round: 3 }).eco.allIn, advise({ ...CAMP, attempts: 1, round: 3 }).eco.retry], [true, true]);
   // Niveaux visés : 4 dès le combat 4, un combat plus tôt par cran de difficulté.
   const goals = league => [3, 4, 7, 8, 29, 30].map(f => KT.levelGoal(f, mode({ league })));
   assert.deepEqual(goals(1), [0, 4, 4, 5, 8, 9]);
   assert.deepEqual(goals(2), [4, 4, 5, 5, 9, 9]);
-  assert.equal(adviseKanto({ ...CAMP, level: 9, round: 37 }).xp, null);
+  assert.equal(advise({ ...CAMP, level: 9, round: 37 }).xp, null);
   // Or de série (Th du jeu) : en campagne seulement.
   const streak = 'Série : +1 pièce par victoire à partir de la 2ᵉ de suite.';
   assert.deepEqual([KT.goldRules(mode({})), KT.goldRules(KT.TOWER_MODE)].map(rules => rules.some(r => r.includes(streak))), [true, false]);
@@ -165,7 +165,7 @@ test('niveaux visés de campagne : un combat d’avance par cran de difficulté 
 });
 
 test('compo de campagne : trio des 9 prochains combats de l’aventure, code KT1 en mode aventure', () => {
-  const a = adviseKanto(CAMP);
+  const a = advise(CAMP);
   // Seuls les trois boss ont des trios notés : Morgane, à 26,9 %, pèse 73,1 ; Koga et Erika, 28,3 et 18,2. Pyroli · Ponyta ·
   // Goupix : 34,4, dont 20 pour Goupix ★★ possédé, contre 31,7 à Chenipan · Salamèche · Roucool, plus forts sur Koga et
   // Erika (bornes basses 94,2 et 62,0 contre 55,2 et aucune) mais sans trio noté contre Morgane.
@@ -180,13 +180,13 @@ test('compo de campagne : trio des 9 prochains combats de l’aventure, code KT1
 });
 
 test('objets de campagne : Mystherbe, lanceur, ne vise pas Lentilscope et ne reçoit pas la Protéine', () => {
-  // Fixture mêlée : Lentilscope y est parmi les trois objets les plus portés de Mystherbe, et son profil de lanceur l'écarte.
-  // En Légende déduite, Lentilscope n'y est pas : la règle n'aurait rien à écarter.
+  // Fixture mêlée : Lentilscope y est parmi les trois porteurs de Mystherbe de meilleure borne basse, et son profil de lanceur
+  // l'écarte. En Légende déduite, il n'en fait pas partie : la règle n'aurait rien à écarter.
   const top = profile => KT.topHolders(camp, data, 'oddish', profile).map(h => h.id);
   assert.deepEqual(top(null), ['quick-claw', 'choice-specs', 'scope-lens']);
   assert.deepEqual(top(KT.lineProfiles(camp, data).get('oddish')), ['quick-claw', 'choice-specs', 'choice-scarf']);
   // Mystherbe dans le trio des prochains combats, Protéine et Carbone au sac : seul le Carbone va sur lui.
-  const cores = advise(CAMP).target.stops.map(s => ({ stop: s.stop, core: ['oddish', 'geodude', 'abra'], n: 500, win: 90, lo: 85 }));
+  const cores = advise(CAMP, 'kanto', { stats: camp }).target.stops.map(s => ({ stop: s.stop, core: ['oddish', 'geodude', 'abra'], n: 500, win: 90, lo: 85 }));
   const a = advise({ ...CAMP, units: { o: { id: 'o', line: 'oddish', star: 2 } }, board: {}, bench: ['o'], shop: [], items: ['protein', 'carbos'] },
     'kanto', { stats: { ...camp, cores } });
   assert.deepEqual(a.target.core, ['oddish', 'geodude', 'abra']);
@@ -200,8 +200,8 @@ test('shiny : pas de « Vends » en campagne (38 combats, sous le seuil de la To
   const units = { ...S57.units, f: { id: 'f', line: 'ekans', star: 1 }, g: { id: 'g', line: 'zubat', star: 1 },
     h: { id: 'h', line: 'zubat', star: 1 }, i: { id: 'i', line: 'pidgey', star: 1 }, j: { id: 'j', line: 'pidgey', star: 1 } };
   const full = { ...CAMP, level: 4, units, bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null] };
-  assert.equal(adviseKanto(full).bench[2].title, 'Vends Rattata');
-  assert.equal(adviseKanto({ ...full, units: { ...units, e: { ...units.e, shiny: true } } }).bench[2], null);
+  assert.equal(advise(full).bench[2].title, 'Vends Rattata');
+  assert.equal(advise({ ...full, units: { ...units, e: { ...units.e, shiny: true } } }).bench[2], null);
 });
 
 test('aventure sans statistiques (Safari) : compo sans trio, tes meilleures unités', () => {
@@ -230,7 +230,7 @@ test('règles et en-tête de campagne : difficulté, seuils, combats', () => {
   assert.ok(KT.goldRules(mode({ league: 2 })).some(r => r.includes('sous 45 % de victoires (taux de Vétéran)')));
   assert.equal(KT.leagueNote(mode(CAMP)), 'Kanto · Légende');
   assert.equal(KT.leagueNote(mode({}, 'canela')), 'Cap sur Cramois’Île · Normal');
-  const state = save => ({ advice: adviseKanto(save), stats: LEAGUE_PANEL, mode: mode(save), floor: save.round + 1 });
+  const state = save => ({ advice: advise(save), stats: LEAGUE_PANEL, mode: mode(save), floor: save.round + 1 });
   const head = KT.headHtml(state({ ...CAMP, round: 13 }));
   assert.match(head, /Kanto · Légende/);
   assert.match(head, /Morgane.*combat 16 · dans 2/s);
@@ -245,13 +245,13 @@ test('règles et en-tête de campagne : difficulté, seuils, combats', () => {
   const weak = Array.from({ length: 100 }, (_, i) => ({ r: 1, k: 'kanto:3:dif', f: 1, p: 50, w: Number(i < 30) }));
   assert.match(open(3, weak), /kt-rate bad">▼ 47,1 %/);
   // Table d'arrêts sans arrêt reconnu (libellés de l'API changés) : dit comme tel, pas « aventure sans statistiques ».
-  const renamed = { ...camp, stops: camp.stops.map(x => ({ ...x, stop: x.stop.replace(':', ':X ') })) };
-  assert.match(KT.headHtml({ ...state(CAMP), stats: panelStats(renamed) }), /Aucun combat de Kanto dans les statistiques publiques/);
+  const renamed = { ...LEGEND, stops: LEGEND.stops.map(x => ({ ...x, stop: x.stop.replace(':', ':X ') })) };
+  assert.match(KT.headHtml({ ...state(CAMP), stats: { ...LEAGUE_PANEL, camp3: renamed } }), /Aucun combat de Kanto dans les statistiques publiques/);
 });
 
 test('panneau : Nuzlocke sans conseils, invite neutre sans partie', () => {
   const ui = { tab: 'tour' };
-  const base = { stats: panelStats(), error: null, mode: KT.TOWER_MODE, floor: null, advice: null, save: null };
+  const base = { stats: LEAGUE_PANEL, error: null, mode: KT.TOWER_MODE, floor: null, advice: null, save: null };
   assert.match(KT.panelHtml({ ...base, unsupported: true }, ui), /Nuzlocke : pas de conseils/);
   assert.match(KT.panelHtml({ ...base, unsupported: false, mode: mode({}) }, ui), /partie Tour ou campagne.*saisir le combat/);
 });
@@ -296,7 +296,7 @@ test('alerte : campagne refusée signalée en campagne seulement, avec les autre
   assert.match(both, /lang\.json : réseau ; campana\.json : statistiques de campagne/);
   assert.match(both, /En campagne, seuls l’économie.*nommés par leur identifiant/);
   // Vétéran indisponible : rien à signaler en Normal, dont les statistiques sont là.
-  const normalOnly = { ...base, stats: { ...base.stats, camp1: camp }, campError: 'campana.json?dif=2 : HTTP 429' };
+  const normalOnly = { ...base, stats: { ...base.stats, camp1: NORMAL }, campError: 'campana.json?dif=2 : HTTP 429' };
   assert.equal(KT.alertHtml({ ...normalOnly, mode: mode({ league: 1 }) }), '');
   assert.match(KT.alertHtml({ ...normalOnly, mode: mode({ league: 3 }) }), /campana\.json\?dif=2 : HTTP 429/);
 });
@@ -403,13 +403,13 @@ test('Cramois’Île : boss du jeu, Artikodin perdable ; tout jouer seulement su
   // de boss : chaque combat.
   assert.deepEqual([KT.mustWin({ floor: 8 }, mode({})), KT.mustWin({ floor: 15 }, mode({})), KT.mustWin({ floor: 59, boss: 'elite' }, KT.TOWER_MODE),
     KT.mustWin({ floor: 3 }, mode({}, 'inicio'))], [true, false, true, true]);
-  // Voleur (24, 18,9 %) : mur perdable, l'or garde son palier ; le fossile (30, 25,1 %) : tout jouer.
-  const head = round => KT.headHtml({ advice: advise(canela(round), 'canela'), stats: panelStats(), mode: mode(CANELA, 'canela'), floor: round + 1 });
+  // Voleur (24, 19,0 %) : mur perdable, l'or garde son palier ; le fossile (30, 27,6 %) : tout jouer.
+  const head = round => KT.headHtml({ advice: advise(canela(round), 'canela'), stats: LEAGUE_PANEL, mode: mode(CANELA, 'canela'), floor: round + 1 });
   const thief = advise(canela(23), 'canela').eco;
   assert.deepEqual([thief.allIn, thief.spend, thief.nextWall.floor], [false, 0, 24]);
-  assert.match(head(23), /Combat 24 \(Voleur, 18,9 %\) : perdable sans rejouer, garde le palier\./);
+  assert.match(head(23), /Combat 24 \(Voleur, 19,0 %\) : perdable sans rejouer, garde le palier\./);
   assert.equal(advise(canela(29), 'canela').eco.allIn, true);
-  assert.match(head(28), /Combat 30 \(Le fossile s’éveille, 25,1 %\) : tout jouer\./);
+  assert.match(head(28), /Combat 30 \(Le fossile s’éveille, 27,6 %\) : tout jouer\./);
 });
 
 // Partie de Cramois'Île sans Pokémon, au niveau visé de chaque combat (Légende par défaut).
@@ -418,7 +418,7 @@ const freshCanela = (round, extra = {}) => {
   return { ...CANELA, league, round, level: KT.levelGoal(round + 1, mode({ league }, 'canela')), units: {}, board: {}, bench: Array(9).fill(null),
     shop: Array(5).fill(null), items: [], hp: 60, gold: 31, ...extra };
 };
-const legendAt = (round, extra = {}) => advise(freshCanela(round, extra), 'canela', { stats: LEGEND });
+const legendAt = (round, extra = {}) => advise(freshCanela(round, extra), 'canela');
 // Malus d'un trio à trouver sur les combats notés de la compo cible : sa note moins la même sans bonus de possession.
 function scarcity(save, core, stats, extra = {}) {
   const a = advise(save, 'canela', { stats, ...extra });
@@ -444,7 +444,7 @@ test('Cramois’Île en Légende : murs sur les vrais taux, trio des boss 27 à 
 test('Cramois’Île : Pokémon offert par un événement d’ici au boss, jamais rare', () => {
   // Normal, Chef des motards (8) au niveau 5 : Excelangue (coût 3) sort à 13 %, mais le poste de garde (5) l'offre.
   const trio = ['lickitung', 'pidgey', 'spearow'];
-  const at = (round, extra = {}) => scarcity(freshCanela(round, { league: 1, level: 5, ...extra }), trio, DIF.normal);
+  const at = (round, extra = {}) => scarcity(freshCanela(round, { league: 1, level: 5, ...extra }), trio, NORMAL);
   // Au combat 5 : à venir tant que le choix n'est pas fait, que le jeu ait déjà écrit l'événement ou non.
   const pending = { event: { round: 4, kind: 'choice', picked: null } };
   const done = { event: { round: 4, kind: 'choice', picked: 1 } };
@@ -454,7 +454,7 @@ test('Cramois’Île : Pokémon offert par un événement d’ici au boss, jamai
   const m = mode({ league: 1 }, 'canela');
   const both = { ...m, adv: { ...m.adv, events: { ...m.adv.events, 5: [...m.adv.events[5], { name: 'Kabuto', mon: 'kabuto' }] } } };
   const pair = ['lickitung', 'kabuto', 'pidgey'];
-  assert.equal(scarcity(freshCanela(0, { league: 1, level: 5 }), pair, DIF.normal, { mode: both }), -10);
+  assert.equal(scarcity(freshCanela(0, { league: 1, level: 5 }), pair, NORMAL, { mode: both }), -10);
 });
 
 test('Cramois’Île : niveaux visés à la taille des équipes adverses, Kanto inchangé', () => {
@@ -464,9 +464,9 @@ test('Cramois’Île : niveaux visés à la taille des équipes adverses, Kanto 
 });
 
 // Trios notés sur les combats de la compo cible d'une partie : [trio, taux, borne basse] chacun.
-const coresOn = (save, ...cores) => ({ ...camp, cores: advise(save, 'canela').target.stops.flatMap(s => cores.map(([core, win, lo]) => ({ stop: s.stop, core, n: 500, win, lo }))) });
+const coresOn = (save, ...cores) => ({ ...NORMAL, cores: advise(save, 'canela').target.stops.flatMap(s => cores.map(([core, win, lo]) => ({ stop: s.stop, core, n: 500, win, lo }))) });
 // Conseil de chaque carte d'un événement de Cramois'Île : « titre : raison », null sans pastille.
-const eventPicks = (save, ...cores) => advise(save, 'canela', { stats: cores.length ? coresOn(save, ...cores) : camp }).event.map(m => m && `${m.title} : ${m.why}`);
+const eventPicks = (save, ...cores) => advise(save, 'canela', { stats: cores.length ? coresOn(save, ...cores) : NORMAL }).event.map(m => m && `${m.title} : ${m.why}`);
 const choiceAt = (round, extra = {}, event = {}) => canela(round, { ...extra, event: { round, kind: 'choice', picked: null, ...event } });
 const centerAt = (center, extra = {}) => choiceAt(24, extra, { kind: 'center', center });
 const KABUTO = [['kabuto', 'growlithe', 'vulpix'], 95, 90];
@@ -505,7 +505,7 @@ test('Cramois’Île, événements à Pokémon : trio de la compo cible, puis le
   // Excelangue dans le trio des combats d'après la compo cible : la compo suivante.
   const guard = choiceAt(4);
   const m = mode(guard, 'canela');
-  const later = KT.nextStops(camp.stops, 5, m.horizon, m, m.horizon).map(s => ({ stop: s.stop, core: ['lickitung', 'abra', 'oddish'], n: 500, win: 95, lo: 90 }));
+  const later = KT.nextStops(NORMAL.stops, 5, m.horizon, m, m.horizon).map(s => ({ stop: s.stop, core: ['lickitung', 'abra', 'oddish'], n: 500, win: 95, lo: 90 }));
   const stats = coresOn(guard, KABUTO);
   assert.deepEqual(advise(guard, 'canela', { stats: { ...stats, cores: [...stats.cores, ...later] } }).event.map(x => x && x.why), ['Excelangue, du trio de la compo suivante', null]);
   // Seule face à une carte sans Pokémon, Excelangue reste conseillée du trio de la compo suivante.
@@ -535,5 +535,5 @@ test('Cramois’Île, événements : rien une fois la carte choisie, hors de la 
   assert.deepEqual(eventPicks(choiceAt(12, {}, { round: 11 })), []);
   // Événement sans options relevées (Ayudante de Oak, combat 3) et centre de Kanto : pas de pastille.
   assert.deepEqual(eventPicks(choiceAt(2, {}, { kind: 'oak' })), []);
-  assert.deepEqual(adviseKanto({ ...CAMP, event: { round: CAMP.round, kind: 'center', center: 'care', picked: null } }).event, []);
+  assert.deepEqual(advise({ ...CAMP, event: { round: CAMP.round, kind: 'center', center: 'care', picked: null } }).event, []);
 });
