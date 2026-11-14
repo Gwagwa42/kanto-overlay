@@ -313,7 +313,7 @@ test('sources : une difficulté par fichier, Légende déduite, la Tour à part'
   // Vétéran en échec : Normal reste, Vétéran et Légende manquent ; la Tour ne compte pas l'échec.
   const v = loaded(['stats', 'normal', 'data', 'lang'], { data: {}, lang: {} });
   assert.deepEqual([v.stats.camp1 === DIF.normal, v.stats.camp2, v.stats.camp3, v.failed, v.error, v.campError], [true, null, null, [], null, 'campana.json?dif=2 : HTTP 429']);
-  // Copie gardée d'un autre jour, ou d'avant que l'API publie ne, exp et first partout (fixture du 10 novembre) : pas de Légende.
+  // Copie gardée d'un autre jour, ou d'avant que l'API publie ne et exp partout (fixture du 10 novembre) : pas de Légende.
   const why = 'Légende : copies de campana.json de jours différents ou d’un autre format';
   const old = loaded(['stats', 'normal', 'veteran', 'data', 'lang'], { data: {}, lang: {}, veteran: { modes: { camp: { ...DIF.veteran, to: '2026-11-12' } } } });
   assert.deepEqual([old.stats.camp3, old.campError], [null, why]);
@@ -372,17 +372,19 @@ test('Légende déduite : comptes soustraits, entrée manquante comptée en 9 co
 
 test('Légende déduite malgré des trios à first nul (API du 14 novembre 2026) : leur first reste nul, le reste est compté', () => {
   const key = c => `${c.stop}|${KT.coreKey(c.core)}`;
-  // Un trio à first nul dans campana.json, un autre dans ?dif=1 seulement : chacun suffit à rendre nul le first de Légende.
+  // Un trio à first nul dans chacun des trois fichiers : chacun suffit à rendre nul le first de Légende.
   const kept = new Set(KT.legendStats(DIF.all, DIF.normal, DIF.veteran).cores.map(key));
   const inAll = DIF.all.cores.find(c => kept.has(key(c)));
   const inNormal = DIF.normal.cores.find(c => kept.has(key(c)) && key(c) !== key(inAll));
+  const inVeteran = DIF.veteran.cores.find(c => kept.has(key(c)) && ![inAll, inNormal].some(x => key(x) === key(c)));
+  assert.ok(inAll && inNormal && inVeteran, 'fixture : trois trios de Légende distincts');
   const nulled = (f, c) => ({ ...f, cores: f.cores.map(x => (x === c ? { ...x, first: null } : x)) });
-  const L = KT.leagueStats(nulled(DIF.all, inAll), nulled(DIF.normal, inNormal), DIF.veteran).camp3;
+  const L = KT.leagueStats(nulled(DIF.all, inAll), nulled(DIF.normal, inNormal), nulled(DIF.veteran, inVeteran)).camp3;
   assert.ok(L);
-  const [a, n] = [inAll, inNormal].map(c => L.cores.find(x => key(x) === key(c)));
-  assert.deepEqual([a.first, n.first], [null, null]);
-  assert.equal(a.n, KT.legendStats(DIF.all, DIF.normal, DIF.veteran).cores.find(x => key(x) === key(inAll)).n);
-  assert.ok(L.cores.filter(x => x !== a && x !== n).every(x => Number.isFinite(x.first)));
+  const nulls = [inAll, inNormal, inVeteran].map(c => L.cores.find(x => key(x) === key(c)));
+  assert.deepEqual(nulls.map(x => x.first), [null, null, null]);
+  assert.equal(nulls[0].n, KT.legendStats(DIF.all, DIF.normal, DIF.veteran).cores.find(x => key(x) === key(inAll)).n);
+  assert.ok(L.cores.filter(x => !nulls.includes(x)).every(x => Number.isFinite(x.first)));
 });
 
 test('en-tête de la Tour sans aucun arrêt : format de l’API, pas « cette aventure »', () => {

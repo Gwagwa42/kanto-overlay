@@ -597,7 +597,7 @@ const KT = (() => {
   // de l'API arrondis au dixième) ; une entrée sans combat, ou sans combat noté, restant est retirée.
   function legendStats(all, normal, veteran) {
     const hidden = PUBLISHED_MIN - 1;
-    const counts = x => ({ n: x.n, ne: x.ne, wins: x.n * x.win / 100, expected: x.ne * x.exp / 100, first: x.first === null ? NaN : x.n * x.first / 100 });
+    const counts = x => ({ n: x.n, ne: x.ne, wins: x.n * x.win / 100, expected: x.ne * x.exp / 100, first: x.n * (x.first ?? NaN) / 100 });
     const deduce = (x, ys) => {
       const c = counts(x);
       for (const y of ys) {
@@ -609,7 +609,8 @@ const KT = (() => {
       const win = 100 * wins / c.n;
       const exp = clamp(100 * c.expected / c.ne, 0, 100);
       const [lo, hi] = wilson(win / 100 * c.ne, c.ne);
-      return { ...x, n: c.n, ne: c.ne, win, lo, hi, exp, d: win - exp, first: Number.isNaN(c.first) ? null : 100 * clamp(c.first, 0, c.n) / c.n, tries: Math.round(100 * c.n / wins) / 100 };
+      const first = 100 * clamp(c.first, 0, c.n) / c.n;
+      return { ...x, n: c.n, ne: c.ne, win, lo, hi, exp, d: win - exp, first: Number.isFinite(first) ? first : null, tries: Math.round(100 * c.n / wins) / 100 };
     };
     const lists = Object.entries(LEGEND_LISTS).map(([list, key]) => {
       const subs = [normal, veteran].map(f => new Map(f[list].map(x => [key(x), x])));
