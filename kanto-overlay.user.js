@@ -589,7 +589,7 @@ const KT = (() => {
   // de chaque fichier. Les comptes se soustraient par entrée : combats n, victoires (n × win), combats notés ne, victoires
   // attendues (ne × exp), victoires au premier essai (n × first, pondérées par n faute du nombre de premiers essais). Comme
   // dans l'API, d = win − exp, tries = n / victoires (Infinity sans victoire) et lo, hi sont l'intervalle de Wilson sur ne.
-  // Une entrée absente d'un sous-fichier y compte PUBLISHED_MIN − 1 combats, tous gagnés ; victoires bornées à [0, n] (taux
+  // Une entrée absente d'un sous-fichier y compte PUBLISHED_MIN − 1 combats, tous gagnés ; victoires bornées à [0, n] et exp à [0, 100] (taux
   // de l'API arrondis au dixième) ; une entrée sans combat, ou sans combat noté, restant est retirée.
   function legendStats(all, normal, veteran) {
     const hidden = PUBLISHED_MIN - 1;
@@ -603,7 +603,7 @@ const KT = (() => {
       if (c.n <= 0 || c.ne <= 0) return null;
       const wins = clamp(c.wins, 0, c.n);
       const win = 100 * wins / c.n;
-      const exp = 100 * c.expected / c.ne;
+      const exp = clamp(100 * c.expected / c.ne, 0, 100);
       const [lo, hi] = wilson(win / 100 * c.ne, c.ne);
       return { ...x, n: c.n, ne: c.ne, win, lo, hi, exp, d: win - exp, first: 100 * clamp(c.first, 0, c.n) / c.n, tries: Math.round(100 * c.n / wins) / 100 };
     };
@@ -992,22 +992,17 @@ const KT = (() => {
   // offertes par chaque événement à choix de l'aventure d'ici là. En campagne, le trio sert contre le premier boss à gagner de
   // ces combats : niveau visé à ce boss (celui du joueur s'il est plus haut, ou sans boss à gagner), événements jusqu'à ce boss
   // (sinon jusqu'au dernier combat noté), celui du combat en cours compris tant que son choix n'est pas fait. En Tour, sans
-  // événement et où chaque étage est à gagner : le niveau du joueur. Calculé une fois par rated et par partie.
-  const sourcesMemo = new WeakMap();
+  // événement et où chaque étage est à gagner : le niveau du joueur.
   function sourcesOf(rated, game) {
-    const memo = sourcesMemo.get(rated);
-    if (memo?.game === game) return memo.sources;
     const { mode } = game;
-    const boss = mode.hasLeague ? rated.stops.find(st => mustWin(st, mode)) : undefined;
+    const boss = mode.id === TOWER.id ? undefined : rated.stops.find(st => mustWin(st, mode));
     const until = boss?.floor ?? rated.stops.at(-1)?.floor ?? game.floor;
     const ahead = f => f > game.floor || (f === game.floor && !game.eventDone);
-    const sources = {
+    return {
       level: Math.max(game.level, boss ? levelGoal(boss.floor, mode) : 0),
       gifts: Object.entries(mode.adv?.events ?? {}).filter(([f]) => ahead(Number(f)) && Number(f) <= until)
         .map(([, options]) => new Set(options.map(o => o.mon).filter(Boolean))),
     };
-    sourcesMemo.set(rated, { game, sources });
-    return sources;
   }
 
   // Note d'un trio : borne basse de son taux, en moyenne pondérée par la difficulté sur les combats notés (rated, de
