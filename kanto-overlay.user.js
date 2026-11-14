@@ -3078,52 +3078,47 @@ function pinLayer(layer, hud) {
 }
 
 // Sources indépendantes : sans data.json ou lang.json, le prochain boss et les trios restent affichés. campana.json est
-// accepté avec la Tour seule : sans modes.camp valide, la campagne n'a que les conseils d'économie. normal et veteran
-// (CAMP_FILES) ne servent qu'à la campagne : leur échec prive de statistiques leur difficulté et Légende, pas la Tour.
+// accepté avec la Tour seule : sans modes.camp valide, la campagne n'a que les conseils d'économie. Portée : shared pour un
+// fichier lu dans tous les modes, camp pour normal et veteran, qui ne servent qu'à la campagne : leur échec prive de
+// statistiques leur difficulté et Légende, pas la Tour.
 const SOURCE_FILES = [
   ['stats', 'campana.json', KT.SOURCES.stats, j => KT.isStatsData(j?.modes?.torre),
-    j => ({ torre: j.modes.torre, camp: KT.isStatsData(j.modes.camp) ? j.modes.camp : null })],
-  ['normal', 'campana.json?dif=1', KT.SOURCES.normal, j => KT.isStatsData(j?.modes?.camp), j => j.modes.camp],
-  ['veteran', 'campana.json?dif=2', KT.SOURCES.veteran, j => KT.isStatsData(j?.modes?.camp), j => j.modes.camp],
-  ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j],
-  ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j],
+    j => ({ torre: j.modes.torre, camp: KT.isStatsData(j.modes.camp) ? j.modes.camp : null }), 'shared'],
+  ['normal', 'campana.json?dif=1', KT.SOURCES.normal, j => KT.isStatsData(j?.modes?.camp), j => j.modes.camp, 'camp'],
+  ['veteran', 'campana.json?dif=2', KT.SOURCES.veteran, j => KT.isStatsData(j?.modes?.camp), j => j.modes.camp, 'camp'],
+  ['data', 'data.json', KT.SOURCES.data, KT.isGameData, j => j, 'shared'],
+  ['lang', 'lang.json', KT.SOURCES.lang, KT.isLang, j => j, 'shared'],
 ];
-const CAMP_FILES = ['normal', 'veteran'];
 
 // Champs de l'état tirés du chargement : results, issus de Promise.allSettled sur loadJson, dans l'ordre de SOURCE_FILES.
 // stats : la Tour et les statistiques de campagne de chaque difficulté (leagueStats), null si aucun des trois fichiers de
-// campana.json n'a répondu ; campError : ce qui manque à la campagne, affiché seulement quand la difficulté jouée n'a pas ses
-// statistiques (alertHtml). stale, campStale : date de la plus vieille copie servie, hors campagne et en campagne.
+// campana.json n'a répondu. error, campError : échecs des fichiers de portée shared et camp ; campError dit aussi ce qui manque
+// à la campagne, et n'est affiché que quand la difficulté jouée n'a pas ses statistiques (alertHtml). stale, campStale : date
+// de la plus vieille copie servie de chaque portée. failed : clés des fichiers shared en échec.
 function sourcesState(results) {
   const loaded = { stats: null, normal: null, veteran: null, data: null, lang: null, failed: [], uncached: false };
-  const errors = [];
-  const campErrors = [];
-  const stale = [];
-  const campStale = [];
+  const errors = { shared: [], camp: [] };
+  const stale = { shared: [], camp: [] };
   results.forEach((r, i) => {
-    const [key, file, , , pick] = SOURCE_FILES[i];
-    const camp = CAMP_FILES.includes(key);
+    const [key, file, , , pick, scope] = SOURCE_FILES[i];
     if (r.status === 'rejected') {
-      if (camp) campErrors.push(`${file} : ${r.reason.message}`);
-      else {
-        loaded.failed.push(key);
-        errors.push(`${file} : ${r.reason.message}`);
-      }
+      errors[scope].push(`${file} : ${r.reason.message}`);
+      if (scope === 'shared') loaded.failed.push(key);
       return;
     }
     loaded[key] = pick(r.value.json);
-    if (r.value.stale) (camp ? campStale : stale).push(r.value.at);
+    if (r.value.stale) stale[scope].push(r.value.at);
     if (r.value.uncached) loaded.uncached = true;
   });
   const { stats: all, normal, veteran, ...rest } = loaded;
-  if (all && !all.camp) campErrors.unshift('campana.json : statistiques de campagne au format inattendu');
+  if (all && !all.camp) errors.camp.unshift('campana.json : statistiques de campagne au format inattendu');
   const camps = KT.leagueStats(all?.camp ?? null, normal, veteran);
-  if (all?.camp && normal && veteran && !camps.camp3) campErrors.push('Légende : copies de campana.json de jours différents ou d’un autre format');
+  if (all?.camp && normal && veteran && !camps.camp3) errors.camp.push('Légende : copies de campana.json de jours différents ou d’un autre format');
+  const joined = list => (list.length ? list.join(' ; ') : null);
   const oldest = list => (list.length ? Math.min(...list) : null);
   return {
     ...rest, stats: all || normal || veteran ? { torre: all?.torre ?? null, ...camps } : null,
-    campError: campErrors.length ? campErrors.join(' ; ') : null, error: errors.length ? errors.join(' ; ') : null,
-    stale: oldest(stale), campStale: oldest(campStale),
+    campError: joined(errors.camp), error: joined(errors.shared), stale: oldest(stale.shared), campStale: oldest(stale.camp),
   };
 }
 
