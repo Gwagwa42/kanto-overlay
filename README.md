@@ -47,9 +47,10 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
   borne basse du taux de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat qui a des trios
   notés (un combat sans trio, manche peu jouée de campagne, ne compte pas), avec un bonus pour
   les Pokémon que tu possèdes déjà et un malus de 10 points par Pokémon à trouver dont le coût sort à moins de 15 % en boutique au
-  niveau visé au premier boss à gagner de ces combats (ton niveau s'il est plus haut, ou s'ils n'ont pas de boss à gagner). Un
-  Pokémon qu'un événement de l'aventure offre d'ici ce boss n'a pas de malus : à Cramois'Île, Kabuto, Amonita et Lokhlass
-  (coût 4) visent le Rival (27) dès le combat 13 en Légende, au lieu du combat 26. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
+  niveau visé au premier boss à gagner de ces combats en campagne (ton niveau s'il est plus haut, s'ils n'ont pas de boss à
+  gagner, et en Tour). Un Pokémon qu'un événement de l'aventure offre d'ici ce boss n'a pas de malus, un seul par événement,
+  qui ne laisse en choisir qu'un : à Cramois'Île, Kabuto, Amonita et Lokhlass (coût 4) visent le Rival (27) dès le combat 13
+  en Légende, au lieu du combat 26. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
   Le reste du plateau est rempli par tes unités les mieux notées, puis par la boutique pour les places restantes (★ « place libre »).
   La note d'une unité est sa puissance, `(1 + 0,35 × (coût − 1))` × 1, 1,9 ou 3,6 selon l'étoile, plus 0,25 par type renforcé et
   0,5 par seuil de type franchi. Deux copies de ta meilleure étoile comptent pour l'étoile suivante, que la 3ᵉ copie donnera :
@@ -213,7 +214,7 @@ Changer un préréglage recalcule tout de suite les conseils et les règles d'or
 | Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 4, 6 dès 8, 7 dès 16, 8 dès 22, 9 dès 33, 10 dès 60 ; plus tard : 6, 14, 26, 36, 55, 75. Kanto plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38, sous la taille des équipes des champions (8 au 6ᵉ badge, 9 contre Mewtwo). Cap sur Cramois'Île plus tôt : 5, 6, 11, 14, 18 ; plus tard : 8, 10, 18, 24, 30. Le niveau maximal ne change pas : le niveau 10 n'est jamais visé avant l'étage 60 en Tour. |
 | Tout jouer | Prudent, Normal, Audacieux | Étage, ou boss à gagner en campagne, sous 50, 45 ou 40 % de victoires (taux de la difficulté en campagne, plus l'écart appris sur [tes résultats](#tes-résultats)), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
 | Compo cible | Réactive, Normale, Stable | Combats vus d'avance (6, 9 ou 12, la compo suivante sur autant d'après) et gain minimal pour changer de trio (15, 30 ou 45 points). |
-| Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver introuvable à ton niveau (autant). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
+| Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver rare en boutique au niveau visé à son boss (autant, voir [Compo cible](#comment-les-conseils-sont-choisis)). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
 
 ### Tes résultats
 
@@ -310,9 +311,10 @@ types). Conformément à ses conditions, chaque source est gardée **une heure**
 L'API ne publie pas Légende : le panneau la déduit, entrée par entrée (arrêt, trio, lignée, étoile, objet porté), en retirant
 aux comptes de toutes les difficultés ceux de Normal et de Vétéran (combats, victoires, victoires attendues). Un sous-fichier
 omet les entrées de moins de 10 combats ; une entrée absente y compte 9 combats tous gagnés, ce qui ne surestime jamais
-Légende. Les bornes à 95 % sont recalculées (Wilson), un peu plus étroites que celles de l'API, qui réduit le nombre de combats
-selon une méthode non publiée ; le taux au premier essai est approché. Légende n'est déduite que si les trois copies couvrent
-les mêmes jours. Sans le fichier d'une difficulté, celle-ci n'a que les conseils d'économie, et l'alerte le dit.
+Légende. Les bornes à 95 % sont recalculées comme celles de l'API (Wilson sur les combats notés `ne`) ; le taux au premier
+essai est approché. Légende n'est déduite que si les trois copies couvrent les mêmes jours et portent ces comptes. Sans le
+fichier d'une difficulté, celle-ci n'a que les conseils d'économie, et l'alerte le dit ; sans `campana.json`, la Tour et
+Légende manquent, Normal et Vétéran restent.
 
 `data.json` s'arrête aux règles 40 alors que le jeu tourne en 41 : quelques règles relevées dans le code du jeu sont écrites dans
 le script (seuils d'XP, 1 XP gratuite par étage, chances de chaque coût en boutique par niveau, exemplaires par lignée, lignées
