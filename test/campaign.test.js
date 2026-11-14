@@ -155,11 +155,11 @@ test('niveaux visés de campagne : un combat d’avance par cran de difficulté 
   const fights = (k, wins) => Array.from({ length: 50 }, (_, i) => ({ r: 1, k, f: 1, p: 80, w: Number(i < wins) }));
   const learned = wins => KT.withResults(mode({ league: 2 }), fights('kanto:2:dif', wins));
   // Vétéran (un combat) et un écart de 0, −6 puis +6 points : 1, 2 puis 0 combat d'avance.
-  assert.deepEqual([learned(40).advance, learned(34).advance, learned(46).advance], [1, 2, 0]);
+  assert.deepEqual([40, 34, 46].map(wins => KT.advanceOf(learned(wins))), [1, 2, 0]);
   assert.deepEqual([6, 10].map(f => KT.levelGoal(f, learned(34))), [5, 6]);
   assert.ok(KT.goldRules(learned(34)).some(r => r.includes('(4 dès le combat 2, 5 dès le combat 6,')));
   // La Tour n'avance jamais ses niveaux visés, même avec un écart appris défavorable.
-  assert.equal(KT.withResults(KT.TOWER_MODE, fights('tower', 0)).advance, 0);
+  assert.equal(KT.advanceOf(KT.withResults(KT.TOWER_MODE, fights('tower', 0))), 0);
 });
 
 test('compo de campagne : trio des 9 prochains combats de l’aventure, code KT1 en mode aventure', () => {

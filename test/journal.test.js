@@ -137,7 +137,7 @@ test('écart appris : il déplace le seuil de « tout jouer », en Tour comme da
   assert.ok(KT.goldRules(weak).includes('Tout jouer sur un étage sous 58 % de victoires (plus 13 points d’après tes résultats), sous 40 PV, ou sur un étage rejoué à partir de l’étage 50.'));
   assert.ok(KT.goldRules(poll(fights(100, 70))).some(r => r.includes('sous 32 % de victoires (moins 13 points d’après tes résultats)')));
   const camp = KT.withResults(KT.modeContext(KT.CAMPAIGN, kanto, 'kanto'), fights(100, 30, { k: 'kanto:3:dif' }));
-  assert.deepEqual([camp.penalty, camp.advance], [13, 2]);
+  assert.deepEqual([camp.penalty, KT.advanceOf(camp)], [13, 2]);
   assert.ok(KT.goldRules(camp).some(r => r.includes('sous 58 % de victoires (Légende, taux déduits : toutes difficultés moins Normal et Vétéran ; plus 13 points d’après tes résultats)')));
   // En-tête : le seuil déplacé est dit en Tour aussi, et seulement quand un écart est compté.
   const head = mode => KT.headHtml({ advice: null, stats: { torre: stats }, mode, floor: 10 });

@@ -354,8 +354,8 @@ const KT = (() => {
 
   // Contexte de la partie : règles du mode, aventure (sa table d'arrêts, ou null), difficulté, statistiques à lire (stats : clé
   // de l'état du panneau, camp1 à camp3 en campagne) et stratégie normale (withStrategy). penalty : points retirés aux taux
-  // publics, l'écart appris (withResults). Sans league (sauvegarde d'avant les difficultés), Normal ; une valeur hors de 1 à 3
-  // est signalée en console et comptée Normal.
+  // publics, l'écart appris (withResults), 0 ici. Sans league (sauvegarde d'avant les difficultés), Normal ; une valeur hors
+  // de 1 à 3 est signalée en console et comptée Normal.
   function modeContext(rules, save = {}, adventure = null) {
     const known = [1, 2, 3].includes(save.league);
     if (rules === CAMPAIGN && !known && save.league !== undefined) console.warn('kanto-overlay : difficulté inconnue, comptée Normal', save.league);
@@ -364,14 +364,14 @@ const KT = (() => {
     return withStrategy({
       ...rules, stats: rules === CAMPAIGN ? `camp${league}` : rules.stats, shopLines: adv?.shopLines ?? rules.shopLines,
       shopOut: adv?.shopOut ?? rules.shopOut, baseGoals: adv?.levelGoals ?? rules.levelGoals, adventure, adv, league,
-      penalty: 0, advance: advanceOf(rules, league, 0), gymOrder: Array.isArray(save.gymOrder) ? save.gymOrder : [],
+      penalty: 0, gymOrder: Array.isArray(save.gymOrder) ? save.gymOrder : [],
     }, STRATEGY_DEFAULTS);
   }
 
   // Combats d'avance des niveaux visés dans un mode à difficultés, de 0 à 2 : un par cran de difficulté, plus un par
   // ADVANCE_POINTS points de pénalité (écart appris) ; la Tour n'en a pas.
-  const advanceOf = (rules, league, penalty) => (rules.hasLeague
-    ? Math.max(0, Math.min(2, league - 1 + Math.round(penalty / ADVANCE_POINTS))) : 0);
+  const advanceOf = mode => (mode.hasLeague
+    ? Math.max(0, Math.min(2, mode.league - 1 + Math.round(mode.penalty / ADVANCE_POINTS))) : 0);
 
   // Mode avec la stratégie choisie (choice : clé de STRATEGY → valeur connue, l'objet ui passé par checkUi) ; les niveaux visés repartent de ceux des
   // règles (baseGoals), pour qu'un nouveau choix remplace le précédent. Un niveau n'est pas visé avant l'étage où le jeu
@@ -448,8 +448,10 @@ const KT = (() => {
     return { mode, unsupported, saveKey, lastAuto, floor, source, save: found?.mode ? parseSave(found.raw) : null };
   }
 
-  const levelGoal = (floor, mode) => mode.levelGoals
-    .reduce((goal, [from, level]) => (floor + mode.advance >= from ? level : goal), 0);
+  function levelGoal(floor, mode) {
+    const ahead = floor + advanceOf(mode);
+    return mode.levelGoals.reduce((goal, [from, level]) => (ahead >= from ? level : goal), 0);
+  }
   const maxLevel = (floor, mode) => mode.levelCap(floor);
   // Chance (%) de voir le coût de la lignée dans une case de boutique à ce niveau ; 0 pour un coût ou un niveau inconnu.
   const shopOdds = (data, level, base) => SHOP_ODDS[level]?.[lineInfo(data, base)?.c - 1] ?? 0;
@@ -500,7 +502,8 @@ const KT = (() => {
   }
 
   function goldRules(mode) {
-    const goals = mode.levelGoals.map(([from, level]) => `${level} dès ${mode.the} ${Math.max(1, from - mode.advance)}`).join(', ');
+    const advance = advanceOf(mode);
+    const goals = mode.levelGoals.map(([from, level]) => `${level} dès ${mode.the} ${Math.max(1, from - advance)}`).join(', ');
     const hard = mode.hardWin + mode.penalty;
     const notes = [];
     if (mode.hasLeague) {
@@ -934,7 +937,7 @@ const KT = (() => {
     const { shift } = ownResults(fights, mode);
     // 0 - shift : un écart nul donne 0 et non −0, que Object.is et deepStrictEqual distinguent.
     const penalty = 0 - shift;
-    return { ...mode, penalty, advance: advanceOf(mode, mode.league, penalty) };
+    return { ...mode, penalty };
   }
 
   const decimal = x => x.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
@@ -2393,7 +2396,7 @@ const KT = (() => {
   return {
     SOURCES, UI_KEY, PLAN_NAME, BOONS, TOWER, CAMPAIGN, TOWER_MODE, NUZLOCKE_HUD, leagueLabel, lineInfo, loadJson, goldRules, leagueNote, modeContext, withStrategy, STRATEGY, STRATEGY_DEFAULTS, latestSave, shownMode, pollState,
     VERSION, JOURNAL_KEY, TOWER_RUNS_KEY, readJournal, fightWon, fightEntry, notedFight, addFight, ownResults, withResults, resultsNote,
-    parseSave, floorFromSave, isStatsData, legendStats, leagueStats, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss, mustWin,
+    parseSave, floorFromSave, advanceOf, isStatsData, legendStats, leagueStats, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss, mustWin,
     baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, rerollChance, ratedStops, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, touching, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
   };
