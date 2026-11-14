@@ -300,9 +300,28 @@ test('sources : une difficulté par fichier, Légende déduite, la Tour à part'
   // Vétéran en échec : Normal reste, Vétéran et Légende manquent ; la Tour ne compte pas l'échec.
   const v = loaded(['stats', 'normal', 'data', 'lang'], { data: {}, lang: {} });
   assert.deepEqual([v.stats.camp1 === DIF.normal, v.stats.camp2, v.stats.camp3, v.failed, v.error, v.campError], [true, null, null, [], null, 'campana.json?dif=2 : HTTP 429']);
-  // Copie gardée d'un autre jour : pas de Légende.
+  // Copie gardée d'un autre jour, ou d'avant que l'API publie ne, exp et first partout (fixture du 10 novembre) : pas de Légende.
+  const why = 'Légende : copies de campana.json de jours différents ou d’un autre format';
   const old = loaded(['stats', 'normal', 'veteran', 'data', 'lang'], { data: {}, lang: {}, veteran: { modes: { camp: { ...DIF.veteran, to: '2026-11-12' } } } });
-  assert.deepEqual([old.stats.camp3, old.campError], [null, 'Légende : copies de campana.json de jours différents']);
+  assert.deepEqual([old.stats.camp3, old.campError], [null, why]);
+  const bare = { ...DIF.veteran, cores: camp.cores.slice(0, 1).map(c => ({ ...c, stop: DIF.veteran.cores[0].stop })) };
+  assert.equal(camp.cores[0].ne, undefined);
+  assert.deepEqual(loaded(['stats', 'normal', 'veteran', 'data', 'lang'], { data: {}, lang: {}, veteran: { modes: { camp: bare } } }).stats.camp3, null);
+  // campana.json en échec : ni Tour ni Légende, Normal et Vétéran restent ; l'échec compte pour la Tour.
+  const noAll = loaded(['normal', 'veteran', 'data', 'lang'], { data: {}, lang: {} });
+  assert.deepEqual([noAll.stats.torre, noAll.stats.camp1 === DIF.normal, noAll.stats.camp2 === DIF.veteran, noAll.stats.camp3, noAll.failed],
+    [null, true, true, null, ['stats']]);
+  assert.equal(loaded(['data', 'lang'], { data: {}, lang: {} }).stats, null);
+  // Partie en Normal : l'échec de campana.json est dit, sans priver de compo cible.
+  const normalAlert = KT.alertHtml({ ...noAll, mode: mode({ league: 1 }) });
+  assert.match(normalAlert, /campana\.json : HTTP 429/);
+  assert.doesNotMatch(normalAlert, /pas de compo cible|seuls l’économie/);
+  // modes.camp illisible dans le fichier complet : dit en campagne, en tête de campError.
+  const broken = loaded(['stats', 'normal', 'veteran', 'data', 'lang'], { data: {}, lang: {}, stats: { v: 1, modes: { torre: modes.torre, camp: {} } } });
+  assert.deepEqual([broken.stats.camp3, broken.campError], [null, 'campana.json : statistiques de campagne au format inattendu']);
+  // Copie périmée d'un fichier de difficulté : datée en campagne seulement.
+  const staleVet = KT.sourcesState(KT.SOURCE_FILES.map(([key]) => ({ status: 'fulfilled', value: { json: key === 'stats' ? { v: 1, modes: { torre: modes.torre, camp: DIF.all } } : key === 'data' || key === 'lang' ? {} : { modes: { camp: DIF[key] } }, at: key === 'veteran' ? 5 : 1, stale: key === 'veteran' } })));
+  assert.deepEqual([staleVet.stale, staleVet.campStale], [null, 5]);
 });
 
 test('Légende déduite : comptes soustraits, entrée manquante comptée en 9 combats gagnés, bornes recalculées', () => {
@@ -312,7 +331,15 @@ test('Légende déduite : comptes soustraits, entrée manquante comptée en 9 co
   const wins = 66277 * 0.245 - 46334 * 0.276 - 10171 * 0.254;
   assert.equal(fossil.n, 9772);
   assert.ok(Math.abs(fossil.win - 100 * wins / 9772) < 1e-9 && fossil.lo < fossil.win && fossil.win < fossil.hi);
-  assert.ok(Math.abs(fossil.tries - 9772 / wins) < 1e-9);
+  // Essais par victoire au centième, comme l'API ; d = win − exp ; bornes de Wilson sur ne.
+  assert.equal(fossil.tries, Math.round(100 * 9772 / wins) / 100);
+  assert.ok(Math.abs(fossil.d - (fossil.win - fossil.exp)) < 1e-9 && fossil.ne < fossil.n);
+  const z = 1.96;
+  const p = fossil.win / 100;
+  const lo = 100 * (p + z * z / (2 * fossil.ne) - z * Math.sqrt(p * (1 - p) / fossil.ne + z * z / (4 * fossil.ne ** 2))) / (1 + z * z / fossil.ne);
+  assert.ok(Math.abs(fossil.lo - lo) < 1e-9);
+  // Total de Légende : 1,22 million de combats.
+  assert.equal(L.total.n, DIF.all.total.n - DIF.normal.total.n - DIF.veteran.total.n);
   // Kabuto · Lokhlass · Amonita contre le fossile : 81 % en Normal, 14 % en Légende.
   const key = c => `${c.stop}|${KT.coreKey(c.core)}`;
   const klo = L.cores.find(c => key(c) === '30:El fósil despierta|kabuto+lapras+omanyte');
@@ -365,8 +392,8 @@ const freshCanela = (round, extra = {}) => {
 };
 const legendAt = (round, extra = {}) => advise(freshCanela(round, extra), 'canela', { stats: LEGEND });
 // Malus d'un trio à trouver sur les combats notés de la compo cible : sa note moins la même sans bonus de possession.
-function scarcity(save, core, stats) {
-  const a = advise(save, 'canela', { stats });
+function scarcity(save, core, stats, extra = {}) {
+  const a = advise(save, 'canela', { stats, ...extra });
   const cores = new Map(a.target.stops.map(st => [st.stop, new Map(stats.cores.filter(c => c.stop === st.stop && c.n >= 20).map(c => [KT.coreKey(c.core), c]))]));
   const rated = KT.ratedStops(a.target.stops, cores);
   return KT.coreScore(core, rated, a.game, data) - KT.coreScore(core, rated, { ...a.game, mode: { ...a.game.mode, ownedBonus: 0 } }, data);
@@ -390,8 +417,16 @@ test('Cramois’Île : Pokémon offert par un événement d’ici au boss, jamai
   // Normal, Chef des motards (8) au niveau 5 : Excelangue (coût 3) sort à 13 %, mais le poste de garde (5) l'offre.
   const trio = ['lickitung', 'pidgey', 'spearow'];
   const at = (round, extra = {}) => scarcity(freshCanela(round, { league: 1, level: 5, ...extra }), trio, DIF.normal);
+  // Au combat 5 : à venir tant que le choix n'est pas fait, que le jeu ait déjà écrit l'événement ou non.
   const pending = { event: { round: 4, kind: 'choice', picked: null } };
-  assert.deepEqual([at(0), at(4, pending), at(4), at(5)], [0, 0, -10, -10]);
+  const done = { event: { round: 4, kind: 'choice', picked: 1 } };
+  assert.deepEqual([at(0), at(4, pending), at(4), at(4, done), at(5)], [0, 0, 0, -10, -10]);
+  // Un événement n'offre qu'une de ses cartes : deux lignées rares du même événement, un seul malus évité (Kabuto, coût 4,
+  // ajouté ici au poste de garde).
+  const m = mode({ league: 1 }, 'canela');
+  const both = { ...m, adv: { ...m.adv, events: { ...m.adv.events, 5: [...m.adv.events[5], { name: 'Kabuto', mon: 'kabuto' }] } } };
+  const pair = ['lickitung', 'kabuto', 'pidgey'];
+  assert.equal(scarcity(freshCanela(0, { league: 1, level: 5 }), pair, DIF.normal, { mode: both }), -10);
 });
 
 test('Cramois’Île : niveaux visés à la taille des équipes adverses, Kanto inchangé', () => {

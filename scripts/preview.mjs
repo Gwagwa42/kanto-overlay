@@ -34,7 +34,7 @@ const SHINY = {
   bench: ['b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', null],
 };
 
-// Campagne Kanto en Légende, combat 15 (Sbire Rocket), Morgane choisie au 4ᵉ badge : seuils durcis de 20 points ; Safari, aventure
+// Campagne Kanto en Légende, combat 15 (Sbire Rocket), Morgane choisie au 4ᵉ badge, statistiques de Légende déduites ; Safari, aventure
 // sans table d'arrêts : compo sans trio.
 const CAMP = { ...S57, mode: 'campaign', round: 14, league: 3, gymOrder: ['sabrina', 'koga'], level: 6, gold: 47, tower: undefined };
 const SAVE_KANTO = 'kanto-tactics-save';
@@ -172,8 +172,8 @@ function panelPage(name, s) {
   const start = { mode: KT.TOWER_MODE, saveKey: undefined, lastAuto: undefined, floor: null, source: 'manuel' };
   const fights = s.fights ?? [];
   const state = {
-    ...KT.pollState(start, found, null, ui, fights), fights, lastRaw: raw, stats: null, campBroken: false, data: null, lang: null,
-    failed: [], stale: null, uncached: false, error: null, ...settled(s), copied: null,
+    ...KT.pollState(start, found, null, ui, fights), fights, lastRaw: raw, stats: null, campError: null, data: null, lang: null,
+    failed: [], stale: null, campStale: null, uncached: false, error: null, ...settled(s), copied: null,
   };
   const stats = KT.modeStats(state);
   state.advice = KT.adviceOf(state, ui);
