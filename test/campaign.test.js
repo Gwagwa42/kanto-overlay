@@ -333,6 +333,15 @@ test('Cramois’Île, événements à Pokémon : trio de la compo cible, puis le
   const amberWhy = (save, core) => advise(save, 'canela', { mode: amber, stats: coresOn(save, [core, 95, 90]) }).event.map(x => x && x.why);
   assert.deepEqual(amberWhy(lab, ['aerodactyl', 'growlithe', 'vulpix']), [null, null, 'Ptéra, du trio de la compo cible']);
   assert.deepEqual(amberWhy(both, ['kabuto', 'omanyte', 'vulpix']), ['Amonita, du trio de la compo cible : 2 exemplaires', null, null]);
+  // Carte sans Pokémon : hors de la comparaison (sans quoi le motif « plus fort que… » lirait son Pokémon absent). Seule face
+  // à elle, une carte à Pokémon n'est conseillée que du trio d'une compo, aucun autre critère ne la comparant à rien.
+  const leave = cards => ({ ...labMode, adv: { ...labMode.adv, events: { ...labMode.adv.events, 23: cards } } });
+  const fossils = labMode.adv.events[23];
+  const leaveWhy = (cards, ...cores) => advise(lab, 'canela', { mode: leave(cards), stats: coresOn(lab, ...cores) }).event.map(x => x && x.why);
+  const stronger = [[['growlithe', 'vulpix', 'ponyta'], 95, 90], [['omanyte', 'abra', 'oddish'], 99, 40]];
+  assert.deepEqual(leaveWhy([...fossils, { name: 'Partir' }], ...stronger), ['Amonita, plus fort que Kabuto (combats 24–30)', null, null]);
+  assert.deepEqual(leaveWhy([fossils[0], { name: 'Partir' }], ...stronger), [null, null]);
+  assert.deepEqual(leaveWhy([{ name: 'Partir' }, fossils[1]], KABUTO), [null, 'Kabuto, du trio de la compo cible']);
   // Poste de garde : ni Excelangue ni Canarticho dans un trio, Canarticho donne 2 XP.
   assert.deepEqual(eventPicks(choiceAt(4), KABUTO), [null, 'Prends Canarticho : même force, +2 XP']);
   // Excelangue dans le trio des combats d'après la compo cible : la compo suivante.
@@ -341,6 +350,9 @@ test('Cramois’Île, événements à Pokémon : trio de la compo cible, puis le
   const later = KT.nextStops(camp.stops, 5, m.horizon, m, m.horizon).map(s => ({ stop: s.stop, core: ['lickitung', 'abra', 'oddish'], n: 500, win: 95, lo: 90 }));
   const stats = coresOn(guard, KABUTO);
   assert.deepEqual(advise(guard, 'canela', { stats: { ...stats, cores: [...stats.cores, ...later] } }).event.map(x => x && x.why), ['Excelangue, du trio de la compo suivante', null]);
+  // Seule face à une carte sans Pokémon, Excelangue reste conseillée du trio de la compo suivante.
+  const alone = { ...m, adv: { ...m.adv, events: { ...m.adv.events, 5: [{ name: 'Partir' }, m.adv.events[5][0]] } } };
+  assert.deepEqual(advise(guard, 'canela', { mode: alone, stats: { ...stats, cores: [...stats.cores, ...later] } }).event.map(x => x && x.why), [null, 'Excelangue, du trio de la compo suivante']);
 });
 
 test('Cramois’Île, XP contre PV et centre : seuil de PV, plafond de niveau, carte grisée jamais conseillée', () => {

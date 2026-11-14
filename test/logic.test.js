@@ -214,7 +214,7 @@ test('stratégie : compo réactive ou stable (combats vus d’avance, inertie)',
 
 test('stratégie : bonus des Pokémon possédés faible ou fort', () => {
   const unit = { g: { id: 'g', line: 'giovanni', star: 1 } };
-  const score = (owned, units) => KT.coreScore(['giovanni', 'koga', 'samurai'], UNRATED, new Map(),
+  const score = (owned, units) => KT.coreScore(['giovanni', 'koga', 'samurai'], UNRATED,
     KT.readGame({ ...save, round: 1009, level: 8, units, board: {}, bench: Object.keys(units), shop: [] }, strategy({ owned })), data);
   // Niveau 8 : Koga et Samouraï (coût 5) introuvables, un malus chacun ; Giovanni possédé, un bonus.
   assert.deepEqual([score('low', unit), score('normal', unit), score('high', unit)], [-5, -10, -20]);
@@ -252,7 +252,7 @@ test('compo cible : −10 points par lignée du trio à trouver dont le coût ne
     brockCore(['onix', 'rhyhorn', 'kabuto'], 55),
   ];
   const game = (level, units = {}) => readGame({ ...save, round: 1009, level, units, board: {}, bench: Object.keys(units), shop: [] });
-  const score = g => KT.coreScore(cores[0].core, UNRATED, new Map(), g, data);
+  const score = g => KT.coreScore(cores[0].core, UNRATED, g, data);
   // Coût 5 : 6 % au niveau 8, 17 % au niveau 9 ; une lignée possédée garde son bonus.
   assert.deepEqual([score(game(8)), score(game(9)), score(game(8, { g: { id: 'g', line: 'giovanni', star: 1 } }))], [-30, 0, -10]);
   const key = g => KT.targetComp(brockStats(cores), data, g, null).key;
@@ -675,7 +675,7 @@ test('compo cible : note statistique sur les seuls combats qui ont des trios not
   const stops = [{ stop: '5:a', weight: 30 }, { stop: '6:b', weight: 70 }, { stop: '7:c', weight: 50 }];
   const cores = new Map([['5:a', new Map([[KT.coreKey(core), { lo: 80 }]])], ['6:b', new Map()], ['7:c', new Map([['x', { lo: 50 }]])]]);
   // (30 × 80 + 50 × 0) / (30 + 50) : le combat 6, sans trio noté, ne dilue pas la note ; le 7, où le trio n'est pas noté, oui.
-  assert.equal(KT.coreScore(core, KT.ratedStops(stops, cores), cores, game, data), 30);
+  assert.equal(KT.coreScore(core, KT.ratedStops(stops, cores), game, data), 30);
 });
 
 test('compo cible : force des lignées sur les seuls combats qui ont des trios notés', () => {
@@ -690,7 +690,7 @@ test('lignée du trio inconnue des données : ni malus, ni actualisation pour el
   const core = ['newmon', 'pidgey', 'spearow'];
   const game = readGame({ ...save, round: 1004, level: 9, units: {}, board: {}, bench: [], shop: [] });
   // Roucool et Piafabec (coût 1 : 6 % au niveau 9) coûtent 10 points chacun ; la lignée sans coût connu, rien.
-  assert.equal(KT.coreScore(core, UNRATED, new Map(), game, data), -20);
+  assert.equal(KT.coreScore(core, UNRATED, game, data), -20);
   const a = advise({ ...save, round: 1004, level: 9, xp: 0, gold: 60, attempts: 0, units: {}, board: {}, bench: [], shop: [] },
     { stats: brockStats([brockCore(core)]) });
   assert.equal(a.target.key, 'newmon+pidgey+spearow');
@@ -1501,7 +1501,7 @@ test('shiny : lignée shiny si sa copie de meilleure étoile l’est, +2 points 
   assert.match(advise(lower).code, /;dratini:2:\d+:/);
   assert.equal(carry(lower), 'a');
   const core = ['aerodactyl', 'dratini', 'growlithe'];
-  assert.equal(KT.coreScore(core, UNRATED, new Map(), readGame(shiny), data) - KT.coreScore(core, UNRATED, new Map(), readGame(S57), data), 2);
+  assert.equal(KT.coreScore(core, UNRATED, readGame(shiny), data) - KT.coreScore(core, UNRATED, readGame(S57), data), 2);
 });
 
 test('shiny : « s » après l’étoile dans le code KT1', () => {

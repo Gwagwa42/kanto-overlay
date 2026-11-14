@@ -905,22 +905,23 @@ const KT = (() => {
     return Boolean(two && three) && three.hi - three.exp < two.lo - two.exp;
   }
 
-  // Combats d'une fenêtre qui ont des trios notés, et leur poids total. Seuls ceux-là entrent dans les moyennes de coreScore
-  // et de lineStrength : un combat sans statistiques, manche peu jouée de campagne, les tirerait vers zéro (dans coreScore,
-  // les bonus de possession l'emporteraient alors).
-  function ratedStops(stops, coresByStop) {
-    const rated = stops.filter(st => coresByStop.get(st.stop)?.size);
-    return { stops: rated, total: totalWeight(rated) };
+  // Combats d'une fenêtre qui ont des trios notés, leur poids total et leurs trios (cores, tirés de coresAt) : bestCore prend
+  // ses candidats dans cores, qui ne doit donc couvrir que ces combats. Seuls eux entrent dans les moyennes de coreScore et
+  // de lineStrength : un combat sans statistiques, manche peu jouée de campagne, les tirerait vers zéro (dans coreScore, les
+  // bonus de possession l'emporteraient alors).
+  function ratedStops(stops, cores) {
+    const rated = stops.filter(st => cores.get(st.stop)?.size);
+    return { stops: rated, total: totalWeight(rated), cores: new Map(rated.map(st => [st.stop, cores.get(st.stop)])) };
   }
 
   // Note d'un trio : borne basse de son taux, en moyenne pondérée par la difficulté sur les combats notés (rated, de
   // ratedStops ; 0 sans aucun), plus les bonus de possession. Une lignée à trouver dont le coût, connu, ne sort pas assez au
   // niveau du joueur coûte ce qu'une lignée possédée rapporte.
-  function coreScore(core, rated, coresByStop, game, data) {
+  function coreScore(core, rated, game, data) {
     const { ownedBonus } = game.mode;
-    const { stops, total } = rated;
+    const { stops, total, cores } = rated;
     const key = coreKey(core);
-    const stat = total ? stops.reduce((s, st) => s + st.weight * (coresByStop.get(st.stop).get(key)?.lo ?? 0), 0) / total : 0;
+    const stat = total ? stops.reduce((s, st) => s + st.weight * (cores.get(st.stop).get(key)?.lo ?? 0), 0) / total : 0;
     const owned = core.reduce((s, id) => {
       const base = baseLine(id);
       const star = bestStar(game, base);
@@ -949,12 +950,12 @@ const KT = (() => {
   // Force de chaque lignée de base sur les combats notés d'une fenêtre (ratedStops) : écart, pondéré par la difficulté des
   // combats, entre le taux de victoire des trios où elle figure (pondéré par leurs combats) et celui du combat. Un combat noté
   // sans trio pour elle compte zéro.
-  function lineStrength(coresByStop, stops) {
-    const { stops: rated, total } = ratedStops(stops, coresByStop);
+  function lineStrength(rated) {
+    const { stops, total, cores } = rated;
     const strength = new Map();
-    for (const st of rated) {
+    for (const st of stops) {
       const sums = new Map();
-      for (const c of coresByStop.get(st.stop).values()) {
+      for (const c of cores.get(st.stop).values()) {
         for (const base of new Set(c.core.map(baseLine))) {
           const sum = sums.get(base) ?? { n: 0, win: 0 };
           sum.n += c.n;
@@ -980,20 +981,19 @@ const KT = (() => {
     return gain;
   }
 
-  // Meilleur trio sur une fenêtre de combats (+inertia du mode pour le trio précédent), avec sa preuve : le trio sur le combat le plus
-  // dur où il a des statistiques.
-  function bestCore(coresByStop, data, game, stops, previousKey) {
+  // Meilleur trio sur les combats notés (rated, de ratedStops) d'une fenêtre de combats (stops) (+inertia du mode pour le trio
+  // précédent), avec sa preuve : le trio sur le combat le plus dur où il a des statistiques.
+  function bestCore(rated, data, game, stops, previousKey) {
     const candidates = new Map();
-    for (const m of coresByStop.values()) for (const [key, c] of m) candidates.set(key, c.core);
+    for (const m of rated.cores.values()) for (const [key, c] of m) candidates.set(key, c.core);
     if (!candidates.size) return null;
-    const rated = ratedStops(stops, coresByStop);
     let best = null;
     for (const [key, core] of candidates) {
-      const score = coreScore(core, rated, coresByStop, game, data) + (key === previousKey ? game.mode.inertia : 0);
+      const score = coreScore(core, rated, game, data) + (key === previousKey ? game.mode.inertia : 0);
       if (!best || score > best.score) best = { key, core: [...core], score };
     }
-    const proof = [...stops].sort((a, b) => b.weight - a.weight)
-      .map(st => ({ st, c: coresByStop.get(st.stop).get(best.key) })).find(x => x.c);
+    const proof = [...rated.stops].sort((a, b) => b.weight - a.weight)
+      .map(st => ({ st, c: rated.cores.get(st.stop).get(best.key) })).find(x => x.c);
     return { key: best.key, core: best.core, stops, proof };
   }
 
@@ -1048,16 +1048,17 @@ const KT = (() => {
   // lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
   function targetComp(stats, data, game, previous) {
     const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode);
-    const coresByStop = coresAt(stats, stops);
+    const cores = coresAt(stats, stops);
+    const rated = ratedStops(stops, cores);
     // En campagne, sans trio noté sur ces combats (aventure sans table d'arrêts, Canela aux manches sans statistiques), la
     // compo se fait sans trio : tes meilleures unités, puis la boutique.
-    const best = bestCore(coresByStop, data, game, stops, previous?.key)
+    const best = bestCore(rated, data, game, stops, previous?.key)
       ?? (game.mode.id === TOWER.id ? null : { key: null, core: [], stops, proof: null });
     if (!best) return null;
-    const strength = lineStrength(coresByStop, stops);
+    const strength = lineStrength(rated);
     // Variantes notées du prochain combat (champions possibles d'une manche, ratedStops), pondérées par leur part et leur
     // difficulté. Sans trio d'au moins MIN_FIGHTS combats sur ce combat, la carte est vide : rien ne change.
-    const nextFight = lineStrength(coresByStop, stops.filter(st => st.floor === stops[0].floor));
+    const nextFight = lineStrength(ratedStops(stops.filter(st => st.floor === stops[0].floor), cores));
     const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), { strength, nextFight, previous: previous?.fillers ?? [] });
     if (!best.core.length && !fillers.length) return null;
     const flat = best.core.filter(id => flatThirdStar(stats, id)).map(baseLine);
@@ -1068,7 +1069,7 @@ const KT = (() => {
   // previous : { next } du conseil précédent de la même partie, ou null.
   function nextComp(stats, data, game, target, previous) {
     const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode, game.mode.horizon);
-    const next = bestCore(coresAt(stats, stops), data, game, stops, previous?.next);
+    const next = bestCore(ratedStops(stops, coresAt(stats, stops)), data, game, stops, previous?.next);
     return next && next.key !== target.key ? next : null;
   }
 
@@ -1798,24 +1799,26 @@ const KT = (() => {
   // Pokémon offert : la lignée du trio de la compo cible dont tu tiens le moins d’exemplaires (shopCopies), puis celle du trio de la compo suivante,
   // puis la plus forte sur les combats de la compo cible (lineStrength) ; à égalité, celle qui donne de l'XP. Chaque critère
   // garde les meilleures des options restantes ; la première seule en tête est conseillée, avec le motif de ce critère
-  // (rivals : les options qu'elle devance) ; null si les critères n'en séparent aucune.
+  // (rivals : les options qu'elle devance) ; null si les critères n'en séparent aucune. Une option seule gagnerait d'office
+  // chaque critère, avec un motif faux : elle n'est conseillée que par un critère d'appartenance à un trio (alone), qui ne la
+  // compare à rien.
   function monChoice(game, options, target, next, names) {
     const core = comp => (comp ? comp.core.map(baseLine) : []);
     const name = o => names.line(o.mon);
     const held = o => shopCopies(game, o.mon);
     const tests = [
-      [o => Number(core(target).includes(o.mon)), o => `${name(o)}, du trio de la compo cible`],
+      [o => Number(core(target).includes(o.mon)), o => `${name(o)}, du trio de la compo cible`, true],
       [o => (core(target).includes(o.mon) ? -held(o) : 0), o => `${name(o)}, du trio de la compo cible : ${held(o)} exemplaire${held(o) > 1 ? 's' : ''}`],
-      [o => Number(core(next).includes(o.mon)), o => `${name(o)}, du trio de la compo suivante`],
+      [o => Number(core(next).includes(o.mon)), o => `${name(o)}, du trio de la compo suivante`, true],
       [o => target?.strength.get(o.mon) ?? 0, (o, rivals) => `${name(o)}, plus fort ${elide(rivals.map(name).join(', '))} (${floorRange(target.stops, game.mode)})`],
       [o => o.xp ?? 0, o => `même force, +${o.xp} XP`],
     ];
     let left = options;
-    for (const [score, why] of tests) {
+    for (const [score, why, alone] of tests) {
       const scores = left.map(score);
       const top = Math.max(...scores);
       const best = left.filter((_, i) => scores[i] === top);
-      if (best.length === 1) return { o: best[0], why: why(best[0], left.filter(o => o !== best[0])) };
+      if (best.length === 1 && (left.length > 1 || (alone && top > 0))) return { o: best[0], why: why(best[0], left.filter(o => o !== best[0])) };
       left = best;
     }
     return null;
@@ -1834,7 +1837,8 @@ const KT = (() => {
 
   // Événements à choix de l'aventure (events) et centres Pokémon : une carte conseillée, jamais une carte que le jeu grise
   // (pièces sous goldCost, PV au plus hpCost). Seulement dans une aventure qui décrit ses événements : les cartes du centre
-  // y sont relevées, pas ailleurs.
+  // y sont relevées, pas ailleurs. Dans un événement à Pokémon, seules les cartes qui en donnent un se comparent (monChoice) :
+  // une carte sans Pokémon n'y est conseillée qu'en repli d'une carte grisée.
   function eventMarks(game, target, next, names) {
     const { event, mode } = game;
     if (!event || !mode.adv?.events) return [];
@@ -1842,8 +1846,9 @@ const KT = (() => {
     if (!options) return [];
     const off = o => (o.goldCost ?? 0) > game.gold || (o.hpCost !== undefined && game.hp <= o.hpCost);
     const xp = options.find(o => o.xp && !o.mon);
+    const mons = options.filter(o => o.mon);
     let pick;
-    if (options.some(o => o.mon)) pick = monChoice(game, options, target, next, names);
+    if (mons.length) pick = monChoice(game, mons, target, next, names);
     else if (xp) pick = xpChoice(game, xp, options.find(o => o !== xp));
     else {
       const paid = options.find(o => o.goldCost);
