@@ -350,6 +350,9 @@ test('Cramois’Île, événements à Pokémon : trio de la compo cible, puis le
   const later = KT.nextStops(camp.stops, 5, m.horizon, m, m.horizon).map(s => ({ stop: s.stop, core: ['lickitung', 'abra', 'oddish'], n: 500, win: 95, lo: 90 }));
   const stats = coresOn(guard, KABUTO);
   assert.deepEqual(advise(guard, 'canela', { stats: { ...stats, cores: [...stats.cores, ...later] } }).event.map(x => x && x.why), ['Excelangue, du trio de la compo suivante', null]);
+  // Seule face à une carte sans Pokémon, Excelangue reste conseillée du trio de la compo suivante.
+  const alone = { ...m, adv: { ...m.adv, events: { ...m.adv.events, 5: [{ name: 'Partir' }, m.adv.events[5][0]] } } };
+  assert.deepEqual(advise(guard, 'canela', { mode: alone, stats: { ...stats, cores: [...stats.cores, ...later] } }).event.map(x => x && x.why), [null, 'Excelangue, du trio de la compo suivante']);
 });
 
 test('Cramois’Île, XP contre PV et centre : seuil de PV, plafond de niveau, carte grisée jamais conseillée', () => {
