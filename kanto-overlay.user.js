@@ -146,6 +146,12 @@ const KT = (() => {
   const NEXT_FIGHT_WEIGHT = 0.01;
   const NEXT_FIGHT_CAP = 20;
   const FILLER_INERTIA = 0.1;
+  // Avantage de type d'un complément sur l'équipe du prochain boss (typeEdge, de −TYPE_CAP à +TYPE_CAP), compté TYPE_WEIGHT par
+  // point : ±0,2 au plus, comme la force sur le prochain combat (choix de jeu). Un complément qui apporte à la compo un rôle
+  // qui lui manque (tank, mêlée, distance) gagne ROLE_WEIGHT par rôle : plus qu'un cran de coût (0,35), moins qu'une étoile.
+  const TYPE_WEIGHT = 0.1;
+  const TYPE_CAP = 2;
+  const ROLE_WEIGHT = 0.5;
   const MAX_ITEMS = 3;
   // Composants défensifs ; Protéine (Attaque), Calcium (Atq. Spé.) et Carbone (vitesse d'attaque) sont offensifs.
   const DEFENSE = ['hp-up', 'iron', 'zinc'];
@@ -1261,6 +1267,26 @@ const KT = (() => {
     return { key: best.key, core: best.core, stops, proof };
   }
 
+  // Avantage de type d'une lignée (à cette étoile) sur une équipe adverse (enemyTeam) : multiplicateur moyen de sa capacité
+  // sur ses Pokémon, moins celui de leurs capacités sur elle, météo comprise, borné à ±TYPE_CAP ; 0 sans équipe connue.
+  function typeEdge(data, base, star, foes) {
+    if (!foes?.units.length) return 0;
+    const types = lineInfo(data, base)?.t ?? [];
+    const mean = f => foes.units.reduce((s, u) => s + f(u), 0) / foes.units.length;
+    const attack = mean(u => moveEdge(base, star, u, foes.weather));
+    const defense = mean(u => (u.move ? typeMult(u.move.type, types) * weatherMult(u.move.type, foes.weather) : 1));
+    return clamp(attack - defense, -TYPE_CAP, TYPE_CAP);
+  }
+
+  // Rôles d'une compo : un tank (rôle du jeu, LINE_KITS), une unité de mêlée (portée 1), une unité à distance. roleNeed :
+  // nombre de ces rôles que la lignée apporte à la compo chosen, qui ne les a pas.
+  const ROLES = [
+    (data, base) => LINE_KITS[base]?.[0] === 'tank',
+    (data, base) => rangeOf(data, base) === 1,
+    (data, base) => rangeOf(data, base) > 1,
+  ];
+  const roleNeed = (data, chosen, base) => ROLES.filter(has => has(data, base) && !chosen.some(b => has(data, b))).length;
+
   // Compléments du trio core jusqu'au niveau (fillers) : les lignées possédées les mieux notées ; la boutique ne complète que
   // les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une carte de boutique vaut une ★ ;
   // deux copies de la meilleure étoile, que la 3ᵉ fusionnera et que l'actualisation cherche, valent l'étoile suivante), au
@@ -1269,7 +1295,10 @@ const KT = (() => {
   // FILLER_INERTIA) ; les égalités restantes sont départagées par possédée, shiny, puis la plus forte sur ces combats
   // (strength). upgrades : cartes de boutique mieux notées qu'un complément possédé, inertie comprise (achetée, la carte doit
   // le remplacer), à acheter pour le remplacer ; replaced : ces compléments.
-  function fillersOf(stats, data, game, core, { strength, nextFight, previous }) {
+  // foes : équipe du prochain boss à gagner (enemyTeam), dont l'avantage de type (typeEdge) compte TYPE_WEIGHT par point ;
+  // un complément qui apporte à la compo un rôle qui lui manque (roleNeed) gagne ROLE_WEIGHT par rôle. shop : false pour ne
+  // compléter qu'avec les lignées possédées (compo suivante).
+  function fillersOf(stats, data, game, core, { strength, nextFight, previous, foes = null, shop = true }) {
     const known = b => lineInfo(data, b) && !core.includes(b);
     const mine = [...new Set(game.units.map(u => baseLine(u.line)))].filter(known);
     const cards = [...new Set(game.shop.filter(Boolean))].filter(b => known(b) && !mine.includes(b));
@@ -1286,6 +1315,7 @@ const KT = (() => {
       const chosen = [...core];
       const score = b => unitPower(lineInfo(data, b).c + shift.get(b), star(b)) + TRAIT_WEIGHT * traitGain(data, chosen, b)
         + NEXT_FIGHT_WEIGHT * Math.max(-NEXT_FIGHT_CAP, Math.min(NEXT_FIGHT_CAP, nextFight.get(b) ?? 0))
+        + TYPE_WEIGHT * typeEdge(data, b, star(b), foes) + ROLE_WEIGHT * roleNeed(data, chosen, b)
         + (previous.includes(b) ? FILLER_INERTIA : 0);
       for (const pool of pools) {
         while (chosen.length < game.level) {
@@ -1299,6 +1329,7 @@ const KT = (() => {
       }
       return chosen.slice(core.length);
     };
+    if (!shop) return { fillers: fill([mine]), upgrades: [], replaced: [] };
     const fillers = fill([mine, cards]);
     const mixed = fill([[...mine, ...cards]]);
     const upgrades = mixed.filter(b => cards.includes(b) && !fillers.includes(b));
@@ -1308,9 +1339,9 @@ const KT = (() => {
   }
 
   // Compo cible : le meilleur trio et ses compléments (fillersOf). previous : { key, fillers } du conseil précédent de la même
-  // partie, ou null. flat : lignées du trio dont la ★★★ est nettement moins forte que la ★★ (flatThirdStar) ; strength :
-  // lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
-  function targetComp(stats, data, game, previous) {
+  // partie, ou null ; foes : équipe du prochain boss (enemyTeam), ou null. flat : lignées du trio dont la ★★★ est nettement
+  // moins forte que la ★★ (flatThirdStar) ; strength : lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
+  function targetComp(stats, data, game, previous, foes = null) {
     const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode);
     const cores = coresAt(stats, stops);
     const rated = ratedStops(stops, cores);
@@ -1323,24 +1354,30 @@ const KT = (() => {
     // Variantes notées du prochain combat (champions possibles d'une manche, ratedStops), pondérées par leur part et leur
     // difficulté. Sans trio d'au moins MIN_FIGHTS combats sur ce combat, la carte est vide : rien ne change.
     const nextFight = lineStrength(ratedStops(stops.filter(st => st.floor === stops[0].floor), cores));
-    const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), { strength, nextFight, previous: previous?.fillers ?? [] });
+    const { fillers, upgrades, replaced } = fillersOf(stats, data, game, best.core.map(baseLine), { strength, nextFight, previous: previous?.fillers ?? [], foes });
     if (!best.core.length && !fillers.length) return null;
     const flat = best.core.filter(id => flatThirdStar(stats, id)).map(baseLine);
     return { ...best, fillers, upgrades, replaced, flat, strength };
   }
 
   // Trio des horizon combats suivants (10 à 18 en normal), à préparer avec le surplus ; null s'il est déjà la compo cible.
-  // previous : { next } du conseil précédent de la même partie, ou null.
+  // previous : { next } du conseil précédent de la même partie, ou null. fillers : ses compléments parmi les lignées
+  // possédées seulement (fillersOf), que le banc garde ; la boutique ne prépare que son trio.
   function nextComp(stats, data, game, target, previous) {
     const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode, game.mode.horizon);
-    const next = bestCore(ratedStops(stops, coresAt(stats, stops)), data, game, stops, previous?.next);
-    return next && next.key !== target.key ? next : null;
+    const rated = ratedStops(stops, coresAt(stats, stops));
+    const next = bestCore(rated, data, game, stops, previous?.next);
+    if (!next || next.key === target.key) return null;
+    const { fillers } = fillersOf(stats, data, game, next.core.map(baseLine), { strength: lineStrength(rated), nextFight: new Map(), previous: [], shop: false });
+    return { ...next, fillers };
   }
 
   const floorRange = (stops, mode) => `${mode.units} ${stops[0].floor}–${stops.at(-1).floor}`;
 
   const targetBases = target => (target ? [...target.core.map(baseLine), ...target.fillers] : []);
   const nextBases = next => (next ? next.core.map(baseLine) : []);
+  // Lignées de la compo suivante que le banc garde : son trio et ses compléments possédés.
+  const nextKept = next => (next ? [...nextBases(next), ...next.fillers] : []);
 
   function progress(game, base) {
     const star = bestStar(game, base);
@@ -1565,7 +1602,7 @@ const KT = (() => {
   function sellMarks(game, target, next, names, short) {
     if (!target) return game.bench.map(() => null);
     // Faute d'or pour un ★ de la compo cible, la compo suivante n'est plus gardée.
-    const wanted = [...targetBases(target), ...(short ? [] : nextBases(next))];
+    const wanted = [...targetBases(target), ...(short ? [] : nextKept(next))];
     const free = game.bench.filter(id => !id).length;
     return game.bench.map(id => {
       const u = id && game.units.find(x => x.id === id);
@@ -1573,12 +1610,12 @@ const KT = (() => {
       const base = baseLine(u.line);
       const shinyKept = u.shiny && game.floor <= game.mode.shinyKeepTo;
       // Vendu, il rend ses objets au sac : seulement s'il ne sert ni à la compo cible ni à la suivante.
-      if (u.items?.length && !shinyKept && ![...targetBases(target), ...nextBases(next)].includes(base)) {
+      if (u.items?.length && !shinyKept && ![...targetBases(target), ...nextKept(next)].includes(base)) {
         return mark('no', 'Vends', `Vends ${names.line(u.line)}`, 'hors des compos : il rend ses objets au sac');
       }
       const paired = game.units.some(x => x.id !== u.id && baseLine(x.line) === base && x.star === u.star);
       if (wanted.includes(base) || paired || shinyKept || (free > 1 && !short)) return null;
-      const forGold = free > 1 || nextBases(next).includes(base);
+      const forGold = free > 1 || nextKept(next).includes(base);
       return mark('no', 'Vends', `Vends ${names.line(u.line)}`, forGold ? 'il manque de l’or pour un achat conseillé' : 'hors compo, libère le banc');
     });
   }
@@ -2664,7 +2701,10 @@ const KT = (() => {
     const stops = stats ? nextStops(stats.stops, game.floor, 3, mode) : [];
     const eco = economy(game, stops);
     const same = previous?.run === run ? previous : null;
-    const target = stats && data ? targetComp(stats, data, game, same) : null;
+    // Équipe du prochain boss, contre qui les compléments sont aussi notés (typeEdge) ; null en Tour.
+    const boss = stats && data ? nextBossStop(stats.stops, game.floor, mode) : null;
+    const bossFoes = boss ? enemyTeam(save, mode, data, boss.floor - 1) : null;
+    const target = stats && data ? targetComp(stats, data, game, same, bossFoes) : null;
     const next = target ? nextComp(stats, data, game, target, same) : null;
     const spent = spend({ game, target, next, data, eco, names });
     const choice = offerChoiceMarks(data, game, eco, names);
@@ -3125,7 +3165,7 @@ function compoHtml(state, ui) {
   };
   return `<p class="kt-label"><span>Compo cible</span><span>${esc(span)}</span></p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
-${a.next ? `<p class="kt-label"><span>Ensuite</span><span>${esc(KT.floorRange(a.next.stops, mode))}</span></p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
+${a.next ? `<p class="kt-label"><span>Ensuite</span><span>${esc(KT.floorRange(a.next.stops, mode))}</span></p><ul class="kt-comp">${a.next.core.map(id => chip(id, true)).join('')}${a.next.fillers.map(id => chip(id, false)).join('')}</ul>` : ''}
 ${aimsHtml(a, ui)}
 ${foesHtml(a, ui)}
 ${diveHtml(state)}
