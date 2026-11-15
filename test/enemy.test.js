@@ -28,6 +28,19 @@ test('équipe adverse : variante de la graine, vrais dresseurs en Vétéran et L
   // Vétéran : l'équipe des vrais dresseurs de la variante, marquée probable (règles chiffrées non comptées).
   const veteran = foes(3, { runSeed: 1 }, mode(2));
   assert.deepEqual([team(veteran), veteran.probable], [['onix:2@25', 'rhyhorn:1@23'], true]);
+  // Sans graine : la première variante, dite probable.
+  assert.deepEqual([team(foes(3, { runSeed: undefined })), foes(3, { runSeed: undefined }).probable], [['onix:2@25', 'geodude:1@23'], true]);
+  // Toutes les lignées des équipes relevées ont un rôle : aucune n'est écartée du placement.
+  for (const [adventure, rounds] of [['kanto', 38], ['canela', 30]]) {
+    for (let r = 0; r < rounds; r++) {
+      for (const seed of [1, 2, 3, 4, 5]) {
+        const e = foes(r, { runSeed: seed }, mode(1, ['koga', 'erika', 'sabrina'], adventure));
+        if (e) assert.ok(e.units.every(f => f.role && f.cell >= 0), `${adventure} ${r}`);
+      }
+    }
+  }
+  // Auguste, variante c : Pyroli (branche d'Évoli) est posé avec les autres.
+  assert.equal(foes(25, { runSeed: 6 }).units.length, 6);
   // Événement, Tour, aventure non relevée : pas d'équipe.
   assert.equal(foes(2), null);
   assert.equal(KT.enemyTeam({ round: 1003 }, KT.TOWER_MODE, data), null);
@@ -38,6 +51,8 @@ test('équipe adverse : rival selon ton starter, plafond d’étoiles, arène au
   // Rival : Salamèche face à Bulbizarre ; un seul ★★ au plus (cap), le starter du rival le garde.
   assert.deepEqual(team(foes(6)).map(x => x.split('@')[0]), ['rattata:1', 'charmander:2', 'charmander:1', 'pidgey:1', 'abra:1']);
   assert.equal(foes(6, { starter: 'squirtle' }).units.filter(f => f.line === 'bulbasaur').length, 2);
+  // Pikachu n'a pas de rival dans le jeu (xa) : l'équipe de base, celle du Carapuce rival.
+  assert.equal(foes(6, { starter: 'pikachu' }).units.filter(f => f.line === 'squirtle').length, 2);
   // 4ᵉ badge : arène pas encore choisie, pas d'équipe ; Koga choisi, son équipe réduite à 5 Pokémon.
   assert.equal(foes(15), null);
   const koga = foes(15, {}, mode(1, ['koga']));
@@ -59,7 +74,7 @@ test('cases adverses (jm) : assassins en 2ᵉ rangée, entrée stealth ou rush a
 test('plan contre l’adversaire : porteur loin des assassins et des frappeurs, tanks face aux frappeurs, zones', () => {
   // Pont : Rattata frappe en colonne 3 ; Abo entre par la colonne 7, Nosferapti ★★ en colonne 5 : porteur au coin gauche.
   const bridge = KT.foePlan(foes(5, { runSeed: 1 }), 'right', data);
-  assert.deepEqual([bridge.side, bridge.hitCol, bridge.divers.map(f => f.line)], ['left', 2, ['zubat', 'ekans']]);
+  assert.deepEqual([bridge.side, bridge.hitter.line, bridge.divers.map(f => f.line)], ['left', 'rattata', ['zubat', 'ekans']]);
   // Sans menace d'un côté, la zone du menu ⚙ reste : Ondine n'aligne qu'un Magicarpe à l'avant, au centre.
   assert.equal(KT.foePlan(foes(7, { runSeed: 1 }), 'right', data).side, 'right');
   // Major Bob : Magnéti frappe en zone.
@@ -81,10 +96,11 @@ test('formation contre l’adversaire : tank face aux frappeurs, attaquant face 
   const roles = ['carry', 'tank', 'atk'];
   // Sans plan, Racaillou garde sa case (colonne 6), Machoc prend le centre.
   assert.deepEqual(lineup(owned, roles, null), { squirtle: 16, geodude: 5, machop: 3 });
-  // Pont : Rattata (Normal) en colonne 3, Sabelette (Sol) en colonne 5. Racaillou vient en colonne 3 ; Machoc (Combat, ×2
-  // contre Normal) prend la colonne voisine du côté de Rattata.
+  // Pont : Rattata (Normal) en colonne 3 de l'avant adverse, Sabelette (Sol) en colonne 5. La rangée adverse, impaire, est
+  // décalée d'une demi-case : Rattata touche tes colonnes 3 et 4. Racaillou prend la 4 (le centre d'abord) ; Machoc (Combat,
+  // ×2 contre Normal) la 3, collée à Rattata.
   const plan = KT.foePlan(foes(5, { runSeed: 1 }), 'left', data);
-  assert.deepEqual(lineup(owned, roles, plan), { squirtle: 16, geodude: 2, machop: 1 });
+  assert.deepEqual(lineup(owned, roles, plan), { squirtle: 16, geodude: 3, machop: 2 });
 });
 
 test('formation contre des attaques de zone : les unités à distance ne se touchent plus', () => {

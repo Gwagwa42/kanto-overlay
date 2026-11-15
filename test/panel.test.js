@@ -62,12 +62,14 @@ test('adversaire calculé : équipe, météo, zone du porteur, frappeurs, zones,
   const paras = { line: 'paras', star: 1, role: 'fighter' };
   const magnemite = { line: 'magnemite', star: 1, role: 'mage' };
   const foes = { units: [geodude, paras, magnemite], weather: 'rain', probable: true };
-  const plan = { side: 'right', hitCol: 2, front: [geodude, paras], spread: [magnemite], divers: [] };
+  const plan = { side: 'right', hitter: paras, front: [geodude, paras], spread: [magnemite], divers: [], tanked: true, spaced: true };
   const html = KT.foesHtml({ foes, plan, names }, { side: 'left' });
   assert.match(html, /<span>Adversaire<\/span><span>probable<\/span>/);
-  assert.match(html, /Racaillou ★★, Paras, Magnéti<br>Météo : pluie\. Porteur à distance au coin droit, loin des menaces\. Tanks face aux frappeurs : Paras\. Unités à distance écartées : Magnéti frappe en zone\. Équipe probable/);
+  assert.match(html, /Racaillou ★★, Paras, Magnéti<br>Météo : pluie\. Porteur à distance au coin droit, loin des menaces\. Tanks face à Paras, le frappeur le plus fort\. Unités à distance écartées : Magnéti frappe en zone\. Équipe probable/);
+  // Sans tank posé ni unités à distance à écarter, la note ne prétend rien.
+  assert.doesNotMatch(KT.foesHtml({ foes, plan: { ...plan, tanked: false, spaced: false }, names }, { side: 'left' }), /Tanks|écartées/);
   // Normal, zone du menu gardée, sans frappeur ni zone : l'équipe seule.
-  const plain = KT.foesHtml({ foes: { units: [geodude], weather: null, probable: false }, plan: { side: 'left', hitCol: null, front: [geodude], spread: [], divers: [] }, names }, { side: 'left' });
+  const plain = KT.foesHtml({ foes: { units: [geodude], weather: null, probable: false }, plan: { side: 'left', hitter: null, front: [geodude], spread: [], divers: [], tanked: false, spaced: false }, names }, { side: 'left' });
   assert.match(plain, /<span>calculé<\/span><\/p>\n<p class="kt-hint">Racaillou ★★<\/p>/);
   assert.equal(KT.foesHtml({ foes: null }, { side: 'left' }), '');
   // Sauvegarde de Tour sans runSeed : l'étage seul.

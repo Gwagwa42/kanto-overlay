@@ -148,7 +148,7 @@ const KT = (() => {
   const FILLER_INERTIA = 0.1;
   // Avantage de type d'un complément sur l'équipe du prochain boss (typeEdge, de −TYPE_CAP à +TYPE_CAP), compté TYPE_WEIGHT par
   // point : ±0,2 au plus, comme la force sur le prochain combat (choix de jeu). Un complément qui apporte à la compo un rôle
-  // qui lui manque (tank, mêlée, distance) gagne ROLE_WEIGHT par rôle : plus qu'un cran de coût (0,35), moins qu'une étoile.
+  // qui lui manque (tank, mêlée, distance) gagne ROLE_WEIGHT, une fois : plus qu'un cran de coût (0,35), moins qu'une étoile.
   const TYPE_WEIGHT = 0.1;
   const TYPE_CAP = 2;
   const ROLE_WEIGHT = 0.5;
@@ -349,25 +349,26 @@ const KT = (() => {
     cubone: ['marksman', '', 'ground ground*'], diglett: ['assassin', 'burrow', 'ground ground'], ditto: ['special', '', 'normal'],
     doduo: ['assassin', 'rush', 'normal normal*'], dratini: ['fighter', '', 'dragon dragon normal'], drowzee: ['mage', '', 'psychic psychic*'],
     eevee: ['fighter', '', 'normal normal normal'], ekans: ['assassin', 'stealth', 'normal normal'], electabuzz: ['fighter', '', 'electric'],
-    exeggcute: ['mage', '', 'normal* normal*'], farfetchd: ['fighter', '', 'grass'], gastly: ['mage', '', 'ghost ghost ghost'],
-    geodude: ['tank', '', 'rock rock ground'], goldeen: ['assassin', '', 'flying bug*'], grimer: ['tank', '', 'poison poison'],
-    growlithe: ['fighter', '', 'normal normal'], hitmonchan: ['fighter', '', 'fighting'], hitmonlee: ['fighter', '', 'fighting'],
-    horsea: ['marksman', '', 'dragon* water*'], jigglypuff: ['support', '', 'normal*'], jynx: ['mage', '', 'normal'],
-    kabuto: ['assassin', '', 'grass water'], kangaskhan: ['fighter', '', 'normal*'], koffing: ['tank', '', 'poison poison'],
-    koga: ['mage', '', 'poison* poison*'], krabby: ['tank', '', 'normal water*'], lapras: ['marksman', '', 'water*'],
-    lickitung: ['tank', '', 'normal'], machop: ['fighter', '', 'fighting fighting fighting'], magikarp: ['special', '', 'normal normal*'],
-    magmar: ['mage', '', 'fire*'], magnemite: ['mage', '', 'electric*'], mankey: ['fighter', '', 'fighting fighting'],
-    meowth: ['assassin', 'open', 'normal* normal'], mew: ['special', '', 'normal'], mewtwo: ['mage', '', 'psychic'],
-    moltres: ['mage', '', 'flying*'], mrmime: ['support', '', 'psychic'], nidoran: ['fighter', '', 'fighting normal ground*'],
-    nidoranf: ['tank', '', 'normal poison ground*'], oddish: ['mage', '', 'grass* poison* grass*'], omanyte: ['marksman', '', 'rock* rock'],
-    onix: ['tank', '', 'ground'], paras: ['fighter', '', 'grass'], pidgey: ['assassin', 'swoop', 'flying flying* flying'],
-    pikachu: ['marksman', '', 'electric electric'], pinsir: ['fighter', '', 'bug'], poliwag: ['fighter', '', 'fighting psychic fighting'],
-    ponyta: ['fighter', '', 'fire fire*'], porygon: ['special', '', 'normal'], psyduck: ['mage', '', 'normal water'],
-    rattata: ['fighter', '', 'normal normal'], rhyhorn: ['tank', '', 'normal'], sandshrew: ['tank', '', 'normal rock*'],
-    scyther: ['assassin', 'leap', 'bug'], seel: ['tank', '', 'ice ice*'], shellder: ['marksman', '', 'water normal*'],
-    slowpoke: ['tank', '', 'psychic'], snorlax: ['tank', '', 'normal'], spearow: ['assassin', '', 'flying normal'],
-    squirtle: ['marksman', '', 'water water* water'], staryu: ['marksman', '', 'normal normal'], tangela: ['tank', '', 'grass*'],
-    tauros: ['fighter', '', 'normal*'], tentacool: ['mage', '', 'poison poison*'], venonat: ['marksman', '', 'bug* bug*'],
+    exeggcute: ['mage', '', 'normal* normal*'], farfetchd: ['fighter', '', 'grass'], flareon: ['fighter', '', 'normal fire'],
+    gastly: ['mage', '', 'ghost ghost ghost'], geodude: ['tank', '', 'rock rock ground'], goldeen: ['assassin', '', 'flying bug*'],
+    grimer: ['tank', '', 'poison poison'], growlithe: ['fighter', '', 'normal normal'], hitmonchan: ['fighter', '', 'fighting'],
+    hitmonlee: ['fighter', '', 'fighting'], horsea: ['marksman', '', 'dragon* water*'], jigglypuff: ['support', '', 'normal*'],
+    jolteon: ['marksman', '', 'normal electric'], jynx: ['mage', '', 'normal'], kabuto: ['assassin', '', 'grass water'],
+    kangaskhan: ['fighter', '', 'normal*'], koffing: ['tank', '', 'poison poison'], koga: ['mage', '', 'poison* poison*'],
+    krabby: ['tank', '', 'normal water*'], lapras: ['marksman', '', 'water*'], lickitung: ['tank', '', 'normal'],
+    machop: ['fighter', '', 'fighting fighting fighting'], magikarp: ['special', '', 'normal normal*'], magmar: ['mage', '', 'fire*'],
+    magnemite: ['mage', '', 'electric*'], mankey: ['fighter', '', 'fighting fighting'], meowth: ['assassin', 'open', 'normal* normal'],
+    mew: ['special', '', 'normal'], mewtwo: ['mage', '', 'psychic'], moltres: ['mage', '', 'flying*'],
+    mrmime: ['support', '', 'psychic'], nidoran: ['fighter', '', 'fighting normal ground*'], nidoranf: ['tank', '', 'normal poison ground*'],
+    oddish: ['mage', '', 'grass* poison* grass*'], omanyte: ['marksman', '', 'rock* rock'], onix: ['tank', '', 'ground'],
+    paras: ['fighter', '', 'grass'], pidgey: ['assassin', 'swoop', 'flying flying* flying'], pikachu: ['marksman', '', 'electric electric'],
+    pinsir: ['fighter', '', 'bug'], poliwag: ['fighter', '', 'fighting psychic fighting'], ponyta: ['fighter', '', 'fire fire*'],
+    porygon: ['special', '', 'normal'], psyduck: ['mage', '', 'normal water'], rattata: ['fighter', '', 'normal normal'],
+    rhyhorn: ['tank', '', 'normal'], sandshrew: ['tank', '', 'normal rock*'], scyther: ['assassin', 'leap', 'bug'],
+    seel: ['tank', '', 'ice ice*'], shellder: ['marksman', '', 'water normal*'], slowpoke: ['tank', '', 'psychic'],
+    snorlax: ['tank', '', 'normal'], spearow: ['assassin', '', 'flying normal'], squirtle: ['marksman', '', 'water water* water'],
+    staryu: ['marksman', '', 'normal normal'], tangela: ['tank', '', 'grass*'], tauros: ['fighter', '', 'normal*'],
+    tentacool: ['mage', '', 'poison poison*'], vaporeon: ['mage', '', 'normal ice*'], venonat: ['marksman', '', 'bug* bug*'],
     voltorb: ['special', '', 'electric'], vulpix: ['mage', '', 'fire*'], weedle: ['fighter', '', 'poison poison bug'],
     zapdos: ['mage', '', 'electric*'], zubat: ['assassin', 'flyover', 'normal bug'],
   };
@@ -1147,8 +1148,9 @@ const KT = (() => {
     return { stops: rated, total: totalWeight(rated), cores: new Map(rated.map(st => [st.stop, cores.get(st.stop)])) };
   }
 
-  // Où trouver les lignées d'un trio pour les combats notés (rated), jusqu'au combat until : en campagne, le premier boss à
-  // gagner de ces combats, contre qui le trio sert ; sinon (Tour, ou aucun boss à gagner) le dernier combat noté. gifts :
+  // Où trouver les lignées d'un trio pour les combats notés (rated), jusqu'au combat until, le premier boss de ces combats
+  // contre qui le trio sert : à gagner en campagne, tout boss en Tour (tous les 5 étages) ; sans boss, le dernier combat
+  // noté. gifts :
   // lignées offertes par chaque événement à choix de l'aventure d'ici là, celui du combat en cours compris tant que son choix
   // n'est pas fait. chance(base) : chance (0 à 1) de voir au moins une copie de la lignée en boutique d'ici until, sur
   // SHOPS_PER_FIGHT boutiques par combat (rerollChance) : la boutique affichée compte pour une, et une lignée qui y est est
@@ -1156,7 +1158,7 @@ const KT = (() => {
   // s'y achetant au fil de l'or.
   function sourcesOf(rated, game, data) {
     const { mode } = game;
-    const boss = mode.id === TOWER.id ? undefined : rated.stops.find(st => mustWin(st, mode));
+    const boss = rated.stops.find(st => (mode.id === TOWER.id ? isBoss(st, mode) : mustWin(st, mode)));
     const until = Math.max(game.floor, boss?.floor ?? rated.stops.at(-1)?.floor ?? game.floor);
     const ahead = f => f > game.floor || (f === game.floor && !game.eventDone);
     const levelAt = f => (mode.id === TOWER.id ? game.level : Math.min(maxLevel(f, mode), Math.max(game.level, levelGoal(f, mode))));
@@ -1274,18 +1276,18 @@ const KT = (() => {
     const types = lineInfo(data, base)?.t ?? [];
     const mean = f => foes.units.reduce((s, u) => s + f(u), 0) / foes.units.length;
     const attack = mean(u => moveEdge(base, star, u, foes.weather));
-    const defense = mean(u => (u.move ? typeMult(u.move.type, types) * weatherMult(u.move.type, foes.weather) : 1));
+    const defense = mean(u => hitMult(u.move, types, foes.weather));
     return clamp(attack - defense, -TYPE_CAP, TYPE_CAP);
   }
 
-  // Rôles d'une compo : un tank (rôle du jeu, LINE_KITS), une unité de mêlée (portée 1), une unité à distance. roleNeed :
-  // nombre de ces rôles que la lignée apporte à la compo chosen, qui ne les a pas.
+  // Rôles d'une compo : un tank (rôle du jeu, LINE_KITS), une unité de mêlée (portée 1), une unité à distance. roleNeed : 1
+  // si la lignée apporte au moins un de ces rôles à la compo chosen, qui ne l'a pas (un tank de mêlée ne compte qu'une fois).
   const ROLES = [
     (data, base) => LINE_KITS[base]?.[0] === 'tank',
     (data, base) => rangeOf(data, base) === 1,
     (data, base) => rangeOf(data, base) > 1,
   ];
-  const roleNeed = (data, chosen, base) => ROLES.filter(has => has(data, base) && !chosen.some(b => has(data, b))).length;
+  const roleNeed = (data, chosen, base) => Number(ROLES.some(has => has(data, base) && !chosen.some(b => has(data, b))));
 
   // Compléments du trio core jusqu'au niveau (fillers) : les lignées possédées les mieux notées ; la boutique ne complète que
   // les places restantes, sinon le plan changerait à chaque actualisation. Note : puissance (une carte de boutique vaut une ★ ;
@@ -1296,7 +1298,7 @@ const KT = (() => {
   // (strength). upgrades : cartes de boutique mieux notées qu'un complément possédé, inertie comprise (achetée, la carte doit
   // le remplacer), à acheter pour le remplacer ; replaced : ces compléments.
   // foes : équipe du prochain boss à gagner (enemyTeam), dont l'avantage de type (typeEdge) compte TYPE_WEIGHT par point ;
-  // un complément qui apporte à la compo un rôle qui lui manque (roleNeed) gagne ROLE_WEIGHT par rôle. shop : false pour ne
+  // un complément qui apporte à la compo un rôle qui lui manque (roleNeed) gagne ROLE_WEIGHT. shop : false pour ne
   // compléter qu'avec les lignées possédées (compo suivante).
   function fillersOf(stats, data, game, core, { strength, nextFight, previous, foes = null, shop = true }) {
     const known = b => lineInfo(data, b) && !core.includes(b);
@@ -1310,12 +1312,13 @@ const KT = (() => {
       const best = Math.max(1, bestStar(game, b));
       return pairAt(game, b, best) ? best + 1 : best;
     };
+    const edge = new Map([...mine, ...cards].map(b => [b, typeEdge(data, b, star(b), foes)]));
     // Meilleures lignées de chaque liste, une liste après l'autre, jusqu'au niveau.
     const fill = pools => {
       const chosen = [...core];
       const score = b => unitPower(lineInfo(data, b).c + shift.get(b), star(b)) + TRAIT_WEIGHT * traitGain(data, chosen, b)
         + NEXT_FIGHT_WEIGHT * Math.max(-NEXT_FIGHT_CAP, Math.min(NEXT_FIGHT_CAP, nextFight.get(b) ?? 0))
-        + TYPE_WEIGHT * typeEdge(data, b, star(b), foes) + ROLE_WEIGHT * roleNeed(data, chosen, b)
+        + TYPE_WEIGHT * edge.get(b) + ROLE_WEIGHT * roleNeed(data, chosen, b)
         + (previous.includes(b) ? FILLER_INERTIA : 0);
       for (const pool of pools) {
         while (chosen.length < game.level) {
@@ -2300,7 +2303,8 @@ const KT = (() => {
   // starter, du rival, des vrais dresseurs en Vétéran et Légende, ou changée par une clé (keys) ; étoiles plafonnées, puis
   // cases (enemyCells). Renvoie { units : [{ line, star, cell, role, entry, types, move }], weather, probable }, ou null (Tour,
   // aventure non relevée, événement, arène pas encore choisie). probable : en Vétéran et Légende, des règles chiffrées du jeu
-  // (advTiers) remplacent des Pokémon, ajoutent des étoiles ou des objets ; elles ne sont pas comptées.
+  // (advTiers) remplacent des Pokémon, ajoutent des étoiles ou des objets ; elles ne sont pas comptées. Sans graine, la
+  // première variante, probable aussi.
   function enemyTeam(save, mode, data, round = save.round) {
     const rounds = CAMPAIGN_TEAMS[mode.adventure];
     const here = mode.id === TOWER.id ? null : rounds?.[Math.floor(round)];
@@ -2318,7 +2322,7 @@ const KT = (() => {
     units = enemyCells(capStars(units, here.cap, Boolean(opt.r))).map(u => ({
       ...u, role: LINE_KITS[u.line][0], entry: LINE_KITS[u.line][1] || null, types: lineInfo(data, u.line)?.t ?? [], move: kitMove(u.line, u.star),
     }));
-    return { units, weather: keyed && 'w' in keyed ? keyed.w : x.w ?? null, probable: mode.league > 1 };
+    return { units, weather: keyed && 'w' in keyed ? keyed.w : x.w ?? null, probable: mode.league > 1 || (seed === null && x.v.length > 1) };
   }
 
   // Colonne du milieu de chaque zone du porteur (CARRY_ZONES).
@@ -2328,46 +2332,51 @@ const KT = (() => {
   // - side : zone du porteur (CARRY_ZONES) la plus éloignée des menaces, chacune pesée par sa valeur (coût × 3^(★ − 1)) :
   //   frappeurs de l'avant adverse, et deux fois les assassins dont la cible dépend du côté (stealth et rush : la moitié par
   //   où ils entrent ; flyover : la colonne la plus proche). À égalité, la zone choisie dans le menu ⚙ (side) ;
-  // - hitCol : colonne moyenne des frappeurs, pesée par leur valeur, où se posent les tanks ; null sans frappeur ;
-  // - front : Pokémon de l'avant adverse, cibles des attaquants de mêlée (facing) ; spread : Pokémon adverses aux attaques de
-  //   zone, contre lesquels les unités à distance s'écartent ; divers : assassins qui plongent au fond (DIVERS) ; weather.
+  // - hitter : frappeur de plus grande valeur, contre qui se posent les tanks ; null sans frappeur ;
+  // - front : Pokémon de l'avant adverse, cibles des attaquants de mêlée (facing) ;
+  // - spread : Pokémon adverses derrière leur avant aux attaques de zone (ligne, cône, rangée, rayon), contre lesquels les
+  //   unités à distance s'écartent ; ceux de l'avant frappent ton avant, leur plus proche cible ;
+  // - divers : assassins qui plongent au fond (DIVERS) ; weather.
   function foePlan(foes, side, data) {
     const value = f => (lineInfo(data, f.line)?.c ?? 1) * 3 ** (f.star - 1);
     const front = foes.units.filter(f => rowOf(f.cell) === 3);
     const hitters = front.filter(f => f.role !== 'tank');
-    const weight = hitters.reduce((s, f) => s + value(f), 0);
     const threats = [...hitters.map(f => [colOf(f.cell), value(f)]),
       ...foes.units.filter(f => FLANKERS.has(f.entry) || f.entry === 'flyover').map(f => [colOf(f.cell), 2 * value(f)])];
     const far = k => threats.reduce((s, [c, w]) => s + w * Math.abs(ZONE_MID[k] - c), 0);
     const best = Math.max(...Object.keys(CARRY_ZONES).map(far));
     const chosen = far(side) >= best - 1e-9 ? side : Object.keys(CARRY_ZONES).find(k => far(k) >= best - 1e-9);
     return {
-      side: chosen, hitCol: weight ? hitters.reduce((s, f) => s + value(f) * colOf(f.cell), 0) / weight : null,
-      front, spread: foes.units.filter(f => f.move?.zone), divers: foes.units.filter(f => DIVERS.has(f.entry)), weather: foes.weather,
+      side: chosen, hitter: [...hitters].sort((a, b) => value(b) - value(a))[0] ?? null, front,
+      spread: foes.units.filter(f => f.move?.zone && rowOf(f.cell) < 3), divers: foes.units.filter(f => DIVERS.has(f.entry)), weather: foes.weather,
     };
   }
 
-  // Multiplicateur de la capacité d'une lignée (à cette étoile) contre un Pokémon adverse, météo comprise ; 1 si inconnue.
-  function moveEdge(base, star, foe, weather) {
-    const move = kitMove(base, star);
-    return move ? typeMult(move.type, foe.types) * weatherMult(move.type, weather) : 1;
-  }
+  // Distance en hexagones entre une case de ton plateau (cellule KT1) et une case adverse (enemyCells) : la cellule KT1 est la
+  // case du plateau entier moins ENEMY_CELLS.
+  const foeDistance = (cell, foe) => {
+    const [a, b] = [cube(cell + ENEMY_CELLS), cube(foe.cell)];
+    return Math.max(...a.map((v, i) => Math.abs(v - b[i])));
+  };
+
+  // Multiplicateur d'une capacité (kitMove) contre des types, météo comprise ; 1 si elle est inconnue.
+  const hitMult = (move, types, weather) => (move ? typeMult(move.type, types) * weatherMult(move.type, weather) : 1);
+  // Multiplicateur de la capacité d'une lignée (à cette étoile) contre un Pokémon adverse.
+  const moveEdge = (base, star, foe, weather) => hitMult(kitMove(base, star), foe.types, weather);
 
   // Première liste (case gardée) d'un Pokémon de l'avant contre l'équipe adverse (plan), parmi les cases front de sa rangée :
-  // un tank, les colonnes à moins d'une colonne de hitCol (la plus proche à défaut) ; un attaquant, celles dont l'ennemi de
-  // l'avant le plus proche (même rangée adverse, colonne la plus proche) subit le meilleur multiplicateur de sa capacité,
-  // quand tous ne se valent pas. null : pas de préférence, la rangée entière.
+  // un tank, les cases les plus proches du frappeur (hitter : les deux qui le touchent) ; un attaquant, celles dont l'ennemi
+  // de l'avant le plus proche (en hexagones) subit le meilleur multiplicateur de sa capacité, quand tous ne se valent pas.
+  // null : pas de préférence, la rangée entière.
   function facing(u, front, plan) {
-    const byDistance = (c, col) => Math.abs(colOf(c) - col);
     if (u.role === 'tank') {
-      if (plan.hitCol === null) return null;
-      const sorted = [...front].sort((a, b) => byDistance(a, plan.hitCol) - byDistance(b, plan.hitCol));
-      const near = sorted.filter(c => byDistance(c, plan.hitCol) <= 1);
-      return near.length ? near : sorted.slice(0, 1);
+      if (!plan.hitter) return null;
+      const nearest = Math.min(...front.map(c => foeDistance(c, plan.hitter)));
+      return front.filter(c => foeDistance(c, plan.hitter) === nearest);
     }
     if (!plan.front.length) return null;
     const edge = c => {
-      const foe = [...plan.front].sort((a, b) => byDistance(a.cell, colOf(c)) - byDistance(b.cell, colOf(c)))[0];
+      const foe = [...plan.front].sort((a, b) => foeDistance(c, a) - foeDistance(c, b))[0];
       return moveEdge(u.base, u.star, foe, plan.weather);
     };
     const edges = front.map(edge);
@@ -2455,13 +2464,16 @@ const KT = (() => {
   function newBoard(zonesOf, apart = () => true, spread = false) {
     const taken = new Set();
     const backCols = new Set();
+    // Cases des unités à distance (rangée de portée derrière l'avant) : un appât ou un débordé de mêlée n'en est pas une.
+    const ranged = [];
     const put = (u, cell) => {
       u.cell = cell;
       taken.add(cell);
       if (rowOf(cell) > 0) backCols.add(colOf(cell));
+      if (u.row > 0) ranged.push(cell);
     };
     const spaced = c => rowOf(c) === 0 || !backCols.has(colOf(c));
-    const alone = c => ![...taken].some(t => rowOf(t) > 0 && touching(t, c));
+    const alone = c => !ranged.some(t => touching(t, c));
     const place = (u, pinned = false) => {
       const lists = zonesOf(u).map(cells => cells.filter(c => !taken.has(c)));
       const free = lists.find(cells => cells.length);
@@ -2484,18 +2496,18 @@ const KT = (() => {
   };
 
   // Pose des unités sur un plateau vide : un Pokémon déjà sur une case de sa première liste la garde (avec spread, une unité à
-  // distance seulement si elle ne touche pas une unité à distance qui garde la sienne) ; les autres se posent dans l'ordre
-  // first, l'avant (frontRank), puis derrière, le porteur d'abord. apart, spread : voir newBoard.
+  // distance seulement si elle ne touche pas une unité à distance qui garde la sienne, le porteur d'abord) ; les autres se
+  // posent dans l'ordre first, l'avant (frontRank), puis derrière, le porteur d'abord. apart, spread : voir newBoard.
   function arrange(units, zonesOf, first = [], apart = undefined, spread = false) {
     const board = newBoard(zonesOf, apart, spread);
+    const carryFirst = (a, b) => Number(b.role === 'carry') - Number(a.role === 'carry');
     const stay = [];
-    for (const u of units) {
+    for (const u of [...units].sort(carryFirst)) {
       if (!zonesOf(u)[0].includes(u.from)) continue;
       if (!(spread && u.row > 0 && stay.some(s => s.row > 0 && touching(s.from, u.from)))) stay.push(u);
     }
     for (const u of stay) board.put(u, u.from);
     const rest = units.filter(u => !first.includes(u));
-    const carryFirst = (a, b) => Number(b.role === 'carry') - Number(a.role === 'carry');
     const order = [...first, ...rest.filter(u => u.row === 0).sort((a, b) => frontRank(a) - frontRank(b)), ...rest.filter(u => u.row > 0).sort(carryFirst)];
     for (const u of order) if (!stay.includes(u)) board.place(u, first.includes(u));
     return board;
@@ -2701,9 +2713,11 @@ const KT = (() => {
     const stops = stats ? nextStops(stats.stops, game.floor, 3, mode) : [];
     const eco = economy(game, stops);
     const same = previous?.run === run ? previous : null;
-    // Équipe du prochain boss, contre qui les compléments sont aussi notés (typeEdge) ; null en Tour.
-    const boss = stats && data ? nextBossStop(stats.stops, game.floor, mode) : null;
-    const bossFoes = boss ? enemyTeam(save, mode, data, boss.floor - 1) : null;
+    // Équipe adverse du combat (placement), et celle du premier boss à gagner des combats de la compo cible, contre qui les
+    // compléments sont aussi notés (typeEdge) ; null en Tour.
+    const foes = data ? enemyTeam(save, mode, data) : null;
+    const boss = stats && data ? nextStops(stats.stops, game.floor, mode.horizon, mode).find(st => mustWin(st, mode)) : null;
+    const bossFoes = boss?.floor === game.floor ? foes : boss ? enemyTeam(save, mode, data, boss.floor - 1) : null;
     const target = stats && data ? targetComp(stats, data, game, same, bossFoes) : null;
     const next = target ? nextComp(stats, data, game, target, same) : null;
     const spent = spend({ game, target, next, data, eco, names });
@@ -2713,7 +2727,6 @@ const KT = (() => {
     const book = target ? recipeBook(data) : null;
     const future = target ? futureLines(stats, data, target, next, holders, profiles, names) : [];
     const items = itemMarks(data, game, holders, book, target, future, names);
-    const foes = data ? enemyTeam(save, mode, data) : null;
     const plan = foes?.units.length ? foePlan(foes, side, data) : null;
     // Assassins qui plongent dans l'équipe adverse calculée : la parade se pose sans la case, sauf si le joueur l'a décochée.
     const diving = dive ?? Boolean(plan?.divers.length);
@@ -2737,7 +2750,9 @@ const KT = (() => {
       guard: guarded ? { bait: units.find(u => u.bait).base, carry: guarded.base } : null,
       dive: diving,
       // Équipe adverse calculée (enemyTeam) et placement qui en découle (foePlan) ; null en Tour, hors des aventures relevées.
-      foes, plan,
+      // tanked, spaced : la formation a posé un tank contre le frappeur, ou écarté au moins deux unités à distance.
+      foes, plan: plan && { ...plan, tanked: Boolean(plan.hitter) && units.some(u => u.role === 'tank' && u.row === 0),
+        spaced: plan.spread.length > 0 && units.filter(u => u.row > 0).length > 1 },
       code: target ? kt1Code(units, stats.rules, mode) : null,
     };
   }
@@ -3138,10 +3153,10 @@ function foesHtml(a, ui) {
   const notes = [];
   if (foes.weather) notes.push(`Météo : ${WEATHER_NAMES[foes.weather]}.`);
   if (plan.side !== ui.side) notes.push(`Porteur à distance au ${KT.CARRY_ZONES[plan.side].name}, loin des menaces.`);
-  if (plan.hitCol !== null) notes.push(`Tanks face aux frappeurs : ${named(plan.front.filter(f => f.role !== 'tank')).join(', ')}.`);
+  if (plan.tanked) notes.push(`Tanks face à ${names.line(plan.hitter.line)}, le frappeur le plus fort.`);
   const zone = named(plan.spread);
-  if (zone.length) notes.push(`Unités à distance écartées : ${zone.join(', ')} ${zone.length > 1 ? 'frappent' : 'frappe'} en zone.`);
-  if (foes.probable) notes.push('Équipe probable : la difficulté peut remplacer ou renforcer des Pokémon.');
+  if (plan.spaced) notes.push(`Unités à distance écartées : ${zone.join(', ')} ${zone.length > 1 ? 'frappent' : 'frappe'} en zone.`);
+  if (foes.probable) notes.push('Équipe probable, à comparer à l’adversaire affiché : la difficulté peut remplacer ou renforcer des Pokémon.');
   return `<p class="kt-label"><span>Adversaire</span><span>${foes.probable ? 'probable' : 'calculé'}</span></p>
 <p class="kt-hint">${esc(list)}${notes.length ? `<br>${esc(notes.join(' '))}` : ''}</p>`;
 }

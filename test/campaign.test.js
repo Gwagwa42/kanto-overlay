@@ -87,6 +87,10 @@ test('vraie sauvegarde Kanto (Légende, combat 5) : lue, économie, compo et cod
   assert.deepEqual(a.foes.units.map(f => `${f.line}:${f.star}@${f.cell}`), ['geodude:2@25', 'paras:1@23', 'zubat:1@17', 'jigglypuff:1@10']);
   assert.match(a.code, /^KT1;r41;xm=adv;xn=Plan%20kanto-overlay;bulbasaur:2:3:[^;]*;paras:1:4;oddish:1:17:[^;]*;ponyta:1:24:/);
   assert.deepEqual(a.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Ponyta — avant, colonne 5 → fond, colonne 4, appât des assassins adverses']);
+  assert.deepEqual([a.dive, a.guard], [true, { bait: 'ponyta', carry: 'oddish' }]);
+  // Case décochée par le joueur : pas de parade, malgré Nosferapti.
+  const off = advise(KT.parseSave(raw), 'kanto', { dive: false });
+  assert.deepEqual([off.dive, off.guard, off.moves.some(m => /appât/.test(m.why))], [false, null, false]);
   // Ponyta a deux copies ★ : noté ★★ (coût 2 : 2,57), il n'est pas remplacé par Aspicot (coût 1, seuil Insecte franchi et
   // Poison approché : 1,75).
   assert.deepEqual([a.target.upgrades, a.target.replaced], [[], []]);
