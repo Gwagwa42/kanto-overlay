@@ -258,7 +258,7 @@ test('compo cible : inertie de 30 points', () => {
   assert.equal(KT.targetComp(t(49), data, game, { key: 'pidgey+rattata+spearow' }).key, 'abra+onix+zubat');
 });
 
-test('compo cible : une lignée du trio à trouver coûte le bonus fois sa chance de ne pas sortir d’ici la fin de la fenêtre', () => {
+test('compo cible : une lignée du trio à trouver coûte le bonus fois sa chance de ne pas sortir d’ici le boss', () => {
   const cores = [
     brockCore(['giovanni', 'koga', 'samurai']),
     brockCore(['onix', 'rhyhorn', 'kabuto'], 55),
@@ -330,6 +330,15 @@ test('compléments : possédés par puissance (coût, étoiles) et types, boutiq
   assert.deepEqual(comp(4, {}, ['clefairy', 'meowth']), [['clefairy'], [], []]);
   // Le second trio, 20 points plus bas, reste battu malgré Miaouss trouvé en boutique ; il compte pour la force des lignées.
   assert.deepEqual(comp(4, {}, ['clefairy', 'meowth'], [trio, { ...trio, core: ['meowth', 'abra', 'pidgey'], lo: trio.lo - 20 }]), [['meowth'], [], []]);
+});
+
+test('compléments : un rôle qui manque compte une fois, même quand la lignée en apporte deux', () => {
+  // Trio Abra · Goupix · Mystherbe, tout à distance, sans tank. Chenipan ★ (coût 1), tank de mêlée, apporte deux rôles mais ne
+  // gagne le bonus qu'une fois : 1,5, sous Miaouss ★ (coût 2, mêlée, 1,85). Compté deux fois, il aurait 2.
+  const own = { c: { id: 'c', line: 'caterpie', star: 1 }, m: { id: 'm', line: 'meowth', star: 1 } };
+  const game = readGame({ ...save, round: 1009, level: 4, units: own, board: { 28: 'c', 29: 'm' }, bench: [], shop: [] });
+  const stats = brockStats([brockCore(['abra', 'vulpix', 'oddish'])], { lines: [] });
+  assert.deepEqual(KT.targetComp(stats, data, game, null).fillers, ['meowth']);
 });
 
 test('compléments : l’écart de victoire rétréci (400 combats fictifs) décale le coût d’un cran, dès 2,5 points', () => {
@@ -795,7 +804,7 @@ test('compléments : avantage de type contre l’équipe du prochain boss', () =
 test('compo suivante : inertie de 30 points dans la même partie', () => {
   const t = lo => twoWindows([[['caterpie', 'pidgey', 'rattata'], 80], [['ekans', 'spearow', 'zubat'], lo]]);
   const previous = { key: 'abra+onix+zubat', run: 7, next: 'ekans+spearow+zubat' };
-  // Abo (coût 2, 25 % au niveau 3) a un peu moins de chances de sortir d'ici l'étage 27 que les coûts 1 : environ un point de
+  // Abo (coût 2, 25 % au niveau 3) a un peu moins de chances de sortir d'ici l'étage 19 (premier boss de la fenêtre) que les coûts 1 : environ un point de
   // malus de plus, d'où 53 et 47 de part et d'autre de 50.
   assert.equal(advise(EMPTY10, { stats: t(53) }).next.key, 'caterpie+pidgey+rattata');
   assert.equal(advise(EMPTY10, { stats: t(53), previous }).next.key, 'ekans+spearow+zubat');

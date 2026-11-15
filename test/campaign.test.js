@@ -88,6 +88,9 @@ test('vraie sauvegarde Kanto (Légende, combat 5) : lue, économie, compo et cod
   assert.match(a.code, /^KT1;r41;xm=adv;xn=Plan%20kanto-overlay;bulbasaur:2:3:[^;]*;paras:1:4;oddish:1:17:[^;]*;ponyta:1:24:/);
   assert.deepEqual(a.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Ponyta — avant, colonne 5 → fond, colonne 4, appât des assassins adverses']);
   assert.deepEqual([a.dive, a.guard], [true, { bait: 'ponyta', carry: 'oddish' }]);
+  // Notes lues sur la pose : Bulbizarre, tank, touche Paras, le frappeur ; une seule unité à distance (Mystherbe), rien à écarter
+  // malgré le Rondoudou du fond adverse.
+  assert.deepEqual([a.plan.hitter.line, a.plan.tanked, a.plan.spread.map(f => f.line), a.plan.spaced], ['paras', true, ['jigglypuff'], false]);
   // Case décochée par le joueur : pas de parade, malgré Nosferapti.
   const off = advise(KT.parseSave(raw), 'kanto', { dive: false });
   assert.deepEqual([off.dive, off.guard, off.moves.some(m => /appât/.test(m.why))], [false, null, false]);

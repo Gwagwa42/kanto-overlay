@@ -146,8 +146,8 @@ const KT = (() => {
   const NEXT_FIGHT_WEIGHT = 0.01;
   const NEXT_FIGHT_CAP = 20;
   const FILLER_INERTIA = 0.1;
-  // Avantage de type d'un complément sur l'équipe du prochain boss (typeEdge, de −TYPE_CAP à +TYPE_CAP), compté TYPE_WEIGHT par
-  // point : ±0,2 au plus, comme la force sur le prochain combat (choix de jeu). Un complément qui apporte à la compo un rôle
+  // Avantage de type d'un complément sur l'équipe du premier boss à gagner (typeEdge, de −TYPE_CAP à +TYPE_CAP), compté
+  // TYPE_WEIGHT par point : ±0,2 au plus, comme la force sur le prochain combat (choix de jeu). Un complément qui apporte à la compo un rôle
   // qui lui manque (tank, mêlée, distance) gagne ROLE_WEIGHT, une fois : plus qu'un cran de coût (0,35), moins qu'une étoile.
   const TYPE_WEIGHT = 0.1;
   const TYPE_CAP = 2;
@@ -1297,9 +1297,9 @@ const KT = (() => {
   // FILLER_INERTIA) ; les égalités restantes sont départagées par possédée, shiny, puis la plus forte sur ces combats
   // (strength). upgrades : cartes de boutique mieux notées qu'un complément possédé, inertie comprise (achetée, la carte doit
   // le remplacer), à acheter pour le remplacer ; replaced : ces compléments.
-  // foes : équipe du prochain boss à gagner (enemyTeam), dont l'avantage de type (typeEdge) compte TYPE_WEIGHT par point ;
-  // un complément qui apporte à la compo un rôle qui lui manque (roleNeed) gagne ROLE_WEIGHT. shop : false pour ne
-  // compléter qu'avec les lignées possédées (compo suivante).
+  // foes : équipe du premier boss à gagner des combats de la compo cible (enemyTeam), dont l'avantage de type (typeEdge)
+  // compte TYPE_WEIGHT par point ; un complément qui apporte à la compo un rôle qui lui manque (roleNeed) gagne ROLE_WEIGHT.
+  // shop : false pour ne compléter qu'avec les lignées possédées (compo suivante).
   function fillersOf(stats, data, game, core, { strength, nextFight, previous, foes = null, shop = true }) {
     const known = b => lineInfo(data, b) && !core.includes(b);
     const mine = [...new Set(game.units.map(u => baseLine(u.line)))].filter(known);
@@ -1342,7 +1342,7 @@ const KT = (() => {
   }
 
   // Compo cible : le meilleur trio et ses compléments (fillersOf). previous : { key, fillers } du conseil précédent de la même
-  // partie, ou null ; foes : équipe du prochain boss (enemyTeam), ou null. flat : lignées du trio dont la ★★★ est nettement
+  // partie, ou null ; foes : équipe du premier boss à gagner (enemyTeam), ou null. flat : lignées du trio dont la ★★★ est nettement
   // moins forte que la ★★ (flatThirdStar) ; strength : lineStrength sur ces combats, qui classe aussi les porteurs (holdersOf).
   function targetComp(stats, data, game, previous, foes = null) {
     const stops = nextStops(stats.stops, game.floor, game.mode.horizon, game.mode);
@@ -2255,7 +2255,8 @@ const KT = (() => {
   // Cases de l'équipe adverse (jm de route-*.js) : rangée de son rôle, rangées de l'avant d'abord, rôles dans l'ordre
   // ENEMY_RANK puis ordre de l'équipe ; colonnes d'enemyColumns, sauf les assassins à entrée stealth ou rush, en colonne 6 puis
   // 0 en alternance ; case libre la plus proche (écart de colonnes + 1,5 × écart de rangées). cell : case du plateau entier,
-  // 0 à 27, rangée 3 à l'avant. Une lignée absente de LINE_KITS n'a pas de rôle : le jeu ne la pose pas non plus.
+  // 0 à 27, rangée 3 à l'avant. Une lignée absente de LINE_KITS n'a pas de rôle et n'est pas posée : un test vérifie
+  // qu'aucune lignée de CAMPAIGN_TEAMS n'en manque.
   function enemyCells(units) {
     const taken = new Set();
     const nearest = (col, row) => {
@@ -2352,6 +2353,8 @@ const KT = (() => {
     };
   }
 
+  // Au moins deux cases, aucune collée à une autre.
+  const spacedOut = cells => cells.length > 1 && cells.every((a, i) => cells.slice(i + 1).every(b => !touching(a, b)));
   // Distance en hexagones entre une case de ton plateau (cellule KT1) et une case adverse (enemyCells) : la cellule KT1 est la
   // case du plateau entier moins ENEMY_CELLS.
   const foeDistance = (cell, foe) => {
@@ -2750,9 +2753,10 @@ const KT = (() => {
       guard: guarded ? { bait: units.find(u => u.bait).base, carry: guarded.base } : null,
       dive: diving,
       // Équipe adverse calculée (enemyTeam) et placement qui en découle (foePlan) ; null en Tour, hors des aventures relevées.
-      // tanked, spaced : la formation a posé un tank contre le frappeur, ou écarté au moins deux unités à distance.
-      foes, plan: plan && { ...plan, tanked: Boolean(plan.hitter) && units.some(u => u.role === 'tank' && u.row === 0),
-        spaced: plan.spread.length > 0 && units.filter(u => u.row > 0).length > 1 },
+      // tanked, spaced, lus sur les cases posées : un tank à l'avant touche le frappeur ; au moins deux unités à distance, aucune
+      // collée à une autre, contre des attaques de zone.
+      foes, plan: plan && { ...plan, tanked: Boolean(plan.hitter) && units.some(u => u.role === 'tank' && rowOf(u.cell) === 0 && foeDistance(u.cell, plan.hitter) === 1),
+        spaced: plan.spread.length > 0 && spacedOut(units.filter(u => u.row > 0).map(u => u.cell)) },
       code: target ? kt1Code(units, stats.rules, mode) : null,
     };
   }
@@ -2834,7 +2838,7 @@ const KT = (() => {
     parseSave, floorFromSave, advanceOf, isStatsData, legendStats, leagueStats, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss, mustWin,
     baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, rerollChance, ratedStops, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, touching, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
-    seededDraw, enemyTeam, enemyCells, foePlan, formation,
+    seededDraw, enemyTeam, enemyCells, foePlan, formation, CAMPAIGN_TEAMS, LINE_KITS,
   };
 })();
 

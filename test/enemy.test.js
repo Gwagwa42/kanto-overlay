@@ -30,15 +30,13 @@ test('équipe adverse : variante de la graine, vrais dresseurs en Vétéran et L
   assert.deepEqual([team(veteran), veteran.probable], [['onix:2@25', 'rhyhorn:1@23'], true]);
   // Sans graine : la première variante, dite probable.
   assert.deepEqual([team(foes(3, { runSeed: undefined })), foes(3, { runSeed: undefined }).probable], [['onix:2@25', 'geodude:1@23'], true]);
-  // Toutes les lignées des équipes relevées ont un rôle : aucune n'est écartée du placement.
-  for (const [adventure, rounds] of [['kanto', 38], ['canela', 30]]) {
-    for (let r = 0; r < rounds; r++) {
-      for (const seed of [1, 2, 3, 4, 5]) {
-        const e = foes(r, { runSeed: seed }, mode(1, ['koga', 'erika', 'sabrina'], adventure));
-        if (e) assert.ok(e.units.every(f => f.role && f.cell >= 0), `${adventure} ${r}`);
-      }
-    }
-  }
+  // Chaque lignée de chaque équipe relevée (variantes, vrais dresseurs, rivaux, starters, rangs d'arène, clés) a un kit :
+  // aucune n'est écartée du placement.
+  const teams = x => (typeof x === 'string' ? [x] : x && typeof x === 'object' ? Object.values(x).flatMap(teams) : []);
+  const lines = new Set(teams(Object.values(KT.CAMPAIGN_TEAMS).flat().map(r => r && { v: r.v, s: r.s, k: r.keyed?.t }))
+    .flatMap(t => t.split(' ').map(u => u.split(':')[0])));
+  assert.ok(lines.has('flareon') && lines.size > 50);
+  assert.deepEqual([...lines].filter(l => !KT.LINE_KITS[l]), []);
   // Auguste, variante c : Pyroli (branche d'Évoli) est posé avec les autres.
   assert.equal(foes(25, { runSeed: 6 }).units.length, 6);
   // Événement, Tour, aventure non relevée : pas d'équipe.
@@ -77,8 +75,11 @@ test('plan contre l’adversaire : porteur loin des assassins et des frappeurs, 
   assert.deepEqual([bridge.side, bridge.hitter.line, bridge.divers.map(f => f.line)], ['left', 'rattata', ['zubat', 'ekans']]);
   // Sans menace d'un côté, la zone du menu ⚙ reste : Ondine n'aligne qu'un Magicarpe à l'avant, au centre.
   assert.equal(KT.foePlan(foes(7, { runSeed: 1 }), 'right', data).side, 'right');
-  // Major Bob : Magnéti frappe en zone.
+  // Major Bob : Magnéti frappe en zone depuis le fond adverse.
   assert.deepEqual(KT.foePlan(foes(11, { runSeed: 2 }), 'left', data).spread.map(f => f.line), ['magnemite']);
+  // Tauros ★★ à l'avant : sa zone vise ton avant, pas d'écart ; Tentacool, mage au fond, si.
+  const front = KT.enemyCells([{ line: 'tauros', star: 2 }, { line: 'tentacool', star: 1 }]).map(f => ({ ...f, move: { zone: true } }));
+  assert.deepEqual(KT.foePlan({ units: front, weather: null }, 'left', data).spread.map(f => f.line), ['tentacool']);
 });
 
 // Formation contre un plan : unités possédées (cell : cellule KT1, absente = au banc) et leurs rôles de holdersOf.
