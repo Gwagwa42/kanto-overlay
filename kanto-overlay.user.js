@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanto Tactics — panneau Tour et campagne
 // @namespace    https://github.com/Gwagwa42/kanto-overlay
-// @version      2.13.1
+// @version      2.14.0
 // @description  Tour de combat et campagne (aventures, trois difficultés) de Kanto Tactics : prochain boss, meilleurs trios, et conseils d'achat, d'objets, de formation et de bénédictions lus sur ta partie (données publiques einoow.com).
 // Pages d'entrée qui chargent l'application du jeu ; le jeu change de mode sans changer d'adresse.
 // @match        https://einoow.com/playables/kanto-tactics/*
@@ -30,7 +30,7 @@
 const KT = (() => {
   // Version du script, notée dans le journal des combats ; égale à @version (un test le vérifie) : GM_info n'est pas garanti
   // avec @grant none.
-  const VERSION = '2.13.1';
+  const VERSION = '2.14.0';
   const API = 'https://einoow.com/api/meta/kanto/';
   // campana.json mêle les trois difficultés de la campagne ; ?dif=1 et ?dif=2 n'en gardent qu'une (Normal, Vétéran) ; Légende
   // se déduit des trois (legendStats).
@@ -3134,12 +3134,13 @@ function foesHtml(a, ui) {
   if (!a.foes?.units.length) return '';
   const { foes, plan, names } = a;
   const list = foes.units.map(f => `${names.line(f.line)}${f.star > 1 ? ` ${'★'.repeat(f.star)}` : ''}`).join(', ');
-  const lines = list => [...new Set(list.map(f => names.line(f.line)))].join(', ');
+  const named = list => [...new Set(list.map(f => names.line(f.line)))];
   const notes = [];
   if (foes.weather) notes.push(`Météo : ${WEATHER_NAMES[foes.weather]}.`);
   if (plan.side !== ui.side) notes.push(`Porteur à distance au ${KT.CARRY_ZONES[plan.side].name}, loin des menaces.`);
-  if (plan.hitCol !== null) notes.push(`Tanks face aux frappeurs : ${lines(plan.front.filter(f => f.role !== 'tank'))}.`);
-  if (plan.spread.length) notes.push(`Unités à distance écartées : ${lines(plan.spread)} frappe en zone.`);
+  if (plan.hitCol !== null) notes.push(`Tanks face aux frappeurs : ${named(plan.front.filter(f => f.role !== 'tank')).join(', ')}.`);
+  const zone = named(plan.spread);
+  if (zone.length) notes.push(`Unités à distance écartées : ${zone.join(', ')} ${zone.length > 1 ? 'frappent' : 'frappe'} en zone.`);
   if (foes.probable) notes.push('Équipe probable : la difficulté peut remplacer ou renforcer des Pokémon.');
   return `<p class="kt-label"><span>Adversaire</span><span>${foes.probable ? 'probable' : 'calculé'}</span></p>
 <p class="kt-hint">${esc(list)}${notes.length ? `<br>${esc(notes.join(' '))}` : ''}</p>`;
