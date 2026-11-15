@@ -47,8 +47,8 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
   borne basse du taux de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat qui a des trios
   notés (un combat sans trio, manche peu jouée de campagne, ne compte pas), avec un bonus pour
   les Pokémon que tu possèdes déjà et un malus pour chaque Pokémon à trouver : 10 points fois la chance de ne pas en voir une
-  copie en boutique d'ici le premier boss à gagner de ces combats en campagne (le dernier combat noté s'il n'y en a pas, et en
-  Tour). La chance compte deux boutiques par combat, celle du combat et une actualisation (choix de jeu), chacune selon les
+  copie en boutique d'ici le premier boss de ces combats (à gagner en campagne ; tous les 5 étages en Tour ; le dernier combat
+  noté s'il n'y en a pas). La chance compte deux boutiques par combat, celle du combat et une actualisation (choix de jeu), chacune selon les
   règles de la boutique du jeu (voir l'actualisation, plus bas), au niveau visé de chaque combat en campagne (ton niveau s'il est
   plus haut) et à ton niveau en Tour ; un Pokémon de la boutique affichée est trouvé. Elle se lit par lignée et non par coût :
   en Tour, les trois lignées de coût 5 se partagent leurs cases et sortent chacune autant qu'une lignée de coût 3 ou 4 (au
@@ -69,8 +69,8 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
   l'avantage de type sur l'équipe du prochain boss (Formation, équipe adverse) ajoute 0,1 par point, borné
   à ±0,2 : le multiplicateur moyen de sa capacité sur les Pokémon du boss (table des types du jeu, météo comprise), moins celui de
   leurs capacités sur lui. Contre Pierre (Roche et Sol), Carapuce (Eau, ×4) passe devant Salamèche (Feu, ×0,5, et touché ×4 par
-  la Roche). Un complément qui apporte un rôle absent de la compo, trio compris, gagne 0,5 par rôle : un tank (rôle que le jeu
-  donne à la lignée), une unité de mêlée (portée 1), une unité à distance ; plus qu'un cran de coût, moins qu'une étoile. Sans
+  la Roche). Un complément qui apporte au moins un rôle absent de la compo, trio compris, gagne 0,5 : un tank (rôle que le
+  jeu donne à la lignée), une unité de mêlée (portée 1), une unité à distance ; plus qu'un cran de coût, moins qu'une étoile. Sans
   tank dans le trio, Chenipan ★ remplace Rattata ★, et Rhinocorne ★ passe devant Rattata ★★. Un complément du conseil précédent, dans la
   même partie, garde 0,1 : il faut 10 points d'écart sur le prochain combat pour le remplacer, sinon le plan, les objets visés
   et le Planificateur changeraient à chaque combat. À égalité, l'unité possédée, la shiny, puis la lignée qui gagne le plus
@@ -186,7 +186,7 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
     combattants et spéciaux à l'avant, assassins en 2ᵉ rangée, soutiens, mages et tireurs au fond, du centre vers les bords,
     Abo et Doduo aux bords. Elle est exacte en Normal ; en Vétéran et Légende, le panneau prend l'équipe des vrais dresseurs
     et la dit probable, car les autres règles de ces difficultés (remplacements, étoiles et objets ajoutés) sont chiffrées dans
-    le jeu. En Tour, pas d'équipe : le générateur a besoin de données que le serveur envoie au démarrage, décodées par un module
+    le jeu ; sans graine dans la sauvegarde, la première variante, probable aussi. En Tour, pas d'équipe : le générateur a besoin de données que le serveur envoie au démarrage, décodées par un module
     obfusqué. Le script ne peut pas non plus appeler le générateur du jeu : la CSP du site (`script-src 'self'`) empêche
     Violentmonkey d'injecter le script dans le monde de la page sur Firefox, et un import depuis le monde du contenu créerait
     une seconde instance du jeu sans ces données. Contre une équipe connue, chaque Pokémon visant l'ennemi le plus proche (code
@@ -194,11 +194,13 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
     - zone du porteur à distance : la plus éloignée des menaces, pesées par leur valeur (coût × 3 par étoile au-delà de la
       première) : les frappeurs de l'avant adverse (ses tanks exceptés), et deux fois Abo, Doduo et Nosferapti, dont la cible
       dépend du côté. À égalité, la zone du menu ⚙ ;
-    - tanks : dans les colonnes à moins d'une colonne de la colonne moyenne des frappeurs, pesée par leur valeur ;
-    - attaquants de mêlée : face à l'ennemi de l'avant que leur capacité frappe le mieux (table des types, météo comprise),
-      quand tous ne se valent pas. Contre Mont Sélénite (Racaillou à l'avant, colonne 5), Paras (Plante, ×4) lui fait face ;
-    - contre une capacité de zone adverse (rayon autour de la cible, ligne, cône, rangée, rebonds), les unités à distance ne se
-      touchent plus : chacune prend, sur sa rangée puis derrière, une case qui ne touche aucune autre, et une unité qui garde sa
+    - tanks : sur les deux cases collées au frappeur de plus grande valeur (la rangée adverse, impaire, est décalée d'une
+      demi-case : un Pokémon de sa colonne 3 touche tes colonnes 3 et 4) ;
+    - attaquants de mêlée : face à l'ennemi de l'avant le plus proche (en hexagones) que leur capacité frappe le mieux (table
+      des types, météo comprise), quand tous ne se valent pas. Contre Mont Sélénite (Racaillou à l'avant), Paras (Plante, ×4)
+      lui fait face ;
+    - contre une capacité de zone d'un Pokémon adverse derrière son avant (rayon autour de la cible, ligne, cône, rangée,
+      rebonds ; ceux de l'avant frappent ton avant, leur cible la plus proche), les unités à distance ne se touchent plus : chacune prend, sur sa rangée puis derrière, une case qui ne touche aucune autre, et une unité qui garde sa
       case la quitte si elle touche une unité à distance déjà posée ;
     - assassins qui plongent (Insécateur, Doduo, Abo, Nosferapti) : la parade se pose d'office.
   - Assassins adverses (case de l'onglet Compo : en Tour, à cocher quand l'adversaire affiché en aligne ; en campagne, cochée
@@ -243,7 +245,7 @@ Changer un préréglage recalcule tout de suite les conseils et les règles d'or
 | Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 4, 6 dès 8, 7 dès 16, 8 dès 22, 9 dès 33, 10 dès 60 ; plus tard : 6, 14, 26, 36, 55, 75. Kanto plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38, sous la taille des équipes des champions (8 au 6ᵉ badge, 9 contre Mewtwo). Cap sur Cramois'Île plus tôt : 5, 6, 11, 14, 18 ; plus tard : 8, 10, 18, 24, 30. Le niveau maximal ne change pas : le niveau 10 n'est jamais visé avant l'étage 60 en Tour. |
 | Tout jouer | Prudent, Normal, Audacieux | Étage, ou boss à gagner en campagne, sous 50, 45 ou 40 % de victoires (taux de la difficulté en campagne, plus l'écart appris sur [tes résultats](#tes-résultats)), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
 | Compo cible | Réactive, Normale, Stable | Combats vus d'avance (6, 9 ou 12, la compo suivante sur autant d'après) et gain minimal pour changer de trio (15, 30 ou 45 points). |
-| Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver rare en boutique au niveau visé à son boss (autant, voir [Compo cible](#comment-les-conseils-sont-choisis)). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
+| Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver, fois sa chance de ne pas sortir en boutique d'ici le boss (voir [Compo cible](#comment-les-conseils-sont-choisis)). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
 
 ### Tes résultats
 
