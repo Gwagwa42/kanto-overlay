@@ -20,7 +20,7 @@ sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rie
 
 En tête du panneau, toujours visibles : l'or à dépenser au-dessus du palier, l'alerte « tout jouer » et le prochain boss avec son
 taux de victoire. Dessous, quatre onglets : **Tour** (les conseils ★ et ◆, les ✕ regroupés sous « N à éviter »), **Compo** (compo
-cible, compo suivante, objets visés, copie de la formation, équipe adverse calculée en campagne, assassins adverses), **Boss** (taux, premier essai, essais moyens, meilleurs trios) et
+cible, compo suivante, équipe adverse calculée en campagne, assassins adverses, objets visés, copie de la formation), **Boss** (taux, premier essai, essais moyens, meilleurs trios) et
 **Règles** (règles d'or de la tranche, bilan de tes combats). Replié, le panneau garde l'étage, l'or à dépenser et le premier conseil ★.
 
 Le menu ⚙ règle le thème (auto, clair, sombre), les pastilles affichées par niveau, la largeur (320 ou 380 px), la taille du texte,
