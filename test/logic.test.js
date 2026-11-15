@@ -19,7 +19,9 @@ const names = KT.namer(lang);
 // Étage 57, 38 pièces, niveau 8 : scénario commun avec la maquette et les pages d'aperçu.
 const S57 = require('./fixtures/s57.js');
 // S57 au niveau 4 : la compo se réduit au trio et à Goupix ★★, Rattata reste hors compo.
-const S57_4 = { ...S57, level: 4, xp: 0 };
+// S57 au niveau 4, Ptéra retiré de la boutique : affiché, il serait trouvé (sourcesOf) et remplacerait Lokhlass, à venir, dans
+// la compo suivante (Leveinard, Minidraco, Lokhlass), qui sert aux tests du sac.
+const S57_4 = { ...S57, level: 4, xp: 0, shop: S57.shop.map(b => (b === 'aerodactyl' ? null : b)) };
 const advise = (s, extra = {}) => adviseOn(s, { mode: T, stats: torre, ...extra });
 const brief = m => m && `${m.level} ${m.label}`;
 const T = KT.TOWER_MODE;
@@ -214,16 +216,21 @@ test('stratégie : compo réactive ou stable (combats vus d’avance, inertie)',
 
 test('stratégie : bonus des Pokémon possédés faible ou fort', () => {
   const unit = { g: { id: 'g', line: 'giovanni', star: 1 } };
-  const score = (owned, units) => KT.coreScore(['giovanni', 'koga', 'samurai'], UNRATED,
-    KT.readGame({ ...save, round: 1009, level: 8, units, board: {}, bench: Object.keys(units), shop: [] }, strategy({ owned })), data);
-  // Niveau 8 : Koga et Samouraï (coût 5) introuvables, un malus chacun ; Giovanni possédé, un bonus.
-  assert.deepEqual([score('low', unit), score('normal', unit), score('high', unit)], [-5, -10, -20]);
-  assert.deepEqual([score('low', {}), score('high', {})], [-15, -60]);
-  // Tour : le malus reste jugé au niveau du joueur (8), même quand l'étage noté vise le niveau 9 (59 : Koga, Samouraï à 17 %).
+  const game = (owned, units) => KT.readGame({ ...save, round: 1009, level: 8, units, board: {}, bench: Object.keys(units), shop: [] }, strategy({ owned }));
+  const score = (owned, units) => KT.coreScore(['giovanni', 'koga', 'samurai'], UNRATED, game(owned, units), data);
+  // Sans combat noté, une seule boutique d'ici la fin de la fenêtre : l'actualisation de l'étage. Koga et Samouraï (coût 5),
+  // à trouver, coûtent le bonus fois la chance de ne pas les y voir ; Giovanni possédé rapporte le bonus (et tient des
+  // exemplaires du coût 5 : la chance des deux autres monte un peu).
+  const seen = units => KT.rerollChance(game('normal', units), data, 8, ['koga']) / 100;
+  const round1 = x => Math.round(10 * x) / 10;
+  assert.deepEqual([score('low', unit), score('normal', unit), score('high', unit)].map(round1), [5, 10, 20].map(b => round1(b - 2 * b * (1 - seen(unit)))));
+  assert.deepEqual([score('low', {}), score('high', {})].map(round1), [5, 20].map(b => round1(-3 * b * (1 - seen({})))));
+  // Tour : chances jugées au niveau du joueur (8), même quand l'étage noté vise le niveau 9 ; de l'étage 57 au 59 :
+  // l'actualisation de l'étage, puis deux boutiques par étage.
   const rated = KT.ratedStops([{ stop: '59:elite', floor: 59, boss: 'elite', weight: 1 }], new Map([['59:elite', new Map([['giovanni+koga+samurai', { lo: 0 }]])]]));
   const tower = KT.readGame({ ...save, round: 1056, level: 8, units: unit, board: {}, bench: ['g'], shop: [] }, strategy({ owned: 'normal' }));
   assert.equal(KT.levelGoal(59, tower.mode), 9);
-  assert.equal(KT.coreScore(['giovanni', 'koga', 'samurai'], rated, tower, data), -10);
+  assert.equal(round1(KT.coreScore(['giovanni', 'koga', 'samurai'], rated, tower, data)), round1(10 - 20 * (1 - seen(unit)) ** 5));
 });
 
 test('compo cible : meilleur trio pondéré, remplissage par puissance', () => {
@@ -251,19 +258,29 @@ test('compo cible : inertie de 30 points', () => {
   assert.equal(KT.targetComp(t(49), data, game, { key: 'pidgey+rattata+spearow' }).key, 'abra+onix+zubat');
 });
 
-test('compo cible : −10 points par lignée du trio à trouver dont le coût ne sort pas à ce niveau', () => {
+test('compo cible : une lignée du trio à trouver coûte le bonus fois sa chance de ne pas sortir d’ici la fin de la fenêtre', () => {
   const cores = [
     brockCore(['giovanni', 'koga', 'samurai']),
     brockCore(['onix', 'rhyhorn', 'kabuto'], 55),
   ];
-  const game = (level, units = {}) => readGame({ ...save, round: 1009, level, units, board: {}, bench: Object.keys(units), shop: [] });
+  const game = (level, units = {}, shop = []) => readGame({ ...save, round: 1009, level, units, board: {}, bench: Object.keys(units), shop });
   const score = g => KT.coreScore(cores[0].core, UNRATED, g, data);
-  // Coût 5 : 6 % au niveau 8, 17 % au niveau 9 ; une lignée possédée garde son bonus.
-  assert.deepEqual([score(game(8)), score(game(9)), score(game(8, { g: { id: 'g', line: 'giovanni', star: 1 } }))], [-30, 0, -10]);
+  const seen = (g, base = 'koga') => KT.rerollChance(g, data, g.level, [base]) / 100;
+  const round1 = x => Math.round(10 * x) / 10;
+  // Coût 5 : sa case sort à 6 % au niveau 8, à 17 % au niveau 9 ; sans combat noté, seule l'actualisation de l'étage compte.
+  assert.ok(seen(game(9)) > seen(game(8)));
+  assert.deepEqual([score(game(8)), score(game(9))].map(round1), [game(8), game(9)].map(g => round1(-30 * (1 - seen(g)))));
+  // Une lignée possédée garde son bonus ; une lignée dans la boutique affichée est trouvée.
+  const giovanni = game(8, { g: { id: 'g', line: 'giovanni', star: 1 } });
+  assert.equal(round1(score(giovanni)), round1(10 - 20 * (1 - seen(giovanni))));
+  assert.equal(round1(score(game(8, {}, ['koga', 'samurai']))), round1(-10 * (1 - seen(game(8, {}, ['koga', 'samurai']), 'giovanni'))));
+  // Par lignée, les trois coûts 5 de la Tour sortent autant que les coûts 3 et 4 (3 lignées seulement se partagent leurs
+  // cases) : au niveau 8, 9,6 % par boutique pour Koga, 7,7 % pour Onix, 8,9 % pour Rhinocorne et Kabuto.
+  assert.ok(seen(game(8)) > seen(game(8), 'onix'));
+  // Pierre à l'étage 10 : 80 moins 27 points de malus contre 55 moins 27 ; Onix, Rhinocorne et Kabuto en boutique, 55 l'emporte.
   const key = g => KT.targetComp(brockStats(cores), data, g, null).key;
-  // Niveau 8 : 80 − 30 contre 55 (coûts 3 et 4 trouvables) ; niveau 9 : 80 contre 55.
-  assert.equal(key(game(8)), 'kabuto+onix+rhyhorn');
-  assert.equal(key(game(9)), 'giovanni+koga+samurai');
+  assert.equal(key(game(8)), 'giovanni+koga+samurai');
+  assert.equal(key(game(8, {}, ['onix', 'rhyhorn', 'kabuto'])), 'kabuto+onix+rhyhorn');
 });
 
 test('compo cible : 9 prochains combats, élites comprises', () => {
@@ -306,7 +323,8 @@ test('compléments : possédés par puissance (coût, étoiles) et types, boutiq
   // Place libre : la boutique la remplit ; à égalité, la lignée qui figure dans un trio gagnant de la fenêtre, puis le nom.
   assert.deepEqual(comp(5, units(['rattata', 1]), ['doduo']), [['rattata', 'doduo'], [], []]);
   assert.deepEqual(comp(4, {}, ['clefairy', 'meowth']), [['clefairy'], [], []]);
-  assert.deepEqual(comp(4, {}, ['clefairy', 'meowth'], [trio, { ...trio, core: ['meowth', 'abra', 'pidgey'] }]), [['meowth'], [], []]);
+  // Le second trio, 20 points plus bas, reste battu malgré Miaouss trouvé en boutique ; il compte pour la force des lignées.
+  assert.deepEqual(comp(4, {}, ['clefairy', 'meowth'], [trio, { ...trio, core: ['meowth', 'abra', 'pidgey'], lo: trio.lo - 20 }]), [['meowth'], [], []]);
 });
 
 test('compléments : l’écart de victoire rétréci (400 combats fictifs) décale le coût d’un cran, dès 2,5 points', () => {
@@ -498,7 +516,7 @@ test('boutique : ★ seulement si l’or suffit, de gauche à droite ; le reste 
 
 test('vendre faute d’or pour un ★, et XP avant actualiser', () => {
   // Niveau 4, 3 pièces : Caninos (4, 3ᵉ copie) et Ptéra (4, cœur) passent en ◆ faute d'or, Rattata hors compo est à vendre.
-  const poor = advise({ ...S57_4, gold: 3 });
+  const poor = advise({ ...S57, level: 4, xp: 0, gold: 3 });
   assert.deepEqual(poor.shop.slice(0, 2).map(brief), ['opt Si l’or', 'opt Si l’or']);
   assert.deepEqual([brief(poor.bench[2]), poor.bench[2].why], ['no Vends', 'il manque de l’or pour un achat conseillé']);
   // 47 pièces, 4 XP manquants : ★ (13) puis XP (4) laissent 30 ; pas d'actualisation avant le niveau 9.
@@ -694,8 +712,10 @@ test('compo cible : force des lignées sur les seuls combats qui ont des trios n
 test('lignée du trio inconnue des données : ni malus, ni actualisation pour elle, pas d’erreur', () => {
   const core = ['newmon', 'pidgey', 'spearow'];
   const game = readGame({ ...save, round: 1004, level: 9, units: {}, board: {}, bench: [], shop: [] });
-  // Roucool et Piafabec (coût 1 : 6 % au niveau 9) coûtent 10 points chacun ; la lignée sans coût connu, rien.
-  assert.equal(KT.coreScore(core, UNRATED, game, data), -20);
+  // Roucool et Piafabec (coût 1 : 6 % au niveau 9) coûtent 10 points chacun, moins leur chance de sortir à l'actualisation de
+  // l'étage ; la lignée sans coût connu, rien.
+  const seen = base => KT.rerollChance(game, data, 9, [base]) / 100;
+  assert.equal(KT.coreScore(core, UNRATED, game, data), -10 * (1 - seen('pidgey')) - 10 * (1 - seen('spearow')));
   const a = advise({ ...save, round: 1004, level: 9, xp: 0, gold: 60, attempts: 0, units: {}, board: {}, bench: [], shop: [] },
     { stats: brockStats([brockCore(core)]) });
   assert.equal(a.target.key, 'newmon+pidgey+spearow');
@@ -723,7 +743,8 @@ test('vendre : unité du banc hors compo et sans paire, banc presque plein', () 
   assert.equal(marks[4], null);
   // Leveinard, de la compo suivante, reste au banc ; sauf s'il manque de l'or pour un ★ de la compo cible.
   const kept = { ...full, units: { ...full.units, f: { id: 'f', line: 'chansey', star: 1 } } };
-  assert.equal(advise(kept).next.key, 'chansey+dratini+lapras');
+  // Ptéra, dans la boutique affichée, est trouvé : il passe devant Lokhlass dans la compo suivante.
+  assert.equal(advise(kept).next.key, 'aerodactyl+chansey+dratini');
   assert.equal(advise(kept).bench[3], null);
   const sold = advise({ ...kept, gold: 3 }).bench[3];
   assert.deepEqual([brief(sold), sold.why], ['no Vends', 'il manque de l’or pour un achat conseillé']);
@@ -743,10 +764,12 @@ test('compo suivante : trio des combats 10 à 18, absent s’il est déjà la co
 test('compo suivante : inertie de 30 points dans la même partie', () => {
   const t = lo => twoWindows([[['caterpie', 'pidgey', 'rattata'], 80], [['ekans', 'spearow', 'zubat'], lo]]);
   const previous = { key: 'abra+onix+zubat', run: 7, next: 'ekans+spearow+zubat' };
-  assert.equal(advise(EMPTY10, { stats: t(51) }).next.key, 'caterpie+pidgey+rattata');
-  assert.equal(advise(EMPTY10, { stats: t(51), previous }).next.key, 'ekans+spearow+zubat');
-  assert.equal(advise(EMPTY10, { stats: t(49), previous }).next.key, 'caterpie+pidgey+rattata');
-  assert.equal(advise(EMPTY10, { stats: t(51), previous: { ...previous, run: 8 } }).next.key, 'caterpie+pidgey+rattata');
+  // Abo (coût 2, 25 % au niveau 3) a un peu moins de chances de sortir d'ici l'étage 27 que les coûts 1 : environ un point de
+  // malus de plus, d'où 53 et 47 de part et d'autre de 50.
+  assert.equal(advise(EMPTY10, { stats: t(53) }).next.key, 'caterpie+pidgey+rattata');
+  assert.equal(advise(EMPTY10, { stats: t(53), previous }).next.key, 'ekans+spearow+zubat');
+  assert.equal(advise(EMPTY10, { stats: t(47), previous }).next.key, 'caterpie+pidgey+rattata');
+  assert.equal(advise(EMPTY10, { stats: t(53), previous: { ...previous, run: 8 } }).next.key, 'caterpie+pidgey+rattata');
 });
 
 test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamais sous le palier ni en tout jouer', () => {

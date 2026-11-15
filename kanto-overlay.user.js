@@ -70,7 +70,8 @@ const KT = (() => {
   // - pace : facteur sur l'étage de chaque niveau visé (levelGoals des règles du mode) ;
   // - hardWin, lowHp : « tout jouer » sous ce taux de victoire du combat (%) ou sous ces PV ;
   // - horizon, inertia : combats vus d'avance (9 ≈ 20 étages, élites comprises) et gain minimal pour changer de trio ;
-  // - ownedBonus : par Pokémon possédé, puis encore à ★★ ; aussi le malus d'un Pokémon à trouver rare en boutique (coreScore).
+  // - ownedBonus : par Pokémon possédé, puis encore à ★★ ; aussi le malus d'un Pokémon à trouver, fois sa chance de ne pas
+  //   sortir en boutique d'ici le boss (coreScore).
   //   En normal, un trio monté en ★★ (+60) l'emporte sur l'inertie.
   const STRATEGY = [
     { key: 'pace', label: 'Niveaux visés', values: [['early', 'Plus tôt', { pace: 0.75 }], ['normal', 'Normal', { pace: 1 }], ['late', 'Plus tard', { pace: 1.25 }]], def: 'normal' },
@@ -107,8 +108,9 @@ const KT = (() => {
   // Chance (%) de voir une copie cherchée à partir de laquelle une actualisation se conseille : une copie pour 20 pièces en
   // moyenne (choix de jeu).
   const REROLL_CHANCE = 10;
-  // Chance d'un coût en boutique sous laquelle un Pokémon du trio à trouver vaut un malus (seuil des robots du jeu, engine-*.js).
-  const FINDABLE = 15;
+  // Boutiques vues par combat d'ici le boss pour trouver une lignée du trio (sourcesOf) : celle du combat et une
+  // actualisation (choix de jeu : 2 pièces par combat).
+  const SHOPS_PER_FIGHT = 2;
   // Niveau 10 ouvert à partir de cet étage.
   const LEVEL_10_FROM = 60;
   // Niveau visé à partir d'un étage (choix de jeu) : la Tour ne donne que 1 XP par étage, le niveau s'achète. Chaque niveau
@@ -601,7 +603,6 @@ const KT = (() => {
   const maxLevel = (floor, mode) => mode.levelCap(floor);
   // Chance (%) de voir le coût de la lignée dans une case de boutique à ce niveau ; 0 pour un coût ou un niveau inconnu.
   const shopOdds = (data, level, base) => SHOP_ODDS[level]?.[lineInfo(data, base)?.c - 1] ?? 0;
-  const findable = (data, level, base) => shopOdds(data, level, base) >= FINDABLE;
 
   // Chance (%) qu'une actualisation au niveau level montre au moins une copie de l'une des lignées bases (gm, pm, Tt du jeu).
   // Une case tire son coût dans SHOP_ODDS, puis sa lignée au poids des exemplaires restants : SHOP_COPIES du coût moins
@@ -1140,48 +1141,57 @@ const KT = (() => {
     return { stops: rated, total: totalWeight(rated), cores: new Map(rated.map(st => [st.stop, cores.get(st.stop)])) };
   }
 
-  // Où trouver les lignées d'un trio pour les combats notés (rated) : level, niveau auquel juger la boutique ; gifts, lignées
-  // offertes par chaque événement à choix de l'aventure d'ici là. En campagne, le trio sert contre le premier boss à gagner de
-  // ces combats : niveau visé à ce boss (celui du joueur s'il est plus haut, ou sans boss à gagner), événements jusqu'à ce boss
-  // (sinon jusqu'au dernier combat noté), celui du combat en cours compris tant que son choix n'est pas fait. En Tour, sans
-  // événement et où chaque étage est à gagner : le niveau du joueur.
-  function sourcesOf(rated, game) {
+  // Où trouver les lignées d'un trio pour les combats notés (rated), jusqu'au combat until : en campagne, le premier boss à
+  // gagner de ces combats, contre qui le trio sert ; sinon (Tour, ou aucun boss à gagner) le dernier combat noté. gifts :
+  // lignées offertes par chaque événement à choix de l'aventure d'ici là, celui du combat en cours compris tant que son choix
+  // n'est pas fait. chance(base) : chance (0 à 1) de voir au moins une copie de la lignée en boutique d'ici until, sur
+  // SHOPS_PER_FIGHT boutiques par combat (rerollChance) : la boutique affichée compte pour une, et une lignée qui y est est
+  // trouvée. Niveau de chaque combat : en campagne, le niveau visé (le tien s'il est plus haut) ; en Tour, le tien, le niveau
+  // s'y achetant au fil de l'or.
+  function sourcesOf(rated, game, data) {
     const { mode } = game;
     const boss = mode.id === TOWER.id ? undefined : rated.stops.find(st => mustWin(st, mode));
-    const until = boss?.floor ?? rated.stops.at(-1)?.floor ?? game.floor;
+    const until = Math.max(game.floor, boss?.floor ?? rated.stops.at(-1)?.floor ?? game.floor);
     const ahead = f => f > game.floor || (f === game.floor && !game.eventDone);
+    const levelAt = f => (mode.id === TOWER.id ? game.level : Math.min(maxLevel(f, mode), Math.max(game.level, levelGoal(f, mode))));
+    const memo = new Map();
+    const chance = base => {
+      if (!memo.has(base)) {
+        let miss = game.shop.includes(base) ? 0 : (1 - rerollChance(game, data, game.level, [base]) / 100) ** (SHOPS_PER_FIGHT - 1);
+        for (let f = game.floor + 1; f <= until; f++) miss *= (1 - rerollChance(game, data, levelAt(f), [base]) / 100) ** SHOPS_PER_FIGHT;
+        memo.set(base, 1 - miss);
+      }
+      return memo.get(base);
+    };
     return {
-      level: Math.max(game.level, boss ? levelGoal(boss.floor, mode) : 0),
       gifts: Object.entries(mode.adv?.events ?? {}).filter(([f]) => ahead(Number(f)) && Number(f) <= until)
         .map(([, options]) => new Set(options.map(o => o.mon).filter(Boolean))),
+      chance,
     };
   }
 
   // Note d'un trio : borne basse de son taux, en moyenne pondérée par la difficulté sur les combats notés (rated, de
-  // ratedStops ; 0 sans aucun), plus les bonus de possession. Une lignée connue à trouver qui ne sort pas assez en boutique
-  // (sourcesOf) coûte ce qu'une lignée possédée rapporte, sauf si un événement l'offre : un événement n'en offre qu'une, au
-  // choix, donc n'exempte qu'une lignée du trio.
-  function coreScore(core, rated, game, data) {
+  // ratedStops ; 0 sans aucun), plus les bonus de possession. Une lignée connue à trouver coûte ce qu'une lignée possédée
+  // rapporte, fois la chance de ne pas la trouver d'ici le boss (sources, de sourcesOf), sauf si un événement l'offre : un
+  // événement n'en offre qu'une, au choix, donc n'exempte que la lignée du trio qui coûte le plus parmi les siennes.
+  function coreScore(core, rated, game, data, sources = sourcesOf(rated, game, data)) {
     const { ownedBonus } = game.mode;
     const { stops, total, cores } = rated;
     const key = coreKey(core);
     const stat = total ? stops.reduce((s, st) => s + st.weight * (cores.get(st.stop).get(key)?.lo ?? 0), 0) / total : 0;
-    const { level, gifts } = sourcesOf(rated, game);
-    const used = new Set();
-    const scarce = base => {
-      if (!lineInfo(data, base) || findable(data, level, base)) return false;
-      const gift = gifts.findIndex((bases, i) => !used.has(i) && bases.has(base));
-      if (gift < 0) return true;
-      used.add(gift);
-      return false;
-    };
-    const owned = core.reduce((s, id) => {
+    const missing = new Map();
+    let owned = 0;
+    for (const id of core) {
       const base = baseLine(id);
       const star = bestStar(game, base);
-      if (star === 0) return s - (scarce(base) ? ownedBonus : 0);
-      return s + ownedBonus + (star >= 2 ? ownedBonus : 0) + (shinyLine(game, base) ? SHINY_BONUS : 0);
-    }, 0);
-    return stat + owned;
+      if (star > 0) owned += ownedBonus + (star >= 2 ? ownedBonus : 0) + (shinyLine(game, base) ? SHINY_BONUS : 0);
+      else if (lineInfo(data, base)) missing.set(base, ownedBonus * (1 - sources.chance(base)));
+    }
+    for (const bases of sources.gifts) {
+      const gift = [...missing].filter(([b]) => bases.has(b)).sort((x, y) => y[1] - x[1])[0];
+      if (gift) missing.delete(gift[0]);
+    }
+    return stat + owned - [...missing.values()].reduce((s, m) => s + m, 0);
   }
 
   // Trios d'au moins MIN_FIGHTS combats de chaque combat, par clé de trio ; index des trios de l'API construit une fois par liste.
@@ -1241,8 +1251,9 @@ const KT = (() => {
     for (const m of rated.cores.values()) for (const [key, c] of m) candidates.set(key, c.core);
     if (!candidates.size) return null;
     let best = null;
+    const sources = sourcesOf(rated, game, data);
     for (const [key, core] of candidates) {
-      const score = coreScore(core, rated, game, data) + (key === previousKey ? game.mode.inertia : 0);
+      const score = coreScore(core, rated, game, data, sources) + (key === previousKey ? game.mode.inertia : 0);
       if (!best || score > best.score) best = { key, core: [...core], score };
     }
     const proof = [...rated.stops].sort((a, b) => b.weight - a.weight)
