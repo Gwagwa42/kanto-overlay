@@ -3186,9 +3186,9 @@ function compoHtml(state, ui) {
   return `<p class="kt-label"><span>Compo cible</span><span>${esc(span)}</span></p>
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${a.next ? `<p class="kt-label"><span>Ensuite</span><span>${esc(KT.floorRange(a.next.stops, mode))}</span></p><ul class="kt-comp">${a.next.core.map(id => chip(id, true)).join('')}${a.next.fillers.map(id => chip(id, false)).join('')}</ul>` : ''}
-${aimsHtml(a, ui)}
 ${foesHtml(a, ui)}
 ${diveHtml(state)}
+${aimsHtml(a, ui)}
 <button class="kt-copy" id="kt-copy" data-act="copy">Copier la formation</button>
 <p class="kt-hint">Porteur à distance : rangée de sa portée, ${KT.CARRY_ZONES[a.plan?.side ?? ui.side].name}${a.plan && a.plan.side !== ui.side ? ' d’après l’adversaire' : ' (options ⚙)'}.</p>`;
 }
