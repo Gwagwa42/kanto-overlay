@@ -327,6 +327,152 @@ const KT = (() => {
     venonat: { c: 2, t: ['bug', 'poison'], s: [48, 49], range: 3 },
   };
   const lineInfo = (data, base) => data?.lines[base] ?? LINES_V41[base];
+
+  // Équipe adverse de campagne, relevée dans le code du jeu (route-*.js : manches qa de Kanto et xc de Cramois'Île, routes Yi,
+  // placement jm ; roster-*.js : lignées Q ; méthode : README, Développement). Rien de cela n'est dans l'API publique.
+  // LINE_KITS : rôle de la lignée pour le jeu (rangée de l'équipe adverse), entrée d'un assassin (leap, rush, stealth,
+  // flyover, swoop, burrow, open), puis le type de la capacité de chaque stade, suivi de * pour une capacité de zone (rayon
+  // autour de la cible, ligne, cône, rangée, rebonds ; pas les capacités autour du lanceur ni celles de tout le plateau).
+  // Lignées v41 : rôle et portée de leur définition propre (_s), capacités du donneur quand elles n'en ont pas.
+  const LINE_KITS = {
+    abra: ['mage', '', 'psychic psychic psychic'], aerodactyl: ['assassin', 'open', 'flying'], articuno: ['mage', '', 'ice'],
+    bellsprout: ['fighter', '', 'grass grass* grass'], bulbasaur: ['tank', '', 'grass grass* grass*'], caterpie: ['tank', '', 'bug normal grass*'],
+    chansey: ['support', '', 'normal'], charmander: ['fighter', '', 'fire fire* fire*'], clefairy: ['support', '', 'normal normal'],
+    cubone: ['marksman', '', 'ground ground*'], diglett: ['assassin', 'burrow', 'ground ground'], ditto: ['special', '', 'normal'],
+    doduo: ['assassin', 'rush', 'normal normal*'], dratini: ['fighter', '', 'dragon dragon normal'], drowzee: ['mage', '', 'psychic psychic*'],
+    eevee: ['fighter', '', 'normal normal normal'], ekans: ['assassin', 'stealth', 'normal normal'], electabuzz: ['fighter', '', 'electric'],
+    exeggcute: ['mage', '', 'normal* normal*'], farfetchd: ['fighter', '', 'grass'], gastly: ['mage', '', 'ghost ghost ghost'],
+    geodude: ['tank', '', 'rock rock ground'], goldeen: ['assassin', '', 'flying bug*'], grimer: ['tank', '', 'poison poison'],
+    growlithe: ['fighter', '', 'normal normal'], hitmonchan: ['fighter', '', 'fighting'], hitmonlee: ['fighter', '', 'fighting'],
+    horsea: ['marksman', '', 'dragon* water*'], jigglypuff: ['support', '', 'normal*'], jynx: ['mage', '', 'normal'],
+    kabuto: ['assassin', '', 'grass water'], kangaskhan: ['fighter', '', 'normal*'], koffing: ['tank', '', 'poison poison'],
+    koga: ['mage', '', 'poison* poison*'], krabby: ['tank', '', 'normal water*'], lapras: ['marksman', '', 'water*'],
+    lickitung: ['tank', '', 'normal'], machop: ['fighter', '', 'fighting fighting fighting'], magikarp: ['special', '', 'normal normal*'],
+    magmar: ['mage', '', 'fire*'], magnemite: ['mage', '', 'electric*'], mankey: ['fighter', '', 'fighting fighting'],
+    meowth: ['assassin', 'open', 'normal* normal'], mew: ['special', '', 'normal'], mewtwo: ['mage', '', 'psychic'],
+    moltres: ['mage', '', 'flying*'], mrmime: ['support', '', 'psychic'], nidoran: ['fighter', '', 'fighting normal ground*'],
+    nidoranf: ['tank', '', 'normal poison ground*'], oddish: ['mage', '', 'grass* poison* grass*'], omanyte: ['marksman', '', 'rock* rock'],
+    onix: ['tank', '', 'ground'], paras: ['fighter', '', 'grass'], pidgey: ['assassin', 'swoop', 'flying flying* flying'],
+    pikachu: ['marksman', '', 'electric electric'], pinsir: ['fighter', '', 'bug'], poliwag: ['fighter', '', 'fighting psychic fighting'],
+    ponyta: ['fighter', '', 'fire fire*'], porygon: ['special', '', 'normal'], psyduck: ['mage', '', 'normal water'],
+    rattata: ['fighter', '', 'normal normal'], rhyhorn: ['tank', '', 'normal'], sandshrew: ['tank', '', 'normal rock*'],
+    scyther: ['assassin', 'leap', 'bug'], seel: ['tank', '', 'ice ice*'], shellder: ['marksman', '', 'water normal*'],
+    slowpoke: ['tank', '', 'psychic'], snorlax: ['tank', '', 'normal'], spearow: ['assassin', '', 'flying normal'],
+    squirtle: ['marksman', '', 'water water* water'], staryu: ['marksman', '', 'normal normal'], tangela: ['tank', '', 'grass*'],
+    tauros: ['fighter', '', 'normal*'], tentacool: ['mage', '', 'poison poison*'], venonat: ['marksman', '', 'bug* bug*'],
+    voltorb: ['special', '', 'electric'], vulpix: ['mage', '', 'fire*'], weedle: ['fighter', '', 'poison poison bug'],
+    zapdos: ['mage', '', 'electric*'], zubat: ['assassin', 'flyover', 'normal bug'],
+  };
+  // Multiplicateur d'une capacité selon son type et ceux de sa cible ($e et tt de route-*.js : produit sur les types de la
+  // cible) ; seuls les multiplicateurs différents de 1. Les attaques de base n'ont pas de type (sauf Ceinture Pro).
+  const TYPE_CHART = {
+    normal: { rock: .5, ghost: 0 },
+    fire: { fire: .5, water: .5, grass: 2, ice: 2, bug: 2, rock: .5, dragon: .5 },
+    water: { fire: 2, water: .5, grass: .5, ground: 2, rock: 2, dragon: .5 },
+    grass: { fire: .5, water: 2, grass: .5, poison: .5, ground: 2, flying: .5, bug: .5, rock: 2, dragon: .5 },
+    electric: { water: 2, grass: .5, electric: .5, ground: 0, flying: 2, dragon: .5 },
+    ice: { fire: .5, water: .5, grass: 2, ice: .5, ground: 2, flying: 2, dragon: 2 },
+    fighting: { normal: 2, ice: 2, poison: .5, flying: .5, psychic: .5, bug: .5, rock: 2, ghost: 0 },
+    poison: { grass: 2, poison: .5, ground: .5, rock: .5, ghost: .5 },
+    ground: { fire: 2, grass: .5, electric: 2, poison: 2, flying: 0, bug: .5, rock: 2 },
+    flying: { grass: 2, electric: .5, fighting: 2, bug: 2, rock: .5 },
+    psychic: { fighting: 2, poison: 2, psychic: .5 },
+    bug: { fire: .5, grass: 2, fighting: .5, poison: .5, flying: .5, psychic: 2, ghost: .5 },
+    rock: { fire: 2, ice: 2, fighting: .5, ground: .5, flying: 2, bug: 2 },
+    ghost: { normal: 0, psychic: 2, ghost: 2 },
+    dragon: { dragon: 2 },
+  };
+  // Météo d'une manche (sa de route-*.js, wxMove) : capacités du type favorisé × WEATHER_UP, du type défavorisé × WEATHER_DOWN.
+  // La grêle et la tempête de sable blessent les autres types : non compté.
+  const WEATHER = { rain: { up: 'water', down: 'fire' }, sun: { up: 'fire', down: 'water' } };
+  const WEATHER_UP = 1.5;
+  const WEATHER_DOWN = 0.5;
+  // Arènes de Kanto dont l'ordre suit gymOrder (HS, US) : la manche du rang i joue l'équipe de l'arène choisie, grandie ou
+  // réduite à GYM_SIZES[4 + i] Pokémon (ES), GYM_MAX au plus.
+  const GYM_ROUNDS = ['gym4', 'gym5', 'gym6'];
+  const GYM_SIZES = { 4: 5, 5: 6, 6: 8 };
+  const GYM_MAX = 8;
+  // Starters servis les premiers par le plafond d'étoiles d'une équipe de rival (da).
+  const RIVAL_STARTERS = ['charmander', 'squirtle', 'bulbasaur'];
+  // Manches de chaque aventure, une par round de la sauvegarde, null pour un événement. Équipe : « lignée:étoile » séparés
+  // par des espaces, étoile 1 omise. h : clé du tirage de la variante (DS) ; v : équipe de base puis variantes, chacune
+  // une équipe ou { t, tt : équipe des vrais dresseurs (Vétéran et Légende), r : équipe du rival selon ton starter, tiers :
+  // équipe selon le rang de l'arène } ; s : équipe selon ton starter ; cap : au plus cap[0] ★★★ et cap[1] ★★ ; keyed :
+  // équipe (t) ou météo (w) qui changent quand la sauvegarde a la clé ; w : météo.
+  const CAMPAIGN_TEAMS = {
+    kanto: [
+      { id: 'ruta2', h: '0', v: ['diglett'], s: { bulbasaur: 'diglett', charmander: 'weedle', squirtle: 'geodude', pikachu: 'pidgey' } },
+      { id: 'bosque', h: '1', v: ['caterpie pidgey', 'pikachu', 'weedle pidgey'] },
+      null,
+      { id: 'brock', h: '3', v: ['onix:2 geodude', 'onix:2 geodude', { t: 'onix:2 diglett:2', tt: 'onix:2 rhyhorn' }] },
+      { id: 'monteMoon', h: 'monteMoon', v: ['zubat:2 geodude paras zubat', 'geodude:2 zubat jigglypuff paras'] },
+      { id: 'puente', h: '4', v: ['zubat:2 ekans:2 rattata:2 sandshrew', 'zubat:2 rattata:2 sandshrew:2 ekans', 'geodude:2 machop:2 onix geodude machop', 'caterpie:2 weedle paras weedle'], cap: [0, 1] },
+      { id: 'azul', h: '5', v: [{ t: 'pidgey:2 rattata:2 abra:2 squirtle:2 squirtle', r: { bulbasaur: 'pidgey:2 rattata:2 abra:2 charmander:2 charmander', charmander: 'pidgey:2 rattata:2 abra:2 squirtle:2 squirtle', squirtle: 'pidgey:2 rattata:2 abra:2 bulbasaur:2 bulbasaur' } }], cap: [0, 1] },
+      { id: 'misty', h: '6', v: ['staryu:2 psyduck magikarp', 'staryu:2 poliwag', 'staryu seel poliwag magikarp'], w: 'rain' },
+      { id: 'ruta6', h: 'ruta6', v: ['oddish:2 pidgey:2 psyduck oddish pidgey psyduck', 'pidgey:2 oddish jigglypuff pidgey oddish jigglypuff'] },
+      null,
+      { id: 'ssanne', h: 'ssanne', v: ['machop:2 shellder poliwag machop magikarp machop', 'staryu poliwag shellder machop poliwag magikarp', 'growlithe:2 pikachu nidoran growlithe rattata growlithe', 'staryu psyduck shellder magikarp psyduck magikarp'] },
+      { id: 'surge', h: '8', v: ['voltorb pikachu:2 magnemite electabuzz', 'pikachu:2 magnemite:2 voltorb:2 voltorb voltorb', 'pikachu:2 electabuzz voltorb magnemite'], cap: [0, 2] },
+      { id: 'tunel', h: 'tunel', v: ['onix:2 geodude:2 machop:2 geodude onix onix geodude', 'cubone:2 slowpoke:2 slowpoke cubone slowpoke cubone', 'oddish:2 jigglypuff:2 pidgey:2 bulbasaur oddish oddish jigglypuff'] },
+      null,
+      { id: 'escondite', h: 'escondite', v: ['ekans:2 sandshrew:2 zubat:2 rattata:2 ekans ekans sandshrew', 'rattata:2 zubat:2 machop:2 rattata:2 zubat:2 rattata:2 zubat:2 machop', 'machop:2 abra:2 ekans:2 sandshrew zubat machop abra'] },
+      { id: 'gym4', h: '10', v: [{ t: 'oddish:3 exeggcute:2 paras:2 paras oddish', tiers: { 5: 'oddish:3 exeggcute:2 paras:2 paras:2 oddish:2 bulbasaur:2', 6: 'oddish:3 exeggcute:2 paras:2 paras:2 oddish:2 bulbasaur' } }, { t: 'oddish:3 paras:2 exeggcute:2 oddish:2 paras', tiers: { 5: 'oddish:3 paras:2 exeggcute:2 oddish:2 paras oddish', 6: 'oddish:3 paras:2 exeggcute:2 oddish:2 paras oddish exeggcute' } }, 'oddish:3 exeggcute:2 bulbasaur paras:2 oddish:2'], cap: [1, 4] },
+      { id: 'torre', h: 'torre', v: ['gastly:2 gastly:2 cubone:2 gastly:2 zubat:2 gastly:2 gastly cubone', 'zubat:2 ekans:2 rattata:2 machop:2 zubat:2 zubat:2 ekans rattata'] },
+      { id: 'ruta12', h: 'ruta12', v: ['poliwag:2 shellder psyduck magikarp poliwag magikarp poliwag shellder', 'pidgey:3 pidgey:2 pidgey:2 tauros:2 pidgey pidgey pidgey pidgey', 'machop:2 machop:2 hitmonlee:2 machop:2 machop hitmonchan machop', 'oddish:3 pikachu:2 oddish:2 jigglypuff:2 oddish:2 pikachu:2 oddish:2 pikachu'] },
+      null,
+      { id: 'gym5', h: '12', v: [{ t: 'weedle:3 zubat:3 ekans:3 zubat:2 ekans:2 ekans:2 nidoran:2', tiers: { 4: 'weedle:3 zubat:3 ekans:3 oddish:2 ekans:2 weedle', 6: 'weedle:3 zubat:3 ekans:3 zubat:2 ekans:2 ekans:2 nidoran:2 oddish:2' } }, 'nidoran:3 zubat:3 ekans:3 weedle:2 nidoran:2 zubat:2', 'weedle:3 weedle:2 zubat:3 ekans:3 ekans:2 oddish:2 zubat'], cap: [1, 6] },
+      { id: 'ruta19', h: 'ruta19', v: ['staryu:2 poliwag:2 shellder:2 psyduck:2 poliwag magikarp magikarp poliwag', 'pidgey:3 zubat:2 pidgey:2 tauros:2 pidgey zubat pidgey zubat'] },
+      null,
+      { id: 'silph', h: 'silph', v: ['cubone:3 zubat:2 ekans:2 machop:2 rattata:2 zubat:2 cubone zubat ekans', 'magnemite:3 voltorb:2 magnemite:2 voltorb:2 magnemite voltorb magnemite voltorb', 'abra:3 jynx:2 abra:2 slowpoke:2 abra:2 jynx:2 abra:2 jynx'] },
+      { id: 'gym6', h: '14', v: [{ t: 'abra:3 abra:2 abra:2 abra jynx:3 slowpoke:2 jynx', tiers: { 4: 'abra:3 abra:2 abra:2 jynx:3 slowpoke:2', 5: 'abra:3 abra:2 abra jynx:3 slowpoke:2 slowpoke' } }, 'abra:3 exeggcute:3 abra:2 slowpoke:2 slowpoke jynx:2 abra', 'abra:3 staryu jynx:3 slowpoke:2 abra:2 abra:2 abra:2'], cap: [1, 7] },
+      { id: 'mansion', h: 'mansion', v: ['vulpix:3 growlithe:2 ponyta:2 charmander:2 vulpix:2 growlithe:2 vulpix:2 growlithe', 'voltorb:3 magnemite:2 magnemite:2 voltorb:2 ditto magnemite voltorb magnemite'] },
+      { id: 'blaine', h: '15', v: ['growlithe:3 ponyta vulpix:2 ponyta growlithe growlithe', 'growlithe:3 magmar ponyta:2 vulpix ponyta vulpix', 'growlithe:3 vulpix ponyta flareon growlithe vulpix'], w: 'sun' },
+      { id: 'ruta21', h: 'ruta21', v: ['shellder:3 magikarp:2 magikarp:2 seel:2 magikarp:2 magikarp:2 magikarp:2 shellder', 'shellder:2 staryu:2 poliwag:2 poliwag:2 psyduck:2 shellder:2 poliwag:2 shellder', 'machop:3 shellder:2 machop:2 psyduck:2 machop:2 poliwag:2 machop machop'] },
+      { id: 'giovanni', h: '16', v: ['rhyhorn:2 nidoran:3 diglett:3 diglett:2 cubone:3 nidoran:2 tauros:2', { t: 'rhyhorn:2 rhyhorn nidoran:3 diglett:3 sandshrew nidoran cubone:2', tt: 'rhyhorn:2 rhyhorn nidoran:3 diglett:3 sandshrew nidoran:2 cubone:2' }, { t: 'rhyhorn:2 nidoran:3 nidoran diglett:3 diglett geodude cubone:2', tt: 'rhyhorn:2 nidoran:3 nidoran:2 diglett:3 diglett:2 geodude cubone:2' }], cap: [1, 7], w: 'sand' },
+      { id: 'ruta22', h: 'ruta22', v: [{ t: 'squirtle:3 pidgey:2 abra:2 rhyhorn:2 growlithe:2 exeggcute:2 abra:2 squirtle:2 pidgey:2', r: { bulbasaur: 'charmander:3 pidgey:2 abra:2 rhyhorn:2 magikarp:2 exeggcute:2 abra:2 charmander:2 pidgey:2', charmander: 'squirtle:3 pidgey:2 abra:2 rhyhorn:2 growlithe:2 exeggcute:2 abra:2 squirtle:2 pidgey:2', squirtle: 'bulbasaur:3 pidgey:2 abra:2 rhyhorn:2 growlithe:2 exeggcute:2 abra:2 bulbasaur:2 pidgey:2' } }] },
+      { id: 'ruta23', h: 'ruta23', v: ['growlithe:3 exeggcute:2 staryu:2 pikachu:2 lapras:2 growlithe growlithe exeggcute', 'pidgey:3 tauros:3 pidgey:2 zubat:2 pidgey:2 aerodactyl pidgey tauros pidgey'] },
+      { id: 'victoria', h: 'victoria', v: ['machop:3 hitmonlee:2 machop:2 hitmonchan:2 machop:2 onix:2 machop hitmonlee machop', 'tauros:3 ekans:2 sandshrew:2 rhyhorn:2 ekans:2 tauros:2 sandshrew psyduck tauros', 'abra:3 abra:3 jynx:2 abra:2 slowpoke:2 jynx:2 abra:2 slowpoke abra', 'lapras:3 charmander:2 growlithe:2 exeggcute:2 pikachu:2 growlithe:2 lapras staryu lapras'] },
+      null,
+      { id: 'lorelei', h: '17', v: ['seel:2 shellder:2 jynx:2 lapras:2 jynx:2 seel lapras jynx shellder', 'lapras:2 lapras:2 seel:2 seel:2 jynx:2 jynx seel shellder jynx', 'jynx:2 lapras:2 lapras:2 seel:2 shellder shellder seel jynx shellder'], w: 'hail' },
+      { id: 'bruno', h: '18', v: [{ t: 'onix:2 hitmonlee:2 hitmonchan:3 machop:3 onix:2 machop:2 machop:2 hitmonlee:2 machop', tt: 'onix:2 hitmonlee:2 hitmonchan:3 machop:3 onix:2 machop:2 machop:2 hitmonlee:3 machop' }, 'poliwag:2 hitmonchan:3 onix:3 machop:2 onix:2 machop:2 hitmonlee:2 machop:2 machop', 'machop:2 machop:2 onix:2 onix:2 hitmonchan:3 hitmonlee:3 machop:2 machop:2 onix:2'] },
+      { id: 'agatha', h: '19', v: ['gastly:3 gastly:3 zubat:3 ekans:3 gastly:2 zubat:3 ekans:3 gastly:3 gastly:2', 'gastly:3 gastly:3 gastly:3 gastly:2 zubat:3 zubat:3 ekans:3 ekans:2 gastly:2', 'gastly:3 ekans:3 ekans:3 zubat:3 zubat:3 nidoran:3 gastly:2 gastly:2 ekans:2'], cap: [5, 6] },
+      { id: 'lance', h: '20', v: ['dratini:3 dratini:2 magikarp:2 dratini aerodactyl dratini aerodactyl magikarp dratini', { t: 'dratini:3 charmander:2 dratini:2 dratini aerodactyl:2 magikarp:2 magikarp aerodactyl dratini', tt: 'dratini:3 charmander:3 dratini:2 dratini aerodactyl:2 magikarp:2 magikarp aerodactyl dratini' }, 'dratini:3 magikarp:2 aerodactyl:2 dratini:2 dratini dratini magikarp aerodactyl dratini'] },
+      { id: 'campeon', h: '21', v: [{ t: 'pidgey:3 abra:3 rhyhorn:3 exeggcute:3 exeggcute:2 growlithe:3 growlithe squirtle:3 rhyhorn abra', r: { bulbasaur: 'pidgey:3 abra:3 rhyhorn:3 magikarp:3 magikarp:2 exeggcute:3 exeggcute charmander:3 rhyhorn abra', charmander: 'pidgey:3 abra:3 rhyhorn:3 exeggcute:3 exeggcute:2 growlithe:3 growlithe squirtle:3 rhyhorn abra', squirtle: 'pidgey:3 abra:3 rhyhorn:3 magikarp:3 magikarp:2 growlithe:3 growlithe bulbasaur:3 rhyhorn abra' } }, { t: 'pidgey:3 abra:3 sandshrew:3 magnemite:3 magnemite:2 vulpix:3 vulpix:2 squirtle:3 sandshrew:2 abra:2', r: { bulbasaur: 'pidgey:3 abra:3 sandshrew:3 shellder:3 shellder:2 magnemite:3 magnemite:2 charmander:3 sandshrew:2 abra:2', charmander: 'pidgey:3 abra:3 sandshrew:3 magnemite:3 magnemite:2 vulpix:3 vulpix:2 squirtle:3 sandshrew:2 abra:2', squirtle: 'pidgey:3 abra:3 sandshrew:3 shellder:3 shellder:2 vulpix:3 vulpix:2 bulbasaur:3 sandshrew:2 abra:2' } }], cap: [4, 9] },
+      { id: 'mewtwo', h: '22', v: [{ t: 'mewtwo:2 ditto:2 ditto chansey rhyhorn:2 abra:3 magnemite:3 ditto pikachu:2', tt: 'mewtwo:2 ditto:2 ditto chansey rhyhorn:2 abra:3 magnemite:2 ditto pikachu:2' }, { t: 'mewtwo:2 ditto:2 ditto:2 ditto chansey:2 cubone:3 paras:3 zubat:3 abra:3', tt: 'mewtwo:2 ditto:2 ditto:2 ditto chansey:2 cubone:3 paras:3 zubat:2 abra:3' }, { t: 'mewtwo:2 ditto:2 ditto:2 chansey rhyhorn:2 abra:3 magnemite:3 voltorb:2 jigglypuff:2', tt: 'mewtwo:2 ditto:2 ditto:2 chansey:2 rhyhorn:2 abra:3 magnemite:3 voltorb:2 jigglypuff:2' }] },
+    ],
+    canela: [
+      { id: 'can-bajada', h: 'can-bajada', v: ['magikarp'] },
+      { id: 'can-motero1', h: 'can-motero1', v: ['koffing grimer'] },
+      null,
+      { id: 'can-r17', h: 'can-r17', v: ['spearow doduo ponyta'] },
+      null,
+      { id: 'can-macarra', h: 'can-macarra', v: ['machop:2 mankey spearow koffing'] },
+      null,
+      { id: 'can-jefemotero', h: '3', v: ['koffing:2 grimer:2 spearow machop doduo'] },
+      { id: 'can-r19', h: 'can-r19', v: ['tentacool:2 krabby goldeen magikarp tentacool'] },
+      { id: 'can-nadadora', h: 'can-nadadora', v: ['horsea:2 goldeen:2 staryu seel horsea'], w: 'rain' },
+      null,
+      { id: 'can-nadador', h: 'can-nadador', v: ['tentacool:2 krabby seel goldeen tentacool'], w: 'rain' },
+      null,
+      { id: 'can-pareja', h: 'can-pareja', v: ['psyduck:2 poliwag:2 slowpoke:2 horsea goldeen psyduck'], keyed: { key: 'low-tide', w: null }, w: 'rain' },
+      null,
+      { id: 'can-espuma1', h: 'can-espuma1', v: ['seel:2 shellder:2 krabby horsea seel shellder'], keyed: { key: 'low-tide', w: null }, w: 'rain' },
+      { id: 'can-corrientes', h: 'can-corrientes', v: ['seel:2 tentacool:2 horsea goldeen krabby seel'] },
+      null,
+      { id: 'can-articuno', h: '8', v: ['articuno:2 seel:2 shellder:2 lapras staryu'], w: 'hail' },
+      null,
+      { id: 'can-puerto', h: 'can-puerto', v: ['ponyta:2 vulpix:2 growlithe magmar ponyta vulpix'] },
+      { id: 'can-mansion1', h: 'can-mansion1', v: ['koffing:2 magnemite:2 grimer:2 voltorb koffing magnemite'] },
+      null,
+      { id: 'can-ladron', h: 'can-ladron', v: ['growlithe:3 grimer:2 koffing:2 ponyta:2 vulpix:2 growlithe grimer koffing'] },
+      null,
+      null,
+      { id: 'can-azul', h: '13', v: ['squirtle:3 pidgey:2 abra:2 growlithe:2 exeggcute:2 kabuto:2 squirtle pidgey'] },
+      null,
+      { id: 'can-guardian', h: '15', v: ['magmar:3 growlithe:2 ponyta:2 grimer:2 koffing:2 magmar growlithe'] },
+      { id: 'can-fosilfinal', h: '16', v: ['kabuto:3 aerodactyl omanyte:2 magmar:2 growlithe:2 ponyta:2 krabby:2 grimer:2'], keyed: { key: 'dome-fossil', t: 'omanyte:3 aerodactyl kabuto:2 magmar:2 growlithe:2 ponyta:2 krabby:2 grimer:2' } },
+    ],
+  };
   // Règles de chaque mode lues dans le code du jeu (route-*.js, règles 41). Campagne : base 5 et intérêts plafonnés à +4 (wh),
   // 2 XP gratuites par manche (eh), niveau 9 au plus (ih), pas de bénédiction ni de sceau. Sur un combat obligatoire (badge,
   // Ligue, boss), la défaite qui suit un premier échec ne rapporte plus d'intérêts (Rm) : tout jouer dès le premier essai raté.
@@ -1985,6 +2131,202 @@ const KT = (() => {
     });
   }
 
+  // Premier tirage du générateur du jeu pour une clé (W de route-*.js : FNV-1a sur 32 bits, puis un pas de mulberry32), dans
+  // [0, 1).
+  function seededDraw(key) {
+    let h = 2166136261;
+    for (let i = 0; i < key.length; i++) {
+      h ^= key.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    let e = (h >>> 0) + 1831565813;
+    e = Math.imul(e ^ (e >>> 15), e | 1);
+    e ^= e + Math.imul(e ^ (e >>> 7), e | 61);
+    return ((e ^ (e >>> 14)) >>> 0) / 4294967296;
+  }
+
+  const parseTeam = s => s.split(' ').map(x => {
+    const [line, star] = x.split(':');
+    return { line, star: Number(star ?? 1) };
+  });
+
+  // Équipe d'une arène jouée au rang to au lieu du sien, from (ES de route-*.js) : celle de tiers pour ce rang, sinon, rang
+  // par rang, coupée à GYM_SIZES (sa 2ᵉ ★★★ redescend à ★★) ou grandie de Pokémon ★ pris dans ses lignées après la première,
+  // le premier ajouté au rang 6 en ★★.
+  function gymTier(units, from, to, tiers) {
+    if (to === from) return units;
+    if (tiers?.[to]) return parseTeam(tiers[to]);
+    let team = units.map(u => ({ ...u }));
+    const step = to > from ? 1 : -1;
+    for (let rank = from; rank !== to; rank += step) {
+      const next = rank + step;
+      if (next < rank) {
+        team = team.slice(0, Math.max(1, Math.min(team.length, GYM_SIZES[next])));
+        const extra = team.findIndex((u, i) => i > 0 && u.star >= 3);
+        if (extra > 0) team[extra].star = 2;
+      } else {
+        const lines = team.slice(1).map(u => u.line);
+        const size = Math.min(GYM_MAX, team.length + GYM_SIZES[next] - GYM_SIZES[rank]);
+        for (let i = 0; team.length < size && lines.length; i++) team.push({ line: lines[i % lines.length], star: next === 6 && i === 0 ? 2 : 1 });
+      }
+    }
+    return team;
+  }
+
+  // Plafond d'étoiles d'une manche ($i) : au-delà de cap[0] ★★★ puis de cap[1] ★★, une étoile de moins, dans l'ordre de
+  // l'équipe, les starters d'abord face au rival (rival).
+  function capStars(units, cap, rival) {
+    if (!cap) return units;
+    const late = i => Number(!(rival && RIVAL_STARTERS.includes(units[i].line)));
+    const order = units.map((_, i) => i).sort((a, b) => late(a) - late(b) || a - b);
+    let threes = 0;
+    let twos = 0;
+    for (const i of order) if (units[i].star === 3 && ++threes > cap[0]) units[i].star = 2;
+    for (const i of order) if (units[i].star === 2 && ++twos > cap[1]) units[i].star = 1;
+    return units;
+  }
+
+  // Rangée adverse de chaque rôle (hh de route-*.js, rangée 3 = son avant, collée à ton camp) et ordre de pose dans une
+  // rangée (gh).
+  const ENEMY_ROW = { tank: 3, fighter: 3, special: 3, assassin: 2, support: 1, mage: 1, marksman: 1 };
+  const ENEMY_RANK = ['tank', 'fighter', 'special', 'assassin', 'support', 'mage', 'marksman'];
+  // Assassins adverses qui plongent sur ton Pokémon le plus au fond (guard) ; stealth et rush entrent par un bord.
+  const DIVERS = new Set(['leap', 'rush', 'stealth', 'flyover']);
+  const FLANKERS = new Set(['stealth', 'rush']);
+
+  // Colonnes visées par n Pokémon d'une rangée adverse (km), du centre vers les bords, la plus à droite d'abord à égalité.
+  function enemyColumns(n) {
+    const span = Math.min(6, 2 * (n - 1));
+    const cols = n <= 1 ? [3] : Array.from({ length: n }, (_, r) => Math.round(3 - span / 2 + (r * span) / (n - 1)));
+    return cols.sort((a, b) => Math.abs(a - 3) - Math.abs(b - 3) || b - a);
+  }
+
+  // Cases de l'équipe adverse (jm de route-*.js) : rangée de son rôle, rangées de l'avant d'abord, rôles dans l'ordre
+  // ENEMY_RANK puis ordre de l'équipe ; colonnes d'enemyColumns, sauf les assassins à entrée stealth ou rush, en colonne 6 puis
+  // 0 en alternance ; case libre la plus proche (écart de colonnes + 1,5 × écart de rangées). cell : case du plateau entier,
+  // 0 à 27, rangée 3 à l'avant. Une lignée absente de LINE_KITS n'a pas de rôle : le jeu ne la pose pas non plus.
+  function enemyCells(units) {
+    const taken = new Set();
+    const nearest = (col, row) => {
+      let best = -1;
+      let cost = Infinity;
+      for (const r of [3, 2, 1, 0]) {
+        for (let c = 0; c < COLS; c++) {
+          const d = Math.abs(c - col) + Math.abs(r - row) * 1.5;
+          if (!taken.has(cellAt(r, c)) && d < cost) [best, cost] = [cellAt(r, c), d];
+        }
+      }
+      taken.add(best);
+      return best;
+    };
+    const role = u => LINE_KITS[u.line]?.[0];
+    const placed = [];
+    for (const row of [3, 2, 1]) {
+      const group = units.filter(u => ENEMY_ROW[role(u)] === row).sort((a, b) => ENEMY_RANK.indexOf(role(a)) - ENEMY_RANK.indexOf(role(b)));
+      const cols = enemyColumns(Math.min(COLS, group.length));
+      let flank = 0;
+      group.forEach((u, n) => {
+        const col = FLANKERS.has(LINE_KITS[u.line][1]) ? (flank++ % 2 ? 0 : 6) : cols[n % cols.length];
+        placed.push({ ...u, cell: nearest(col, row) });
+      });
+    }
+    return placed;
+  }
+
+  // Capacité d'une lignée à une étoile (LINE_KITS) : type et zone du stade min(★, nombre de stades) ; null si inconnue.
+  function kitMove(base, star) {
+    const moves = LINE_KITS[base]?.[2].split(' ');
+    if (!moves) return null;
+    const m = moves[Math.min(star, moves.length) - 1];
+    return { type: m.replace('*', ''), zone: m.endsWith('*') };
+  }
+  const typeMult = (type, targets) => targets.reduce((m, t) => m * (TYPE_CHART[type]?.[t] ?? 1), 1);
+  const weatherMult = (type, weather) => {
+    const w = WEATHER[weather];
+    if (w?.up === type) return WEATHER_UP;
+    return w?.down === type ? WEATHER_DOWN : 1;
+  };
+
+  // Équipe adverse d'une manche de campagne (round : celui de la sauvegarde par défaut), d'après jS de route-*.js : équipe de
+  // l'arène choisie au rang de la manche (gymOrder), variante tirée de la graine (daily, sinon runSeed), équipe selon ton
+  // starter, du rival, des vrais dresseurs en Vétéran et Légende, ou changée par une clé (keys) ; étoiles plafonnées, puis
+  // cases (enemyCells). Renvoie { units : [{ line, star, cell, role, entry, types, move }], weather, probable }, ou null (Tour,
+  // aventure non relevée, événement, arène pas encore choisie). probable : en Vétéran et Légende, des règles chiffrées du jeu
+  // (advTiers) remplacent des Pokémon, ajoutent des étoiles ou des objets ; elles ne sont pas comptées.
+  function enemyTeam(save, mode, data, round = save.round) {
+    const rounds = CAMPAIGN_TEAMS[mode.adventure];
+    const here = mode.id === TOWER.id ? null : rounds?.[Math.floor(round)];
+    if (!here) return null;
+    const slot = mode.adventure === 'kanto' ? GYM_ROUNDS.indexOf(here.id) : -1;
+    if (slot >= 0 && slot < 2 && mode.gymOrder.length <= slot) return null;
+    const chosen = slot >= 0 ? Object.keys(GYM_LABELS).indexOf(mode.gymOrder[slot]) : -1;
+    const x = chosen >= 0 ? rounds.find(r => r?.id === GYM_ROUNDS[chosen]) : here;
+    const seed = save.daily ?? (Number.isFinite(save.runSeed) ? String(save.runSeed) : null);
+    const pick = seed === null ? 0 : Math.floor(seededDraw(`${seed}|route|${x.h}`) * x.v.length);
+    const opt = typeof x.v[pick] === 'string' ? { t: x.v[pick] } : x.v[pick];
+    const keyed = here.keyed && Array.isArray(save.keys) && save.keys.includes(here.keyed.key) ? here.keyed : null;
+    let units = parseTeam(keyed?.t ?? x.s?.[save.starter] ?? opt.r?.[save.starter] ?? (mode.league > 1 ? opt.tt : undefined) ?? opt.t);
+    if (slot >= 0) units = gymTier(units, 4 + (chosen >= 0 ? chosen : slot), 4 + slot, opt.tiers);
+    units = enemyCells(capStars(units, here.cap, Boolean(opt.r))).map(u => ({
+      ...u, role: LINE_KITS[u.line][0], entry: LINE_KITS[u.line][1] || null, types: lineInfo(data, u.line)?.t ?? [], move: kitMove(u.line, u.star),
+    }));
+    return { units, weather: keyed && 'w' in keyed ? keyed.w : x.w ?? null, probable: mode.league > 1 };
+  }
+
+  // Colonne du milieu de chaque zone du porteur (CARRY_ZONES).
+  const ZONE_MID = { left: 1, center: 3, right: 5 };
+  // Placement contre une équipe adverse connue (enemyTeam). Chaque Pokémon vise l'ennemi le plus proche (pickTarget de
+  // route-*.js) : les frappeurs de l'avant adverse (sauf ses tanks) tombent sur ce qui leur fait face. Renvoie :
+  // - side : zone du porteur (CARRY_ZONES) la plus éloignée des menaces, chacune pesée par sa valeur (coût × 3^(★ − 1)) :
+  //   frappeurs de l'avant adverse, et deux fois les assassins dont la cible dépend du côté (stealth et rush : la moitié par
+  //   où ils entrent ; flyover : la colonne la plus proche). À égalité, la zone choisie dans le menu ⚙ (side) ;
+  // - hitCol : colonne moyenne des frappeurs, pesée par leur valeur, où se posent les tanks ; null sans frappeur ;
+  // - front : Pokémon de l'avant adverse, cibles des attaquants de mêlée (facing) ; spread : Pokémon adverses aux attaques de
+  //   zone, contre lesquels les unités à distance s'écartent ; divers : assassins qui plongent au fond (DIVERS) ; weather.
+  function foePlan(foes, side, data) {
+    const value = f => (lineInfo(data, f.line)?.c ?? 1) * 3 ** (f.star - 1);
+    const front = foes.units.filter(f => rowOf(f.cell) === 3);
+    const hitters = front.filter(f => f.role !== 'tank');
+    const weight = hitters.reduce((s, f) => s + value(f), 0);
+    const threats = [...hitters.map(f => [colOf(f.cell), value(f)]),
+      ...foes.units.filter(f => FLANKERS.has(f.entry) || f.entry === 'flyover').map(f => [colOf(f.cell), 2 * value(f)])];
+    const far = k => threats.reduce((s, [c, w]) => s + w * Math.abs(ZONE_MID[k] - c), 0);
+    const best = Math.max(...Object.keys(CARRY_ZONES).map(far));
+    const chosen = far(side) >= best - 1e-9 ? side : Object.keys(CARRY_ZONES).find(k => far(k) >= best - 1e-9);
+    return {
+      side: chosen, hitCol: weight ? hitters.reduce((s, f) => s + value(f) * colOf(f.cell), 0) / weight : null,
+      front, spread: foes.units.filter(f => f.move?.zone), divers: foes.units.filter(f => DIVERS.has(f.entry)), weather: foes.weather,
+    };
+  }
+
+  // Multiplicateur de la capacité d'une lignée (à cette étoile) contre un Pokémon adverse, météo comprise ; 1 si inconnue.
+  function moveEdge(base, star, foe, weather) {
+    const move = kitMove(base, star);
+    return move ? typeMult(move.type, foe.types) * weatherMult(move.type, weather) : 1;
+  }
+
+  // Première liste (case gardée) d'un Pokémon de l'avant contre l'équipe adverse (plan), parmi les cases front de sa rangée :
+  // un tank, les colonnes à moins d'une colonne de hitCol (la plus proche à défaut) ; un attaquant, celles dont l'ennemi de
+  // l'avant le plus proche (même rangée adverse, colonne la plus proche) subit le meilleur multiplicateur de sa capacité,
+  // quand tous ne se valent pas. null : pas de préférence, la rangée entière.
+  function facing(u, front, plan) {
+    const byDistance = (c, col) => Math.abs(colOf(c) - col);
+    if (u.role === 'tank') {
+      if (plan.hitCol === null) return null;
+      const sorted = [...front].sort((a, b) => byDistance(a, plan.hitCol) - byDistance(b, plan.hitCol));
+      const near = sorted.filter(c => byDistance(c, plan.hitCol) <= 1);
+      return near.length ? near : sorted.slice(0, 1);
+    }
+    if (!plan.front.length) return null;
+    const edge = c => {
+      const foe = [...plan.front].sort((a, b) => byDistance(a.cell, colOf(c)) - byDistance(b.cell, colOf(c)))[0];
+      return moveEdge(u.base, u.star, foe, plan.weather);
+    };
+    const edges = front.map(edge);
+    const top = Math.max(...edges);
+    return top > Math.min(...edges) ? front.filter((_, i) => edges[i] === top) : null;
+  }
+
   // La sauvegarde indexe le plateau sur 8 rangées × 7 : les 4 rangées ennemies (cases 0-27), puis les tiennes de l'avant au fond
   // (28-55). La cellule KT1 (0-27, rangée × 7 + colonne, rangée 0 = avant, doc de l'API) est donc la case de la sauvegarde − 28.
   const COLS = 7;
@@ -2060,7 +2402,9 @@ const KT = (() => {
   // Plateau en cours de pose : cases prises, colonnes occupées derrière l'avant (sur deux rangées voisines, deux cases de la
   // même colonne se touchent). place : première liste de zonesOf(u) qui a une case libre ; pour une unité à distance, la
   // première case de cette liste hors d'une colonne occupée et qui convient (apart), sinon hors d'une colonne occupée.
-  function newBoard(zonesOf, apart = () => true) {
+  // spread : contre des attaques de zone adverses, une unité à distance prend d'abord, sur sa rangée puis derrière, une case
+  // de ces listes qui ne touche aucune unité à distance déjà posée.
+  function newBoard(zonesOf, apart = () => true, spread = false) {
     const taken = new Set();
     const backCols = new Set();
     const put = (u, cell) => {
@@ -2069,9 +2413,13 @@ const KT = (() => {
       if (rowOf(cell) > 0) backCols.add(colOf(cell));
     };
     const spaced = c => rowOf(c) === 0 || !backCols.has(colOf(c));
-    const place = u => {
-      const free = zonesOf(u).map(cells => cells.filter(c => !taken.has(c))).find(cells => cells.length);
-      put(u, (u.row > 0 ? free.find(c => spaced(c) && apart(c)) ?? free.find(spaced) : undefined) ?? free[0]);
+    const alone = c => ![...taken].some(t => rowOf(t) > 0 && touching(t, c));
+    const place = (u, pinned = false) => {
+      const lists = zonesOf(u).map(cells => cells.filter(c => !taken.has(c)));
+      const free = lists.find(cells => cells.length);
+      const apartCell = spread && u.row > 0 && !pinned
+        ? lists.flat().find(c => rowOf(c) >= u.row && spaced(c) && apart(c) && alone(c)) : undefined;
+      put(u, apartCell ?? (u.row > 0 ? free.find(c => spaced(c) && apart(c)) ?? free.find(spaced) : undefined) ?? free[0]);
     };
     return { taken, put, spaced, place, zonesOf };
   }
@@ -2087,16 +2435,21 @@ const KT = (() => {
     return u.role === 'tank' ? 1 : 2;
   };
 
-  // Pose des unités sur un plateau vide : un Pokémon déjà sur une case de sa première liste la garde ; les autres se posent
-  // dans l'ordre first, l'avant (frontRank), puis derrière, le porteur d'abord. apart : voir newBoard.
-  function arrange(units, zonesOf, first = [], apart = undefined) {
-    const board = newBoard(zonesOf, apart);
-    const stay = units.filter(u => zonesOf(u)[0].includes(u.from));
+  // Pose des unités sur un plateau vide : un Pokémon déjà sur une case de sa première liste la garde (avec spread, une unité à
+  // distance seulement si elle ne touche pas une unité à distance qui garde la sienne) ; les autres se posent dans l'ordre
+  // first, l'avant (frontRank), puis derrière, le porteur d'abord. apart, spread : voir newBoard.
+  function arrange(units, zonesOf, first = [], apart = undefined, spread = false) {
+    const board = newBoard(zonesOf, apart, spread);
+    const stay = [];
+    for (const u of units) {
+      if (!zonesOf(u)[0].includes(u.from)) continue;
+      if (!(spread && u.row > 0 && stay.some(s => s.row > 0 && touching(s.from, u.from)))) stay.push(u);
+    }
     for (const u of stay) board.put(u, u.from);
     const rest = units.filter(u => !first.includes(u));
     const carryFirst = (a, b) => Number(b.role === 'carry') - Number(a.role === 'carry');
     const order = [...first, ...rest.filter(u => u.row === 0).sort((a, b) => frontRank(a) - frontRank(b)), ...rest.filter(u => u.row > 0).sort(carryFirst)];
-    for (const u of order) if (!stay.includes(u)) board.place(u);
+    for (const u of order) if (!stay.includes(u)) board.place(u, first.includes(u));
     return board;
   }
 
@@ -2112,8 +2465,10 @@ const KT = (() => {
   // cases en tête de leurs listes ; les autres se placent autour, et un assassin débordé derrière l'avant y revient quand
   // l'appât libère sa case. Mew n'entre pas dans la parade : sa case suit celle de son modèle, et porteur, il n'est pas
   // couvert. unit : l'unité possédée (porteur de holdersOf), from : sa cellule,
-  // 'bench', ou null s'il n'est pas possédé ; bait, guarded : l'appât et le porteur qu'il couvre.
-  function formation(target, game, data, holders, { side, dive }) {
+  // 'bench', ou null s'il n'est pas possédé ; bait, guarded : l'appât et le porteur qu'il couvre. plan : foePlan de l'équipe
+  // adverse connue, ou null ; il choisit la zone du porteur, la colonne des tanks et des attaquants de mêlée, et écarte les
+  // unités à distance (spread).
+  function formation(target, game, data, holders, { side, dive, plan = null }) {
     const stars = id => bestStar(game, baseLine(id));
     const kept = new Set([...[...target.core].sort((a, b) => stars(b) - stars(a)), ...target.fillers].slice(0, game.level));
     const units = [...target.core, ...target.fillers].filter(id => kept.has(id)).map(id => {
@@ -2126,7 +2481,7 @@ const KT = (() => {
         unit: h?.unit ?? null, from: h ? boardCell(h.unit.cell) ?? 'bench' : null,
       };
     });
-    const zone = CARRY_ZONES[side];
+    const zone = CARRY_ZONES[plan?.side ?? side];
     const rows = [0, 1, 2, 3];
     const center = cellAt(0, 3);
     // Le centre n'est réservé qu'à un Ramoloss possédé : un Pokémon posé ne bouge pas pour un Ramoloss encore à acheter.
@@ -2141,18 +2496,22 @@ const KT = (() => {
       if (u.row > 0) return u.role === 'carry' ? [cells[0].filter(c => zone.cols.includes(colOf(c))), ...cells] : cells;
       if (ALLY_SHIELD.has(u.base)) return [[center], ...cells];
       if (onEdge) return [cells[0].filter(c => EDGE_COLS.includes(colOf(c))), ...cells];
-      return shield ? [cells[0].filter(c => c !== center), ...cells] : cells;
+      const front = shield ? cells[0].filter(c => c !== center) : cells[0];
+      const faced = plan ? facing(u, front, plan) : null;
+      if (faced) return [faced, ...cells];
+      return shield ? [front, ...cells] : cells;
     };
     const mimic = units.find(u => moveKind(data, u.base, u.star) === 'metronome');
     const others = units.filter(u => u !== mimic);
-    let board = arrange(others, zones);
+    const spread = Boolean(plan?.spread.length);
+    let board = arrange(others, zones, [], undefined, spread);
     const parade = dive ? guard(others, board.taken, zone, data) : null;
     if (parade) {
       const pinned = new Map([[parade.carry, parade.spot], [parade.bait, parade.cell]]);
       // Comme guard pour sa case : plus au fond que le porteur, une unité à distance ne le touche pas si elle peut (l'assassin arrivé
       // sur elle se retournerait vers lui).
       const apart = c => rowOf(c) <= rowOf(parade.spot) || !touching(c, parade.spot);
-      board = arrange(others, u => (pinned.has(u) ? [[pinned.get(u)], ...zones(u)] : zones(u)), [...pinned.keys()], apart);
+      board = arrange(others, u => (pinned.has(u) ? [[pinned.get(u)], ...zones(u)] : zones(u)), [...pinned.keys()], apart, spread);
       parade.carry.guarded = true;
       parade.bait.bait = true;
     }
@@ -2285,8 +2644,9 @@ const KT = (() => {
   // stats : statistiques du mode de la partie (torre, ou camp de sa difficulté) ; mode : modeContext de la partie. previous : { key, run, next,
   // fillers } du dernier conseil (trio et compléments de la compo cible, trio de la compo suivante) ; l'inertie ne vaut que
   // dans la même partie (runSeed).
-  // dive : le joueur a signalé des assassins adverses pour ce combat (formation, guard).
-  function advise({ stats, data, lang, save, previous, side, mode, dive = false }) {
+  // dive : true ou false quand le joueur a coché ou décoché la case des assassins adverses pour ce combat (formation,
+  // guard) ; null sans réponse, la parade suit alors l'équipe adverse calculée.
+  function advise({ stats, data, lang, save, previous, side, mode, dive = null }) {
     const names = namer(lang);
     const game = readGame(save, mode);
     const run = save.runSeed ?? null;
@@ -2302,7 +2662,11 @@ const KT = (() => {
     const book = target ? recipeBook(data) : null;
     const future = target ? futureLines(stats, data, target, next, holders, profiles, names) : [];
     const items = itemMarks(data, game, holders, book, target, future, names);
-    const units = target ? formation(target, game, data, holders, { side, dive }) : [];
+    const foes = data ? enemyTeam(save, mode, data) : null;
+    const plan = foes?.units.length ? foePlan(foes, side, data) : null;
+    // Assassins qui plongent dans l'équipe adverse calculée : la parade se pose sans la case, sauf si le joueur l'a décochée.
+    const diving = dive ?? Boolean(plan?.divers.length);
+    const units = target ? formation(target, game, data, holders, { side, dive: diving, plan }) : [];
     const guarded = units.find(u => u.guarded);
     return {
       game, eco, target, next, names, run,
@@ -2320,7 +2684,9 @@ const KT = (() => {
       moves: moveAdvice(units, game, names),
       // Parade posée : lignées de l'appât et du porteur couvert ; null sans parade (pas demandée, ou impossible).
       guard: guarded ? { bait: units.find(u => u.bait).base, carry: guarded.base } : null,
-      dive,
+      dive: diving,
+      // Équipe adverse calculée (enemyTeam) et placement qui en découle (foePlan) ; null en Tour, hors des aventures relevées.
+      foes, plan,
       code: target ? kt1Code(units, stats.rules, mode) : null,
     };
   }
@@ -2402,6 +2768,7 @@ const KT = (() => {
     parseSave, floorFromSave, advanceOf, isStatsData, legendStats, leagueStats, isGameData, isLang, isFresh, lastBossFloor, nextBossStop, nextStops, topCores, isBoss, mustWin,
     baseLine, namer, bossName, fightName, guideFor, rateLevel, readGame, goldFloor, levelGoal, rerollChance, ratedStops, coreScore, targetComp, progress, shinyLine, anchorAdvice, advise, pct, shortDate,
     boardCell, touching, topHolders, lineProfiles, suits, floorRange, CARRY_ZONES, coreKey, TABS, OPTIONS, checkUi,
+    seededDraw, enemyTeam, enemyCells, foePlan, formation,
   };
 })();
 
@@ -2693,16 +3060,38 @@ function aimsHtml(a, ui) {
   return rows.length ? `<details class="kt-aims"${ui.aims ? ' open' : ''}><summary id="kt-aims-sum">Objets visés</summary><ul>${rows.join('')}</ul></details>` : '';
 }
 
-// Assassins adverses vus sur le plateau : case à cocher par combat, puis la parade posée ou la raison de son absence.
+// Assassins adverses : case à cocher par combat, cochée d'office quand l'équipe adverse calculée en aligne (décocher corrige
+// une équipe probable), puis la parade posée ou la raison de son absence.
 function diveHtml(state) {
   const a = state.advice;
+  const seen = [...new Set((a.plan?.divers ?? []).map(f => a.names.line(f.line)))].join(', ');
   let note = 'Coche si l’adversaire en aligne : ils plongent sur ton Pokémon le plus au fond.';
+  if (seen && !a.dive) note = `Décochée : pas de parade, malgré ${esc(seen)} dans l’équipe adverse calculée.`;
   if (a.dive) {
     note = a.guard ? `Appât au fond : ${esc(a.names.line(a.guard.bait))}. Porteur couvert : ${esc(a.names.line(a.guard.carry))}. Garde-le hors de la colonne d’un Nosferapti.`
       : 'Pas de parade : aucun porteur à distance à couvrir, aucun Pokémon à envoyer au fond, ou plus de case libre.';
+    if (seen) note = `Dans l’équipe adverse : ${esc(seen)}. ${note}`;
   }
   return `<div class="kt-checks kt-dive"><label><input type="checkbox" name="dive" id="kt-dive" aria-describedby="kt-dive-note"${a.dive ? ' checked' : ''}><span>Assassins adverses : Insécateur, Doduo, Abo, Nosferapti</span></label></div>
 <p class="kt-hint" id="kt-dive-note">${note}</p>`;
+}
+
+const WEATHER_NAMES = { rain: 'pluie', sun: 'soleil', sand: 'tempête de sable', hail: 'grêle' };
+// Équipe adverse calculée (campagne), de son avant à son fond, et ce que la formation en tire. Probable en Vétéran et
+// Légende : leurs règles chiffrées peuvent changer des Pokémon.
+function foesHtml(a, ui) {
+  if (!a.foes?.units.length) return '';
+  const { foes, plan, names } = a;
+  const list = foes.units.map(f => `${names.line(f.line)}${f.star > 1 ? ` ${'★'.repeat(f.star)}` : ''}`).join(', ');
+  const lines = list => [...new Set(list.map(f => names.line(f.line)))].join(', ');
+  const notes = [];
+  if (foes.weather) notes.push(`Météo : ${WEATHER_NAMES[foes.weather]}.`);
+  if (plan.side !== ui.side) notes.push(`Porteur à distance au ${KT.CARRY_ZONES[plan.side].name}, loin des menaces.`);
+  if (plan.hitCol !== null) notes.push(`Tanks face aux frappeurs : ${lines(plan.front.filter(f => f.role !== 'tank'))}.`);
+  if (plan.spread.length) notes.push(`Unités à distance écartées : ${lines(plan.spread)} frappe en zone.`);
+  if (foes.probable) notes.push('Équipe probable : la difficulté peut remplacer ou renforcer des Pokémon.');
+  return `<p class="kt-label"><span>Adversaire</span><span>${foes.probable ? 'probable' : 'calculé'}</span></p>
+<p class="kt-hint">${esc(list)}${notes.length ? `<br>${esc(notes.join(' '))}` : ''}</p>`;
 }
 
 function compoHtml(state, ui) {
@@ -2727,9 +3116,10 @@ function compoHtml(state, ui) {
 <ul class="kt-comp">${t.core.map(id => chip(id, true)).join('')}${t.fillers.map(id => chip(id, false)).join('')}</ul>
 ${a.next ? `<p class="kt-label"><span>Ensuite</span><span>${esc(KT.floorRange(a.next.stops, mode))}</span></p><ul class="kt-comp">${a.next.core.map(id => chip(id, false)).join('')}</ul>` : ''}
 ${aimsHtml(a, ui)}
+${foesHtml(a, ui)}
 ${diveHtml(state)}
 <button class="kt-copy" id="kt-copy" data-act="copy">Copier la formation</button>
-<p class="kt-hint">Porteur à distance : rangée de sa portée, ${KT.CARRY_ZONES[ui.side].name} (options ⚙).</p>`;
+<p class="kt-hint">Porteur à distance : rangée de sa portée, ${KT.CARRY_ZONES[a.plan?.side ?? ui.side].name}${a.plan && a.plan.side !== ui.side ? ' d’après l’adversaire' : ' (options ⚙)'}.</p>`;
 }
 
 // Prochain boss du mode de la partie : stats null avant leur chargement, stop null sans boss à venir.
@@ -3159,9 +3549,10 @@ function shellHtml({ look = {}, label = 'Étage', floor = null, src = '', sum = 
 </div>`;
 }
 
-// Combat en cours (sauvegarde, partie et étage) : les assassins adverses cochés (ui.dive) ne valent que pour lui.
+// Combat en cours (sauvegarde, partie et étage) : la case des assassins adverses (ui.dive : { key, on }, cochée ou décochée à
+// la main) ne vaut que pour lui ; diveOn renvoie null quand le joueur n'y a pas touché pour ce combat.
 const fightKey = state => `${state.saveKey}:${state.save?.runSeed ?? ''}:${state.floor}`;
-const diveOn = (ui, state) => ui.dive === fightKey(state);
+const diveOn = (ui, state) => (ui.dive?.key === fightKey(state) ? ui.dive.on : null);
 // Réglages du panneau hors options du menu (checkUi les complète) : position, replié, sections ouvertes, conseil précédent
 // (target, rememberedTarget), combat aux assassins adverses.
 const UI_DEFAULTS = { x: null, y: 16, collapsed: false, avoid: false, aims: true, target: null, dive: null };
@@ -3252,7 +3643,7 @@ function mount() {
     const code = state.advice?.code;
     state.advice = adviceOf(state, ui);
     // Case d'un autre combat oubliée : une sauvegarde sans runSeed la retrouverait au même étage d'une autre partie.
-    if (state.advice && ui.dive !== null && !diveOn(ui, state)) {
+    if (state.advice && ui.dive !== null && diveOn(ui, state) === null) {
       ui.dive = null;
       saveUi();
     }
@@ -3446,7 +3837,7 @@ function mount() {
   opts.addEventListener('submit', e => e.preventDefault());
   body.addEventListener('change', e => {
     if (e.target.name !== 'dive') return;
-    ui.dive = e.target.checked ? fightKey(state) : null;
+    ui.dive = { key: fightKey(state), on: e.target.checked };
     saveUi();
     compute();
     render();
@@ -3538,7 +3929,7 @@ function mount() {
 if (typeof module !== 'undefined') {
   module.exports = {
     ...KT, pastePlan, syncPlanner, statusHtml, tabsHtml, headHtml, panelHtml, alertHtml, optionsHtml, summaryHtml, footHtml, shellHtml,
-    PlannerError, tabForKey, keptByPanel, foldKey, setOption, diveHtml, fightKey, diveOn, UI_DEFAULTS, modeStats, adviceOf, rememberedTarget,
+    PlannerError, tabForKey, keptByPanel, foldKey, setOption, diveHtml, foesHtml, fightKey, diveOn, UI_DEFAULTS, modeStats, adviceOf, rememberedTarget,
     SOURCE_FILES, sourcesState,
   };
 } else mount();

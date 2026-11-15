@@ -81,8 +81,12 @@ test('vraie sauvegarde Kanto (Légende, combat 5) : lue, économie, compo et cod
   const a = advise(KT.parseSave(raw));
   assert.deepEqual([a.eco.floor, a.eco.spend, a.eco.allIn], [40, 0, false]);
   assert.deepEqual([a.target.core, a.target.fillers], [['bulbasaur', 'oddish', 'paras'], ['ponyta']]);
-  assert.match(a.code, /^KT1;r41;xm=adv;xn=Plan%20kanto-overlay;paras:1:2;bulbasaur:2:3:/);
-  assert.deepEqual(a.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Mystherbe — 3ᵉ rangée, colonne 4 → 3ᵉ rangée, colonne 1']);
+  // Mont Sélénite, variante tirée de la graine : Racaillou ★★ (tank) et Paras à l'avant adverse, Nosferapti, Rondoudou. Paras
+  // (Plante, ×4 contre Roche et Sol) fait face à Racaillou, colonne 5 ; Nosferapti plonge : Ponyta devient l'appât, et
+  // Mystherbe, déjà en 3ᵉ rangée, garde sa case.
+  assert.deepEqual(a.foes.units.map(f => `${f.line}:${f.star}@${f.cell}`), ['geodude:2@25', 'paras:1@23', 'zubat:1@17', 'jigglypuff:1@10']);
+  assert.match(a.code, /^KT1;r41;xm=adv;xn=Plan%20kanto-overlay;bulbasaur:2:3:[^;]*;paras:1:4;oddish:1:17:[^;]*;ponyta:1:24:/);
+  assert.deepEqual(a.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Ponyta — avant, colonne 5 → fond, colonne 4, appât des assassins adverses']);
   // Ponyta a deux copies ★ : noté ★★ (coût 2 : 2,57), il n'est pas remplacé par Aspicot (coût 1, seuil Insecte franchi et
   // Poison approché : 1,75).
   assert.deepEqual([a.target.upgrades, a.target.replaced], [[], []]);
