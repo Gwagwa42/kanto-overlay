@@ -66,7 +66,7 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
   base pour une forme ancrée, et celui de la lignée de base pour une carte de boutique. La force de la lignée sur le prochain
   combat (victoires de ses trios d'au moins 20 combats moins celles du combat, sur ses variantes qui ont des trios notés, à leur part et à leur difficulté, bornées
   à 20 points) ajoute 0,01 par point : ±0,2 par lignée, 0,4 au plus entre deux, à peine plus qu'un cran de coût. En campagne,
-  l'avantage de type sur l'équipe du prochain boss (Formation, équipe adverse) ajoute 0,1 par point, borné
+  l'avantage de type sur l'équipe du premier boss à gagner de ces combats (Formation, équipe adverse) ajoute 0,1 par point, borné
   à ±0,2 : le multiplicateur moyen de sa capacité sur les Pokémon du boss (table des types du jeu, météo comprise), moins celui de
   leurs capacités sur lui. Contre Pierre (Roche et Sol), Carapuce (Eau, ×4) passe devant Salamèche (Feu, ×0,5, et touché ×4 par
   la Roche). Un complément qui apporte au moins un rôle absent de la compo, trio compris, gagne 0,5 : un tank (rôle que le
@@ -194,7 +194,7 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
     - zone du porteur à distance : la plus éloignée des menaces, pesées par leur valeur (coût × 3 par étoile au-delà de la
       première) : les frappeurs de l'avant adverse (ses tanks exceptés), et deux fois Abo, Doduo et Nosferapti, dont la cible
       dépend du côté. À égalité, la zone du menu ⚙ ;
-    - tanks : sur les deux cases collées au frappeur de plus grande valeur (la rangée adverse, impaire, est décalée d'une
+    - tanks : sur les cases (deux au plus) collées au frappeur de plus grande valeur (la rangée adverse, impaire, est décalée d'une
       demi-case : un Pokémon de sa colonne 3 touche tes colonnes 3 et 4) ;
     - attaquants de mêlée : face à l'ennemi de l'avant le plus proche (en hexagones) que leur capacité frappe le mieux (table
       des types, météo comprise), quand tous ne se valent pas. Contre Mont Sélénite (Racaillou à l'avant), Paras (Plante, ×4)
