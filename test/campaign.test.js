@@ -81,8 +81,19 @@ test('vraie sauvegarde Kanto (Légende, combat 5) : lue, économie, compo et cod
   const a = advise(KT.parseSave(raw));
   assert.deepEqual([a.eco.floor, a.eco.spend, a.eco.allIn], [40, 0, false]);
   assert.deepEqual([a.target.core, a.target.fillers], [['bulbasaur', 'oddish', 'paras'], ['ponyta']]);
-  assert.match(a.code, /^KT1;r41;xm=adv;xn=Plan%20kanto-overlay;paras:1:2;bulbasaur:2:3:/);
-  assert.deepEqual(a.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Mystherbe — 3ᵉ rangée, colonne 4 → 3ᵉ rangée, colonne 1']);
+  // Mont Sélénite, variante tirée de la graine : Racaillou ★★ (tank) et Paras à l'avant adverse, Nosferapti, Rondoudou. Paras
+  // (Plante, ×4 contre Roche et Sol) fait face à Racaillou, colonne 5 ; Nosferapti plonge : Ponyta devient l'appât, et
+  // Mystherbe, déjà en 3ᵉ rangée, garde sa case.
+  assert.deepEqual(a.foes.units.map(f => `${f.line}:${f.star}@${f.cell}`), ['geodude:2@25', 'paras:1@23', 'zubat:1@17', 'jigglypuff:1@10']);
+  assert.match(a.code, /^KT1;r41;xm=adv;xn=Plan%20kanto-overlay;bulbasaur:2:3:[^;]*;paras:1:4;oddish:1:17:[^;]*;ponyta:1:24:/);
+  assert.deepEqual(a.moves.map(m => `${m.title} — ${m.why}`), ['Déplace Ponyta — avant, colonne 5 → fond, colonne 4, appât des assassins adverses']);
+  assert.deepEqual([a.dive, a.guard], [true, { bait: 'ponyta', carry: 'oddish' }]);
+  // Notes lues sur la pose : Bulbizarre, tank, touche Paras, le frappeur ; une seule unité à distance (Mystherbe), rien à écarter
+  // malgré le Rondoudou du fond adverse.
+  assert.deepEqual([a.plan.hitter.line, a.plan.tanked, a.plan.spread.map(f => f.line), a.plan.spaced], ['paras', true, ['jigglypuff'], false]);
+  // Case décochée par le joueur : pas de parade, malgré Nosferapti.
+  const off = advise(KT.parseSave(raw), 'kanto', { dive: false });
+  assert.deepEqual([off.dive, off.guard, off.moves.some(m => /appât/.test(m.why))], [false, null, false]);
   // Ponyta a deux copies ★ : noté ★★ (coût 2 : 2,57), il n'est pas remplacé par Aspicot (coût 1, seuil Insecte franchi et
   // Poison approché : 1,75).
   assert.deepEqual([a.target.upgrades, a.target.replaced], [[], []]);
@@ -433,28 +444,41 @@ test('Cramois’Île en Légende : murs sur les vrais taux, trio des boss 27 à 
   assert.deepEqual([eco.nextWall.floor, Math.round(10 * eco.nextWall.fightWin) / 10, eco.allIn], [27, 39.7, false]);
   assert.equal(legendAt(28).eco.allIn, false);
   assert.equal(legendAt(29).eco.allIn, true);
-  // Kabuto · Lokhlass · Amonita, coût 4 : au niveau visé du Rival (8), ils sortent assez ; plus de malus au combat 13.
+  // Kabuto · Lokhlass · Amonita, coût 4 : d'ici le Rival, aux niveaux visés de chaque combat, ils sortent assez dès le combat 13.
   assert.deepEqual([12, 19, 24].map(r => legendAt(r).target.core), Array(3).fill(['kabuto', 'lapras', 'omanyte']));
   const klo = ['kabuto', 'lapras', 'omanyte'];
-  // Combat 20 : malus nul au niveau visé du Rival (8), le joueur au niveau 7. Combat 9 : seul Artikodin, perdable, est noté ;
-  // malus au niveau actuel (5), le fossile du combat 23 venant après lui.
-  assert.deepEqual([scarcity(freshCanela(19), klo, LEGEND), scarcity(freshCanela(8), klo, LEGEND)], [0, -30]);
+  // Combat 20 : 15 boutiques jusqu'au Rival (27), au niveau 7 puis 8 : 4 points de malus pour les trois. Combat 9 : seul
+  // Artikodin (19), perdable, est noté ; 21 boutiques jusqu'à lui, aux niveaux 5 à 7, le fossile du combat 23 venant après
+  // lui : 18 points.
+  const round1 = x => Math.round(10 * x) / 10;
+  assert.deepEqual([scarcity(freshCanela(19), klo, LEGEND), scarcity(freshCanela(8), klo, LEGEND)].map(round1), [-4, -18.4]);
 });
 
-test('Cramois’Île : Pokémon offert par un événement d’ici au boss, jamais rare', () => {
-  // Normal, Chef des motards (8) au niveau 5 : Excelangue (coût 3) sort à 13 %, mais le poste de garde (5) l'offre.
+test('Cramois’Île : Pokémon offert par un événement d’ici au boss, sans malus', () => {
+  // Normal, Chef des motards (8) au niveau 5 : Excelangue (coût 3) sort peu, mais le poste de garde (5) l'offre. Roucool et
+  // Piafabec (coût 1) coûtent peu, d'autant plus que le boss approche (moins de boutiques).
   const trio = ['lickitung', 'pidgey', 'spearow'];
   const at = (round, extra = {}) => scarcity(freshCanela(round, { league: 1, level: 5, ...extra }), trio, NORMAL);
-  // Au combat 5 : à venir tant que le choix n'est pas fait, que le jeu ait déjà écrit l'événement ou non.
+  const common = (round, extra = {}) => scarcity(freshCanela(round, { league: 1, level: 5, ...extra }), ['pidgey', 'spearow'], NORMAL);
+  // Au combat 5 : à venir tant que le choix n'est pas fait, que le jeu ait déjà écrit l'événement ou non ; Excelangue ne
+  // coûte alors rien.
   const pending = { event: { round: 4, kind: 'choice', picked: null } };
   const done = { event: { round: 4, kind: 'choice', picked: 1 } };
-  assert.deepEqual([at(0), at(4, pending), at(4), at(4, done), at(5)], [0, 0, 0, -10, -10]);
-  // Un événement n'offre qu'une de ses cartes : deux lignées rares du même événement, un seul malus évité (Kabuto, coût 4,
-  // ajouté ici au poste de garde).
+  const r6 = x => Math.round(1e6 * x) / 1e6;
+  assert.deepEqual([at(0), at(4, pending), at(4)].map(r6), [common(0), common(4), common(4)].map(r6));
+  // Choix fait, ou après le poste de garde : Excelangue coûte plus de la moitié du bonus.
+  assert.ok(at(4, done) < common(4) - 5);
+  assert.ok(at(5) < common(5) - 5);
+  // Un événement n'offre qu'une de ses cartes : deux lignées du même événement, une seule exemptée, celle qui coûte le plus
+  // (Kabuto, coût 4, ajouté ici au poste de garde ; Excelangue reste à trouver).
   const m = mode({ league: 1 }, 'canela');
   const both = { ...m, adv: { ...m.adv, events: { ...m.adv.events, 5: [...m.adv.events[5], { name: 'Kabuto', mon: 'kabuto' }] } } };
-  const pair = ['lickitung', 'kabuto', 'pidgey'];
-  assert.equal(scarcity(freshCanela(0, { league: 1, level: 5 }), pair, NORMAL, { mode: both }), -10);
+  const fresh = freshCanela(0, { league: 1, level: 5 });
+  const pair = scarcity(fresh, ['lickitung', 'kabuto', 'pidgey'], NORMAL, { mode: both });
+  const { 5: gift, ...others } = m.adv.events;
+  const none = { ...m, adv: { ...m.adv, events: others } };
+  assert.ok(gift);
+  assert.equal(r6(pair), r6(scarcity(fresh, ['lickitung', 'pidgey'], NORMAL, { mode: none })));
 });
 
 test('Cramois’Île : niveaux visés à la taille des équipes adverses, Kanto inchangé', () => {

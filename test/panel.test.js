@@ -38,14 +38,40 @@ test('assassins adverses : case par combat, parade posée ou raison de son absen
   const on = KT.diveHtml({ advice: { dive: true, guard: { bait: 'geodude', carry: 'abra' }, names } });
   assert.match(on, /name="dive" id="kt-dive" aria-describedby="kt-dive-note" checked>/);
   assert.match(on, /Appât au fond : Racaillou\. Porteur couvert : Abra\./);
-  // La case ne vaut que pour le combat où elle a été cochée : même sauvegarde, même partie, même étage.
+  // La case ne vaut que pour le combat où elle a été cochée ou décochée : même sauvegarde, même partie, même étage ; ailleurs,
+  // et pour l'ancien format (chaîne), pas de réponse du joueur.
   const fight = { saveKey: 'kanto-tactics-save', save: { runSeed: 7 }, floor: 12 };
-  const ui = { dive: KT.fightKey(fight) };
+  const ui = { dive: { key: KT.fightKey(fight), on: true } };
   assert.equal(KT.diveOn(ui, fight), true);
-  assert.equal(KT.diveOn(ui, { ...fight, floor: 13 }), false);
-  assert.equal(KT.diveOn(ui, { ...fight, save: { runSeed: 8 } }), false);
-  assert.equal(KT.diveOn(ui, { ...fight, saveKey: 'kanto-tactics-save-tower' }), false);
-  assert.equal(KT.diveOn({ dive: null }, fight), false);
+  assert.equal(KT.diveOn({ dive: { key: KT.fightKey(fight), on: false } }, fight), false);
+  assert.equal(KT.diveOn(ui, { ...fight, floor: 13 }), null);
+  assert.equal(KT.diveOn(ui, { ...fight, save: { runSeed: 8 } }), null);
+  assert.equal(KT.diveOn(ui, { ...fight, saveKey: 'kanto-tactics-save-tower' }), null);
+  assert.equal(KT.diveOn({ dive: null }, fight), null);
+  assert.equal(KT.diveOn({ dive: KT.fightKey(fight) }, fight), null);
+  // Équipe adverse calculée : case cochée d'office, ses assassins nommés ; décochée, la note le dit.
+  const plan = { divers: [{ line: 'zubat' }] };
+  const named = { line: id => ({ geodude: 'Racaillou', abra: 'Abra', zubat: 'Nosferapti' }[id]) };
+  assert.match(KT.diveHtml({ advice: { dive: true, guard: null, plan, names: named } }), /Dans l’équipe adverse : Nosferapti\. Pas de parade/);
+  assert.match(KT.diveHtml({ advice: { dive: false, guard: null, plan, names: named } }), /Décochée : pas de parade, malgré Nosferapti/);
+});
+
+test('adversaire calculé : équipe, météo, zone du porteur, frappeurs, zones, équipe probable', () => {
+  const names = { line: id => ({ geodude: 'Racaillou', paras: 'Paras', zubat: 'Nosferapti', magnemite: 'Magnéti' }[id]) };
+  const geodude = { line: 'geodude', star: 2, role: 'tank' };
+  const paras = { line: 'paras', star: 1, role: 'fighter' };
+  const magnemite = { line: 'magnemite', star: 1, role: 'mage' };
+  const foes = { units: [geodude, paras, magnemite], weather: 'rain', probable: true };
+  const plan = { side: 'right', hitter: paras, front: [geodude, paras], spread: [magnemite], divers: [], tanked: true, spaced: true };
+  const html = KT.foesHtml({ foes, plan, names }, { side: 'left' });
+  assert.match(html, /<span>Adversaire<\/span><span>probable<\/span>/);
+  assert.match(html, /Racaillou ★★, Paras, Magnéti<br>Météo : pluie\. Porteur à distance au coin droit, loin des menaces\. Tanks face à Paras, le frappeur le plus fort\. Unités à distance écartées : Magnéti frappe en zone\. Équipe probable/);
+  // Sans tank posé ni unités à distance à écarter, la note ne prétend rien.
+  assert.doesNotMatch(KT.foesHtml({ foes, plan: { ...plan, tanked: false, spaced: false }, names }, { side: 'left' }), /Tanks|écartées/);
+  // Normal, zone du menu gardée, sans frappeur ni zone : l'équipe seule.
+  const plain = KT.foesHtml({ foes: { units: [geodude], weather: null, probable: false }, plan: { side: 'left', hitter: null, front: [geodude], spread: [], divers: [], tanked: false, spaced: false }, names }, { side: 'left' });
+  assert.match(plain, /<span>calculé<\/span><\/p>\n<p class="kt-hint">Racaillou ★★<\/p>/);
+  assert.equal(KT.foesHtml({ foes: null }, { side: 'left' }), '');
   // Sauvegarde de Tour sans runSeed : l'étage seul.
   assert.equal(KT.fightKey({ saveKey: 'kanto-tactics-save-tower', save: {}, floor: 57 }), 'kanto-tactics-save-tower::57');
   assert.match(KT.diveHtml({ advice: { dive: true, guard: null, names } }), /Pas de parade/);

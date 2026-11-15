@@ -19,7 +19,9 @@ const names = KT.namer(lang);
 // Étage 57, 38 pièces, niveau 8 : scénario commun avec la maquette et les pages d'aperçu.
 const S57 = require('./fixtures/s57.js');
 // S57 au niveau 4 : la compo se réduit au trio et à Goupix ★★, Rattata reste hors compo.
-const S57_4 = { ...S57, level: 4, xp: 0 };
+// S57 au niveau 4, Ptéra retiré de la boutique : affiché, il serait trouvé (sourcesOf) et remplacerait Lokhlass, à venir, dans
+// la compo suivante (Leveinard, Minidraco, Lokhlass), qui sert aux tests du sac.
+const S57_4 = { ...S57, level: 4, xp: 0, shop: S57.shop.map(b => (b === 'aerodactyl' ? null : b)) };
 const advise = (s, extra = {}) => adviseOn(s, { mode: T, stats: torre, ...extra });
 const brief = m => m && `${m.level} ${m.label}`;
 const T = KT.TOWER_MODE;
@@ -214,16 +216,21 @@ test('stratégie : compo réactive ou stable (combats vus d’avance, inertie)',
 
 test('stratégie : bonus des Pokémon possédés faible ou fort', () => {
   const unit = { g: { id: 'g', line: 'giovanni', star: 1 } };
-  const score = (owned, units) => KT.coreScore(['giovanni', 'koga', 'samurai'], UNRATED,
-    KT.readGame({ ...save, round: 1009, level: 8, units, board: {}, bench: Object.keys(units), shop: [] }, strategy({ owned })), data);
-  // Niveau 8 : Koga et Samouraï (coût 5) introuvables, un malus chacun ; Giovanni possédé, un bonus.
-  assert.deepEqual([score('low', unit), score('normal', unit), score('high', unit)], [-5, -10, -20]);
-  assert.deepEqual([score('low', {}), score('high', {})], [-15, -60]);
-  // Tour : le malus reste jugé au niveau du joueur (8), même quand l'étage noté vise le niveau 9 (59 : Koga, Samouraï à 17 %).
+  const game = (owned, units) => KT.readGame({ ...save, round: 1009, level: 8, units, board: {}, bench: Object.keys(units), shop: [] }, strategy({ owned }));
+  const score = (owned, units) => KT.coreScore(['giovanni', 'koga', 'samurai'], UNRATED, game(owned, units), data);
+  // Sans combat noté, une seule boutique d'ici la fin de la fenêtre : l'actualisation de l'étage. Koga et Samouraï (coût 5),
+  // à trouver, coûtent le bonus fois la chance de ne pas les y voir ; Giovanni possédé rapporte le bonus (et tient des
+  // exemplaires du coût 5 : la chance des deux autres monte un peu).
+  const seen = units => KT.rerollChance(game('normal', units), data, 8, ['koga']) / 100;
+  const round1 = x => Math.round(10 * x) / 10;
+  assert.deepEqual([score('low', unit), score('normal', unit), score('high', unit)].map(round1), [5, 10, 20].map(b => round1(b - 2 * b * (1 - seen(unit)))));
+  assert.deepEqual([score('low', {}), score('high', {})].map(round1), [5, 20].map(b => round1(-3 * b * (1 - seen({})))));
+  // Tour : chances jugées au niveau du joueur (8), même quand l'étage noté vise le niveau 9 ; de l'étage 57 au 59 :
+  // l'actualisation de l'étage, puis deux boutiques par étage.
   const rated = KT.ratedStops([{ stop: '59:elite', floor: 59, boss: 'elite', weight: 1 }], new Map([['59:elite', new Map([['giovanni+koga+samurai', { lo: 0 }]])]]));
   const tower = KT.readGame({ ...save, round: 1056, level: 8, units: unit, board: {}, bench: ['g'], shop: [] }, strategy({ owned: 'normal' }));
   assert.equal(KT.levelGoal(59, tower.mode), 9);
-  assert.equal(KT.coreScore(['giovanni', 'koga', 'samurai'], rated, tower, data), -10);
+  assert.equal(round1(KT.coreScore(['giovanni', 'koga', 'samurai'], rated, tower, data)), round1(10 - 20 * (1 - seen(unit)) ** 5));
 });
 
 test('compo cible : meilleur trio pondéré, remplissage par puissance', () => {
@@ -251,19 +258,29 @@ test('compo cible : inertie de 30 points', () => {
   assert.equal(KT.targetComp(t(49), data, game, { key: 'pidgey+rattata+spearow' }).key, 'abra+onix+zubat');
 });
 
-test('compo cible : −10 points par lignée du trio à trouver dont le coût ne sort pas à ce niveau', () => {
+test('compo cible : une lignée du trio à trouver coûte le bonus fois sa chance de ne pas sortir d’ici le boss', () => {
   const cores = [
     brockCore(['giovanni', 'koga', 'samurai']),
     brockCore(['onix', 'rhyhorn', 'kabuto'], 55),
   ];
-  const game = (level, units = {}) => readGame({ ...save, round: 1009, level, units, board: {}, bench: Object.keys(units), shop: [] });
+  const game = (level, units = {}, shop = []) => readGame({ ...save, round: 1009, level, units, board: {}, bench: Object.keys(units), shop });
   const score = g => KT.coreScore(cores[0].core, UNRATED, g, data);
-  // Coût 5 : 6 % au niveau 8, 17 % au niveau 9 ; une lignée possédée garde son bonus.
-  assert.deepEqual([score(game(8)), score(game(9)), score(game(8, { g: { id: 'g', line: 'giovanni', star: 1 } }))], [-30, 0, -10]);
+  const seen = (g, base = 'koga') => KT.rerollChance(g, data, g.level, [base]) / 100;
+  const round1 = x => Math.round(10 * x) / 10;
+  // Coût 5 : sa case sort à 6 % au niveau 8, à 17 % au niveau 9 ; sans combat noté, seule l'actualisation de l'étage compte.
+  assert.ok(seen(game(9)) > seen(game(8)));
+  assert.deepEqual([score(game(8)), score(game(9))].map(round1), [game(8), game(9)].map(g => round1(-30 * (1 - seen(g)))));
+  // Une lignée possédée garde son bonus ; une lignée dans la boutique affichée est trouvée.
+  const giovanni = game(8, { g: { id: 'g', line: 'giovanni', star: 1 } });
+  assert.equal(round1(score(giovanni)), round1(10 - 20 * (1 - seen(giovanni))));
+  assert.equal(round1(score(game(8, {}, ['koga', 'samurai']))), round1(-10 * (1 - seen(game(8, {}, ['koga', 'samurai']), 'giovanni'))));
+  // Par lignée, les trois coûts 5 de la Tour sortent autant que les coûts 3 et 4 (3 lignées seulement se partagent leurs
+  // cases) : au niveau 8, 9,6 % par boutique pour Koga, 7,7 % pour Onix, 8,9 % pour Rhinocorne et Kabuto.
+  assert.ok(seen(game(8)) > seen(game(8), 'onix'));
+  // Pierre à l'étage 10 : 80 moins 27 points de malus contre 55 moins 27 ; Onix, Rhinocorne et Kabuto en boutique, 55 l'emporte.
   const key = g => KT.targetComp(brockStats(cores), data, g, null).key;
-  // Niveau 8 : 80 − 30 contre 55 (coûts 3 et 4 trouvables) ; niveau 9 : 80 contre 55.
-  assert.equal(key(game(8)), 'kabuto+onix+rhyhorn');
-  assert.equal(key(game(9)), 'giovanni+koga+samurai');
+  assert.equal(key(game(8)), 'giovanni+koga+samurai');
+  assert.equal(key(game(8, {}, ['onix', 'rhyhorn', 'kabuto'])), 'kabuto+onix+rhyhorn');
 });
 
 test('compo cible : 9 prochains combats, élites comprises', () => {
@@ -297,16 +314,31 @@ test('compléments : possédés par puissance (coût, étoiles) et types, boutiq
   // Niveau 4, une place : Abo ★★ (coût 2) vaut plus que Rattata ★★ (coût 1) ; l'unité possédée la prend même sans type commun.
   assert.deepEqual(comp(4, units(['rattata', 2], ['ekans', 2]), []), [['ekans'], [], []]);
   assert.deepEqual(comp(4, units(['ekans', 1]), []), [['ekans'], [], []]);
-  // Le plan garde l'unité possédée quand la boutique change ; une carte de coût 4 vaut plus qu'un coût 1 ★, moins qu'un coût 1 ★★.
-  assert.deepEqual(comp(4, units(['rattata', 1]), ['rhyhorn']), [['rattata'], ['rhyhorn'], ['rattata']]);
-  assert.deepEqual(comp(4, units(['rattata', 1]), ['caterpie']), [['rattata'], [], []]);
-  assert.deepEqual(comp(4, units(['rattata', 2]), ['rhyhorn']), [['rattata'], [], []]);
+  // Le plan garde l'unité possédée quand la boutique change ; une carte de coût 4 vaut plus qu'un coût 1 ★, moins qu'un coût 1 ★★
+  // (Lokhlass, à distance comme Abra : pas de rôle apporté).
+  assert.deepEqual(comp(4, units(['rattata', 1]), ['lapras']), [['rattata'], ['lapras'], ['rattata']]);
+  assert.deepEqual(comp(4, units(['rattata', 1]), ['weedle']), [['rattata'], [], []]);
+  assert.deepEqual(comp(4, units(['rattata', 2]), ['lapras']), [['rattata'], [], []]);
+  // Le trio n'a pas de tank : Chenipan, tank de coût 1, apporte le rôle qui manque et remplace Rattata ; Rhinocorne ★, tank
+  // de coût 4, passe même devant Rattata ★★.
+  assert.deepEqual(comp(4, units(['rattata', 1]), ['caterpie']), [['rattata'], ['caterpie'], ['rattata']]);
+  assert.deepEqual(comp(4, units(['rattata', 2]), ['rhyhorn']), [['rattata'], ['rhyhorn'], ['rattata']]);
   // Miaouss et Mélofée : même coût, même type. À égalité de note, la carte ne remplace pas l'unité possédée.
   assert.deepEqual(comp(4, units(['meowth', 1]), ['clefairy']), [['meowth'], [], []]);
   // Place libre : la boutique la remplit ; à égalité, la lignée qui figure dans un trio gagnant de la fenêtre, puis le nom.
   assert.deepEqual(comp(5, units(['rattata', 1]), ['doduo']), [['rattata', 'doduo'], [], []]);
   assert.deepEqual(comp(4, {}, ['clefairy', 'meowth']), [['clefairy'], [], []]);
-  assert.deepEqual(comp(4, {}, ['clefairy', 'meowth'], [trio, { ...trio, core: ['meowth', 'abra', 'pidgey'] }]), [['meowth'], [], []]);
+  // Le second trio, 20 points plus bas, reste battu malgré Miaouss trouvé en boutique ; il compte pour la force des lignées.
+  assert.deepEqual(comp(4, {}, ['clefairy', 'meowth'], [trio, { ...trio, core: ['meowth', 'abra', 'pidgey'], lo: trio.lo - 20 }]), [['meowth'], [], []]);
+});
+
+test('compléments : un rôle qui manque compte une fois, même quand la lignée en apporte deux', () => {
+  // Trio Abra · Goupix · Mystherbe, tout à distance, sans tank. Chenipan ★ (coût 1), tank de mêlée, apporte deux rôles mais ne
+  // gagne le bonus qu'une fois : 1,5, sous Miaouss ★ (coût 2, mêlée, 1,85). Compté deux fois, il aurait 2.
+  const own = { c: { id: 'c', line: 'caterpie', star: 1 }, m: { id: 'm', line: 'meowth', star: 1 } };
+  const game = readGame({ ...save, round: 1009, level: 4, units: own, board: { 28: 'c', 29: 'm' }, bench: [], shop: [] });
+  const stats = brockStats([brockCore(['abra', 'vulpix', 'oddish'])], { lines: [] });
+  assert.deepEqual(KT.targetComp(stats, data, game, null).fillers, ['meowth']);
 });
 
 test('compléments : l’écart de victoire rétréci (400 combats fictifs) décale le coût d’un cran, dès 2,5 points', () => {
@@ -319,40 +351,41 @@ test('compléments : l’écart de victoire rétréci (400 combats fictifs) déc
     return [t.fillers, t.upgrades];
   };
   const own = (...list) => Object.fromEntries(list.map(([id, line, star, shiny = false]) => [id, { id, line, star, shiny }]));
-  // Chenipan (coût 1), Mimitoss (coût 2) et Scarabrute (coût 3) n'ont aucun type du trio ; à égalité de note, le nom
-  // départage (Chenipan avant Mimitoss). Sur 4 000 combats, ±6 rétrécit à ±5,5 : Chenipan fort (coût 2 : 1,35) passe devant
-  // Mimitoss faible (coût 1 : 1). Sur 40 combats, ±6 rétrécit à ±0,5 : aucun décalage.
-  const weak = stat('venonat', -6, 4000);
-  const pair = own(['c', 'caterpie', 1], ['v', 'venonat', 1]);
+  // Chenipan (coût 1), Smogo (coût 2) et Saquedeneu (coût 3), trois tanks (le rôle qui manque au trio, même bonus pour
+  // chacun), n'ont aucun type du trio ; à égalité de note, le nom
+  // départage (Chenipan avant Smogo). Sur 4 000 combats, ±6 rétrécit à ±5,5 : Chenipan fort (coût 2 : 1,35) passe devant
+  // Smogo faible (coût 1 : 1). Sur 40 combats, ±6 rétrécit à ±0,5 : aucun décalage.
+  const weak = stat('koffing', -6, 4000);
+  const pair = own(['c', 'caterpie', 1], ['v', 'koffing', 1]);
   assert.deepEqual(comp([stat('caterpie', 6, 4000), weak], pair), [['caterpie'], []]);
-  assert.deepEqual(comp([stat('caterpie', 6, 40), stat('venonat', -6, 40)], pair), [['venonat'], []]);
+  assert.deepEqual(comp([stat('caterpie', 6, 40), stat('koffing', -6, 40)], pair), [['koffing'], []]);
   // Seuil de 2,5 points, des deux côtés : ±2,8 sur 4 000 combats (±2,55) décale d'un cran, ±2,6 (±2,36) ne décale pas.
   assert.deepEqual(comp([stat('caterpie', 2.8, 4000)], pair), [['caterpie'], []]);
-  assert.deepEqual(comp([stat('caterpie', 2.6, 4000)], pair), [['venonat'], []]);
-  assert.deepEqual(comp([stat('venonat', -2.8, 4000)], pair), [['caterpie'], []]);
-  assert.deepEqual(comp([stat('venonat', -2.6, 4000)], pair), [['venonat'], []]);
-  // Un cran au plus : Chenipan à +30 vaut un coût 2 (1,35), pas plus que Scarabrute neutre (1,7).
-  assert.deepEqual(comp([stat('caterpie', 30, 4000)], own(['c', 'caterpie', 1], ['p', 'pinsir', 1])), [['pinsir'], []]);
+  assert.deepEqual(comp([stat('caterpie', 2.6, 4000)], pair), [['koffing'], []]);
+  assert.deepEqual(comp([stat('koffing', -2.8, 4000)], pair), [['caterpie'], []]);
+  assert.deepEqual(comp([stat('koffing', -2.6, 4000)], pair), [['koffing'], []]);
+  // Un cran au plus : Chenipan à +30 vaut un coût 2 (1,35), pas plus que Saquedeneu neutre (1,7).
+  assert.deepEqual(comp([stat('caterpie', 30, 4000)], own(['c', 'caterpie', 1], ['p', 'tangela', 1])), [['tangela'], []]);
   // Un coût 1 ★★ neutre (1,9) reste devant un coût 2 ★ fort (coût 3 : 1,7).
-  assert.deepEqual(comp([stat('venonat', 6, 4000)], own(['c', 'caterpie', 2], ['v', 'venonat', 1])), [['caterpie'], []]);
+  assert.deepEqual(comp([stat('koffing', 6, 4000)], own(['c', 'caterpie', 2], ['v', 'koffing', 1])), [['caterpie'], []]);
   // Forme ancrée possédée : ses statistiques, rétrécies vers l'écart de sa lignée de base. Bien jouée (+11 sur 4 000 combats,
   // base à −6), elle reste forte (+9,5) ; peu jouée (+30 sur 40 combats), une base très faible (−20) la tire sous zéro
   // (−13,8 : un cran perdu) ; sans ligne propre, elle prend l'écart de sa base.
   const anchored = [stat('caterpie', -6, 4000), stat('caterpie-a0', 11, 4000), weak];
-  assert.deepEqual(comp(anchored, own(['c', 'caterpie-a0', 1], ['v', 'venonat', 1])), [['caterpie'], []]);
-  assert.deepEqual(comp([stat('caterpie', -20, 4000), stat('caterpie-a1', 30, 40), weak], own(['c', 'caterpie-a1', 1], ['v', 'venonat', 1])), [['venonat'], []]);
-  assert.deepEqual(comp([stat('caterpie', 6, 4000), weak], own(['c', 'caterpie-a1', 1], ['v', 'venonat', 1])), [['caterpie'], []]);
+  assert.deepEqual(comp(anchored, own(['c', 'caterpie-a0', 1], ['v', 'koffing', 1])), [['caterpie'], []]);
+  assert.deepEqual(comp([stat('caterpie', -20, 4000), stat('caterpie-a1', 30, 40), weak], own(['c', 'caterpie-a1', 1], ['v', 'koffing', 1])), [['koffing'], []]);
+  assert.deepEqual(comp([stat('caterpie', 6, 4000), weak], own(['c', 'caterpie-a1', 1], ['v', 'koffing', 1])), [['caterpie'], []]);
   // Deux copies de même étoile, ancrée et non : la note lit la forme de la copie que la formation pose (la shiny, sinon la
   // forme non ancrée par l'identifiant), quel que soit l'ordre des copies sur le plateau. Les deux copies valent une ★★ : face
-  // à Mimitoss ★★ faible (coût 1 : 1,9), Chenipan posé faible (0,65 × 1,9) perd, Chenipan ancré fort (1,35 × 1,9) gagne.
-  const both = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1], ['v', 'venonat', 2]];
-  assert.deepEqual(comp(anchored, own(...both)), [['venonat'], []]);
-  assert.deepEqual(comp(anchored, own(...[...both].reverse())), [['venonat'], []]);
-  const shinyAnchored = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1, true], ['v', 'venonat', 2]];
+  // à Smogo ★★ faible (coût 1 : 1,9), Chenipan posé faible (0,65 × 1,9) perd, Chenipan ancré fort (1,35 × 1,9) gagne.
+  const both = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1], ['v', 'koffing', 2]];
+  assert.deepEqual(comp(anchored, own(...both)), [['koffing'], []]);
+  assert.deepEqual(comp(anchored, own(...[...both].reverse())), [['koffing'], []]);
+  const shinyAnchored = [['c', 'caterpie', 1], ['d', 'caterpie-a0', 1, true], ['v', 'koffing', 2]];
   assert.deepEqual(comp(anchored, own(...shinyAnchored)), [['caterpie'], []]);
   assert.deepEqual(comp(anchored, own(...[...shinyAnchored].reverse())), [['caterpie'], []]);
-  // Une carte de boutique est notée sur sa lignée de base : Chenipan fort est conseillé à la place de Mimitoss possédé.
-  assert.deepEqual(comp([stat('caterpie', 6, 4000), weak], own(['v', 'venonat', 1]), ['caterpie']), [['venonat'], ['caterpie']]);
+  // Une carte de boutique est notée sur sa lignée de base : Chenipan fort est conseillé à la place de Smogo possédé.
+  assert.deepEqual(comp([stat('caterpie', 6, 4000), weak], own(['v', 'koffing', 1]), ['caterpie']), [['koffing'], ['caterpie']]);
 });
 
 test('compléments : à l’étage 72, les unités fortes possédées passent avant les coûts 1 de la boutique', () => {
@@ -364,7 +397,8 @@ test('compléments : à l’étage 72, les unités fortes possédées passent av
   };
   const a = advise(late, { previous: { key: 'giovanni+koga+samurai', run: late.runSeed ?? null, next: null } });
   assert.equal(a.target.key, 'giovanni+koga+samurai');
-  assert.deepEqual(a.target.fillers, ['dratini', 'rhyhorn', 'onix', 'chansey', 'aerodactyl']);
+  // Rhinocorne, tank qui manque au trio, passe devant Minidraco.
+  assert.deepEqual(a.target.fillers, ['rhyhorn', 'dratini', 'onix', 'chansey', 'aerodactyl']);
   // Rattata, Roucool et Aspicot hors compo ; Lokhlass (coût 4) ne vaut pas plus que Leveinard ★ et Ptéra ★ déjà possédés.
   // Niveau 8 pour un niveau 10 visé : la copie de Minidraco passe après l'XP.
   assert.deepEqual(a.shop.map(m => m.why), ['hors compo cible', 'hors compo cible', 'complément de la compo ; l’or va d’abord à l’XP',
@@ -498,7 +532,7 @@ test('boutique : ★ seulement si l’or suffit, de gauche à droite ; le reste 
 
 test('vendre faute d’or pour un ★, et XP avant actualiser', () => {
   // Niveau 4, 3 pièces : Caninos (4, 3ᵉ copie) et Ptéra (4, cœur) passent en ◆ faute d'or, Rattata hors compo est à vendre.
-  const poor = advise({ ...S57_4, gold: 3 });
+  const poor = advise({ ...S57, level: 4, xp: 0, gold: 3 });
   assert.deepEqual(poor.shop.slice(0, 2).map(brief), ['opt Si l’or', 'opt Si l’or']);
   assert.deepEqual([brief(poor.bench[2]), poor.bench[2].why], ['no Vends', 'il manque de l’or pour un achat conseillé']);
   // 47 pièces, 4 XP manquants : ★ (13) puis XP (4) laissent 30 ; pas d'actualisation avant le niveau 9.
@@ -694,8 +728,10 @@ test('compo cible : force des lignées sur les seuls combats qui ont des trios n
 test('lignée du trio inconnue des données : ni malus, ni actualisation pour elle, pas d’erreur', () => {
   const core = ['newmon', 'pidgey', 'spearow'];
   const game = readGame({ ...save, round: 1004, level: 9, units: {}, board: {}, bench: [], shop: [] });
-  // Roucool et Piafabec (coût 1 : 6 % au niveau 9) coûtent 10 points chacun ; la lignée sans coût connu, rien.
-  assert.equal(KT.coreScore(core, UNRATED, game, data), -20);
+  // Roucool et Piafabec (coût 1 : 6 % au niveau 9) coûtent 10 points chacun, moins leur chance de sortir à l'actualisation de
+  // l'étage ; la lignée sans coût connu, rien.
+  const seen = base => KT.rerollChance(game, data, 9, [base]) / 100;
+  assert.equal(KT.coreScore(core, UNRATED, game, data), -10 * (1 - seen('pidgey')) - 10 * (1 - seen('spearow')));
   const a = advise({ ...save, round: 1004, level: 9, xp: 0, gold: 60, attempts: 0, units: {}, board: {}, bench: [], shop: [] },
     { stats: brockStats([brockCore(core)]) });
   assert.equal(a.target.key, 'newmon+pidgey+spearow');
@@ -723,7 +759,8 @@ test('vendre : unité du banc hors compo et sans paire, banc presque plein', () 
   assert.equal(marks[4], null);
   // Leveinard, de la compo suivante, reste au banc ; sauf s'il manque de l'or pour un ★ de la compo cible.
   const kept = { ...full, units: { ...full.units, f: { id: 'f', line: 'chansey', star: 1 } } };
-  assert.equal(advise(kept).next.key, 'chansey+dratini+lapras');
+  // Ptéra, dans la boutique affichée, est trouvé : il passe devant Lokhlass dans la compo suivante.
+  assert.equal(advise(kept).next.key, 'aerodactyl+chansey+dratini');
   assert.equal(advise(kept).bench[3], null);
   const sold = advise({ ...kept, gold: 3 }).bench[3];
   assert.deepEqual([brief(sold), sold.why], ['no Vends', 'il manque de l’or pour un achat conseillé']);
@@ -740,13 +777,39 @@ test('compo suivante : trio des combats 10 à 18, absent s’il est déjà la co
   assert.equal(advise(EMPTY10, { stats: { ...empty, stops: empty.stops.slice(0, 9) } }).next, null);
 });
 
+test('compo suivante : compléments parmi les Pokémon possédés, gardés au banc', () => {
+  // Niveau 5, banc presque plein. Compo cible Abra · Onix · Nosferapti, avec Racaillou et Sabelette (types du trio) ; compo
+  // suivante Chenipan · Roucool · Rattata, avec Aspicot (Insecte, comme Chenipan) et Abo (coût 2). Férosinge et Machoc ne
+  // servent à aucune des deux : à vendre.
+  const lines = [['caterpie', 2], ['weedle', 1], ['mankey', 1], ['machop', 1], ['geodude', 1], ['ekans', 1], ['sandshrew', 1], ['rattata', 1]];
+  const units = Object.fromEntries(lines.map(([line, star]) => [line, { id: line, line, star }]));
+  const a = advise({ ...EMPTY10, level: 5, gold: 40, units, bench: [...Object.keys(units), null] },
+    { stats: twoWindows([[['caterpie', 'pidgey', 'rattata'], 80]]) });
+  assert.deepEqual([a.target.fillers, a.next.key, a.next.fillers], [['geodude', 'sandshrew'], 'caterpie+pidgey+rattata', ['weedle', 'ekans']]);
+  assert.deepEqual(a.bench.map(m => m?.title ?? null), [null, null, 'Vends Férosinge', 'Vends Machoc', null, null, null, null, null]);
+});
+
+test('compléments : avantage de type contre l’équipe du prochain boss', () => {
+  // Trio Roucool · Piafabec · Abra, une place, Carapuce et Salamèche ★ possédés (coût 1). Sans adversaire connu, Salamèche
+  // (Vol, comme Roucool) passe devant. Contre Pierre (Onix, Racaillou : Roche et Sol), l'Eau de Carapuce frappe ×4 et leurs
+  // capacités ne la touchent qu'à ×1 ; le Feu de Salamèche frappe ×0,5 et la Roche le touche ×4 : Carapuce passe devant.
+  const own = { s: { id: 's', line: 'squirtle', star: 1 }, c: { id: 'c', line: 'charmander', star: 1 } };
+  const game = readGame({ ...save, round: 1009, level: 4, units: own, board: { 28: 's', 29: 'c' }, bench: [], shop: [] });
+  const stats = brockStats([brockCore(['pidgey', 'spearow', 'abra'])], { lines: [] });
+  const brock = KT.enemyTeam({ runSeed: 3, starter: 'bulbasaur', round: 3 }, KT.modeContext(KT.CAMPAIGN, {}, 'kanto'), data);
+  assert.deepEqual(KT.targetComp(stats, data, game, null).fillers, ['charmander']);
+  assert.deepEqual(KT.targetComp(stats, data, game, null, brock).fillers, ['squirtle']);
+});
+
 test('compo suivante : inertie de 30 points dans la même partie', () => {
   const t = lo => twoWindows([[['caterpie', 'pidgey', 'rattata'], 80], [['ekans', 'spearow', 'zubat'], lo]]);
   const previous = { key: 'abra+onix+zubat', run: 7, next: 'ekans+spearow+zubat' };
-  assert.equal(advise(EMPTY10, { stats: t(51) }).next.key, 'caterpie+pidgey+rattata');
-  assert.equal(advise(EMPTY10, { stats: t(51), previous }).next.key, 'ekans+spearow+zubat');
-  assert.equal(advise(EMPTY10, { stats: t(49), previous }).next.key, 'caterpie+pidgey+rattata');
-  assert.equal(advise(EMPTY10, { stats: t(51), previous: { ...previous, run: 8 } }).next.key, 'caterpie+pidgey+rattata');
+  // Abo (coût 2, 25 % au niveau 3) a un peu moins de chances de sortir d'ici l'étage 19 (premier boss de la fenêtre) que les coûts 1 : environ un point de
+  // malus de plus, d'où 53 et 47 de part et d'autre de 50.
+  assert.equal(advise(EMPTY10, { stats: t(53) }).next.key, 'caterpie+pidgey+rattata');
+  assert.equal(advise(EMPTY10, { stats: t(53), previous }).next.key, 'ekans+spearow+zubat');
+  assert.equal(advise(EMPTY10, { stats: t(47), previous }).next.key, 'caterpie+pidgey+rattata');
+  assert.equal(advise(EMPTY10, { stats: t(53), previous: { ...previous, run: 8 } }).next.key, 'caterpie+pidgey+rattata');
 });
 
 test('boutique : ◆ pour la compo suivante après ceux de la compo cible, jamais sous le palier ni en tout jouer', () => {
@@ -1526,11 +1589,11 @@ test('shiny : départage le porteur, le tank et le remplissage', () => {
   }).aims.map(x => x.unit.id);
   assert.deepEqual(tanks(false), ['b', 'g']);
   assert.deepEqual(tanks(true), ['g', 'b']);
-  // Remplissage : Goupix et Pyroli 1★ ont le même coût et le même type ; le shiny passe devant.
-  const fill = shiny => withUnits({ d: { id: 'd', line: 'vulpix', star: 1, shiny }, m: { id: 'm', line: 'flareon', star: 1 } },
+  // Remplissage : Ponyta et Pyroli 1★ ont le même coût, le même type et le même rôle (mêlée) ; le shiny passe devant.
+  const fill = shiny => withUnits({ d: { id: 'd', line: 'ponyta', star: 1, shiny }, m: { id: 'm', line: 'flareon', star: 1 } },
     { level: 4, shop: [], bench: ['b', 'c', 'e', 'm', null, null, null, null, null] });
   assert.deepEqual(advise(fill(false)).target.fillers, ['flareon']);
-  assert.deepEqual(advise(fill(true)).target.fillers, ['vulpix']);
+  assert.deepEqual(advise(fill(true)).target.fillers, ['ponyta']);
 });
 
 test('shiny : pas de « Vends » jusqu’à l’étage 120, boutique sans raison shiny si la lignée l’est déjà', () => {

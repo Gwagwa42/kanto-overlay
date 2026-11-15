@@ -20,7 +20,7 @@ sélectionner au clavier) affiche la raison ; cliquer une pastille n'achète rie
 
 En tête du panneau, toujours visibles : l'or à dépenser au-dessus du palier, l'alerte « tout jouer » et le prochain boss avec son
 taux de victoire. Dessous, quatre onglets : **Tour** (les conseils ★ et ◆, les ✕ regroupés sous « N à éviter »), **Compo** (compo
-cible, compo suivante, objets visés, copie de la formation, assassins adverses), **Boss** (taux, premier essai, essais moyens, meilleurs trios) et
+cible, compo suivante, équipe adverse calculée en campagne, assassins adverses, objets visés, copie de la formation), **Boss** (taux, premier essai, essais moyens, meilleurs trios) et
 **Règles** (règles d'or de la tranche, bilan de tes combats). Replié, le panneau garde l'étage, l'or à dépenser et le premier conseil ★.
 
 Le menu ⚙ règle le thème (auto, clair, sombre), les pastilles affichées par niveau, la largeur (320 ou 380 px), la taille du texte,
@@ -46,11 +46,16 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
 - **Compo cible** : parmi les trios d'au moins 20 combats des 9 prochains combats (élites comprises, environ 20 étages), celui dont la
   borne basse du taux de victoire (intervalle à 95 %) est la meilleure, pondérée par la difficulté de chaque combat qui a des trios
   notés (un combat sans trio, manche peu jouée de campagne, ne compte pas), avec un bonus pour
-  les Pokémon que tu possèdes déjà et un malus de 10 points par Pokémon à trouver dont le coût sort à moins de 15 % en boutique au
-  niveau visé au premier boss à gagner de ces combats en campagne (ton niveau s'il est plus haut, s'ils n'ont pas de boss à
-  gagner, et en Tour). Un Pokémon qu'un événement de l'aventure offre d'ici ce boss n'a pas de malus, un seul par événement,
-  qui ne laisse en choisir qu'un : à Cramois'Île, Kabuto, Amonita et Lokhlass (coût 4) visent le Rival (27) dès le combat 13
-  en Légende, au lieu du combat 26. Elle ne change que pour un gain d'au moins 30 points, et repart de zéro à chaque nouvelle partie.
+  les Pokémon que tu possèdes déjà et un malus pour chaque Pokémon à trouver : 10 points fois la chance de ne pas en voir une
+  copie en boutique d'ici le premier boss de ces combats (à gagner en campagne ; tous les 5 étages en Tour ; le dernier combat
+  noté s'il n'y en a pas). La chance compte deux boutiques par combat, celle du combat et une actualisation (choix de jeu), chacune selon les
+  règles de la boutique du jeu (voir l'actualisation, plus bas), au niveau visé de chaque combat en campagne (ton niveau s'il est
+  plus haut) et à ton niveau en Tour ; un Pokémon de la boutique affichée est trouvé. Elle se lit par lignée et non par coût :
+  en Tour, les trois lignées de coût 5 se partagent leurs cases et sortent chacune autant qu'une lignée de coût 3 ou 4 (au
+  niveau 8, 9,6 % par boutique pour Koga, 7,7 % pour Onix). Un Pokémon qu'un événement de l'aventure offre d'ici ce boss n'a pas
+  de malus, un seul par événement, celui qui coûterait le plus, l'événement ne laissant en choisir qu'un : à Cramois'Île,
+  Kabuto, Amonita et Lokhlass (coût 4) visent le Rival (27) dès le combat 13 en Légende. Elle ne change que pour un gain d'au
+  moins 30 points, et repart de zéro à chaque nouvelle partie.
   Le reste du plateau est rempli par tes unités les mieux notées, puis par la boutique pour les places restantes (★ « place libre »).
   La note d'une unité est sa puissance, `(1 + 0,35 × (coût − 1))` × 1, 1,9 ou 3,6 selon l'étoile, plus 0,25 par type renforcé et
   0,5 par seuil de type franchi. Deux copies de ta meilleure étoile comptent pour l'étoile suivante, que la 3ᵉ copie donnera :
@@ -60,15 +65,22 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
   (dont Salamèche, Pikachu, Magmar, Roucool, Abra). On lit l'écart de la forme possédée, rétréci vers celui de sa lignée de
   base pour une forme ancrée, et celui de la lignée de base pour une carte de boutique. La force de la lignée sur le prochain
   combat (victoires de ses trios d'au moins 20 combats moins celles du combat, sur ses variantes qui ont des trios notés, à leur part et à leur difficulté, bornées
-  à 20 points) ajoute 0,01 par point : ±0,2 par lignée, 0,4 au plus entre deux, à peine plus qu'un cran de coût. Un complément du conseil précédent, dans la
+  à 20 points) ajoute 0,01 par point : ±0,2 par lignée, 0,4 au plus entre deux, à peine plus qu'un cran de coût. En campagne,
+  l'avantage de type sur l'équipe du premier boss à gagner de ces combats (Formation, équipe adverse) ajoute 0,1 par point, borné
+  à ±0,2 : le multiplicateur moyen de sa capacité sur les Pokémon du boss (table des types du jeu, météo comprise), moins celui de
+  leurs capacités sur lui. Contre Pierre (Roche et Sol), Carapuce (Eau, ×4) passe devant Salamèche (Feu, ×0,5, et touché ×4 par
+  la Roche). Un complément qui apporte au moins un rôle absent de la compo, trio compris, gagne 0,5 : un tank (rôle que le
+  jeu donne à la lignée), une unité de mêlée (portée 1), une unité à distance ; plus qu'un cran de coût, moins qu'une étoile. Sans
+  tank dans le trio, Chenipan ★ remplace Rattata ★, et Rhinocorne ★ passe devant Rattata ★★. Un complément du conseil précédent, dans la
   même partie, garde 0,1 : il faut 10 points d'écart sur le prochain combat pour le remplacer, sinon le plan, les objets visés
   et le Planificateur changeraient à chaque combat. À égalité, l'unité possédée, la shiny, puis la lignée qui gagne le plus
   dans les trios de ces combats. Une carte de boutique mieux notée qu'un de tes compléments est conseillée en ◆ (« plus fort que Rattata ») : elle
   n'entre dans la compo qu'une fois achetée, pour que le plan ne change pas à chaque actualisation. Un complément possédé reçoit
   des objets comme les autres Pokémon de la compo.
 - **Compo suivante** : le même calcul sur les 9 combats d'après (« Ensuite · étages 80–100 » sous la compo cible), affiché quand
-  le trio diffère. On la prépare avec le surplus : ◆ en boutique pour ses Pokémon après ceux de la compo cible et son actualisation,
-  sans passer sous le palier ni en tout jouer, et pas de « Vends » pour eux au banc tant que l'or suffit aux ★ de la compo cible.
+  le trio diffère, avec ses compléments pris parmi les Pokémon que tu possèdes seulement. On la prépare avec le surplus : ◆ en
+  boutique pour son trio après la compo cible et son actualisation, sans passer sous le palier ni en tout jouer, et pas de
+  « Vends » au banc pour son trio et ses compléments tant que l'or suffit aux ★ de la compo cible.
 - **Économie** : intérêts plafonnés à +3 en Tour, donc palier de 30 pièces (50 avec la voie Fortune complète). On ne dépense que le
   surplus, sauf en **tout jouer** : combat de l'étage sous 45 % de victoires, PV sous 40, ou étage rejoué après une défaite à partir
   de l'étage 50. Dans le jeu, une nouvelle défaite sur un étage rejoué supprime les intérêts de la manche et réduit son revenu de
@@ -167,14 +179,33 @@ Les seuils cités ici sont ceux de la stratégie normale ; le menu ⚙ en change
       collés : il est posé au bord avant les assassins, colonne 1 d'abord (deux cases alliées collées, trois en colonne 7).
     - Les bonus de types ne dépendent pas des cases : seuls les Électrik électrocutent les ennemis collés, ce qui ne change
       rien pour une unité de mêlée, déjà à l'avant.
-  - Assassins adverses (case de l'onglet Compo, à cocher quand l'adversaire affiché en aligne ; elle vaut pour le combat en
-    cours et se vide au suivant). Le panneau ne lit pas l'équipe adverse : elle n'est ni dans la sauvegarde ni dans la page,
-    le jeu la calcule à partir de la graine de la partie. Il ne peut pas non plus la calculer. En Tour, le générateur a
-    besoin de données que le serveur envoie au démarrage, décodées par un module obfusqué. En campagne, son portage
-    recopierait environ 8 k de code et 20 k de tables, à refaire à chaque version. Quant au générateur du jeu, le script ne
-    peut pas l'appeler : la CSP du site (`script-src 'self'`) empêche Violentmonkey d'injecter le script dans le monde de la
-    page sur Firefox, et un import depuis le monde du contenu créerait une seconde instance du jeu sans ces données.
-    Règles du moteur : Insécateur, Doduo et Abo plongent sur ton
+  - Équipe adverse (onglet Compo, « Adversaire »). Elle n'est ni dans la sauvegarde ni dans la page : le jeu la calcule. En
+    campagne, à Kanto et à Cramois'Île, le panneau la calcule comme lui, d'après la sauvegarde : la manche, la variante tirée
+    de la graine de la partie, ton starter (équipe du rival), l'arène choisie à chaque rang (`gymOrder`), le plafond d'étoiles
+    de la manche et les clés de Cramois'Île (marée basse, fossile), puis la météo. Ses cases suivent les règles du jeu : tanks,
+    combattants et spéciaux à l'avant, assassins en 2ᵉ rangée, soutiens, mages et tireurs au fond, du centre vers les bords,
+    Abo et Doduo aux bords. Elle est exacte en Normal ; en Vétéran et Légende, le panneau prend l'équipe des vrais dresseurs
+    et la dit probable, car les autres règles de ces difficultés (remplacements, étoiles et objets ajoutés) sont chiffrées dans
+    le jeu ; sans graine dans la sauvegarde, la première variante, probable aussi. En Tour, pas d'équipe : le générateur a besoin de données que le serveur envoie au démarrage, décodées par un module
+    obfusqué. Le script ne peut pas non plus appeler le générateur du jeu : la CSP du site (`script-src 'self'`) empêche
+    Violentmonkey d'injecter le script dans le monde de la page sur Firefox, et un import depuis le monde du contenu créerait
+    une seconde instance du jeu sans ces données. Contre une équipe connue, chaque Pokémon visant l'ennemi le plus proche (code
+    du jeu), la formation change, Pokémon déjà posés compris :
+    - zone du porteur à distance : la plus éloignée des menaces, pesées par leur valeur (coût × 3 par étoile au-delà de la
+      première) : les frappeurs de l'avant adverse (ses tanks exceptés), et deux fois Abo, Doduo et Nosferapti, dont la cible
+      dépend du côté. À égalité, la zone du menu ⚙ ;
+    - tanks : sur les cases (deux au plus) collées au frappeur de plus grande valeur (la rangée adverse, impaire, est décalée d'une
+      demi-case : un Pokémon de sa colonne 3 touche tes colonnes 3 et 4) ;
+    - attaquants de mêlée : face à l'ennemi de l'avant le plus proche (en hexagones) que leur capacité frappe le mieux (table
+      des types, météo comprise), quand tous ne se valent pas. Contre Mont Sélénite (Racaillou à l'avant), Paras (Plante, ×4)
+      lui fait face ;
+    - contre une capacité de zone d'un Pokémon adverse derrière son avant (rayon autour de la cible, ligne, cône, rangée,
+      rebonds ; ceux de l'avant frappent ton avant, leur cible la plus proche), les unités à distance ne se touchent plus : chacune prend, sur sa rangée puis derrière, une case qui ne touche aucune autre, et une unité qui garde sa
+      case la quitte si elle touche une unité à distance déjà posée ;
+    - assassins qui plongent (Insécateur, Doduo, Abo, Nosferapti) : la parade se pose d'office.
+  - Assassins adverses (case de l'onglet Compo : en Tour, à cocher quand l'adversaire affiché en aligne ; en campagne, cochée
+    d'office quand l'équipe calculée en aligne, à décocher si l'adversaire affiché n'en a pas). Elle vaut pour le combat en
+    cours et se vide au suivant. Règles du moteur : Insécateur, Doduo et Abo plongent sur ton
     Pokémon le plus au fond (à rangée égale, celui qui a le moins de PV ; Abo, dans la moitié du plateau par où il entre, la
     colonne 4 comptant dans les deux) ; Nosferapti, sur le plus au fond de la colonne la plus proche de la sienne. La parade
     pose donc un appât plus au fond que le porteur à distance, dans la même moitié que lui : le porteur du fond avance en
@@ -214,7 +245,7 @@ Changer un préréglage recalcule tout de suite les conseils et les règles d'or
 | Niveaux visés | Plus tôt, Normal, Plus tard | Étage (ou combat) de chaque niveau visé × 0,75, 1 ou 1,25, arrondi. Tour plus tôt : 5 dès l'étage 4, 6 dès 8, 7 dès 16, 8 dès 22, 9 dès 33, 10 dès 60 ; plus tard : 6, 14, 26, 36, 55, 75. Kanto plus tôt : 3, 6, 9, 12, 18, 23 ; plus tard : 5, 10, 15, 20, 30, 38, sous la taille des équipes des champions (8 au 6ᵉ badge, 9 contre Mewtwo). Cap sur Cramois'Île plus tôt : 5, 6, 11, 14, 18 ; plus tard : 8, 10, 18, 24, 30. Le niveau maximal ne change pas : le niveau 10 n'est jamais visé avant l'étage 60 en Tour. |
 | Tout jouer | Prudent, Normal, Audacieux | Étage, ou boss à gagner en campagne, sous 50, 45 ou 40 % de victoires (taux de la difficulté en campagne, plus l'écart appris sur [tes résultats](#tes-résultats)), PV sous 50, 40 ou 30. Le combat rejoué ne change pas. |
 | Compo cible | Réactive, Normale, Stable | Combats vus d'avance (6, 9 ou 12, la compo suivante sur autant d'après) et gain minimal pour changer de trio (15, 30 ou 45 points). |
-| Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver rare en boutique au niveau visé à son boss (autant, voir [Compo cible](#comment-les-conseils-sont-choisis)). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
+| Bonus des Pokémon possédés | Faible, Normal, Fort | Points par Pokémon du trio possédé, puis encore à ★★ (5, 10 ou 20), et malus d'un Pokémon à trouver, fois sa chance de ne pas sortir en boutique d'ici le boss (voir [Compo cible](#comment-les-conseils-sont-choisis)). Avec Faible et une compo Stable, un trio ★★ possédé (+30) ne remplace plus le trio en cours (inertie 45) pour un écart de moins de 15 points. |
 
 ### Tes résultats
 
@@ -322,8 +353,10 @@ le script (seuils d'XP, 1 XP gratuite par étage, chances de chaque coût en bou
 en boutique par coût, repêchage, actualisation gratuite de la Boîte Jetons, plafond d'intérêts, intérêts perdus sur une
 deuxième défaite au même étage, or de série en campagne, voies et noms des bénédictions, coût, types, portée et stats
 d'attaque utiles de 24 lignées, effet d'un shiny : +10 % de PV, dégâts et défenses, transmis par la fusion, série de victoires
-changée à chaque combat, sauvegarde supprimée à la défaite finale). La puissance d'une unité et le seuil de 15 % du malus de la
-compo cible sont ceux des robots du jeu. Le script ignore l'XP de Multi Exp (+1 par manche et par exemplaire), les lignées
+changée à chaque combat, sauvegarde supprimée à la défaite finale), et, pour l'équipe adverse de campagne, les manches de
+Kanto et de Cramois'Île (équipes, variantes, rival, arènes, plafonds d'étoiles, clés, météo), le placement adverse, le rôle,
+l'entrée et le type des capacités de chaque lignée, la table des types et l'effet de la météo. La puissance d'une unité est
+celle des robots du jeu. Le script ignore l'XP de Multi Exp (+1 par manche et par exemplaire), les lignées
 bannies de la semaine en Tour et les sceaux de boutique (lignées possédées ×1,3, +8 points de coût 4, actualisation à 1
 pièce…) : la chance d'une actualisation est alors approchée. Les boutiques de Safari, Lavanville et Team Rocket, chiffrées,
 sont comptées comme celle de Kanto ; celle de Cramois'Île est relevée dans le jeu.
@@ -367,6 +400,14 @@ l'emporte sur sa ligne de base (`role: o.role ?? e.role, range: o.range ?? e.ran
 `ul` (Kanto, Cap sur Cramois'Île, « Je te choisis ! ») ; un arrêt de `campana.json` vaut `manche + 1:` suivi de la fin du nom
 espagnol de la manche, après le dernier « · ». Safari, Lavanville et Team Rocket chargent leurs manches par un module chiffré
 (`start-*.js`). Ne pas exécuter les modules téléchargés.
+
+Équipe adverse de campagne (`LINE_KITS`, `TYPE_CHART`, `WEATHER`, `CAMPAIGN_TEAMS` du script, relevé du 15 novembre 2026) :
+dans `route-*.js`, `jS` (calcul de l'équipe, appelé par `Am`), `jm` (placement), les manches `qa` (Kanto) et `xc` (Cramois'Île),
+les routes `Yi` (`Ji`), les variantes nommées par chaque manche (`variants:`), les rivaux (`Ca`, `Ta`, `Da`, `wa`, `Ea`, `xa`),
+les plafonds `ua`, les arènes `HS`, `US`, `ES` (`YS`, `XS`), le tirage `W` et `DS`, la table des types `$e` (`tt`) et la météo
+`sa` (`wxMove`) ; dans `roster-*.js`, les lignées `Q` (rôle, entrée, capacités `K(nom, type, forme, …)`), et dans `route-*.js`
+les lignées v41 `bs`, `xs`, `Ss` surchargées par `_s`. Les règles des difficultés (`advTiers`) passent par le module chiffré.
+Le tirage porté (`seededDraw`) est comparé, dans les tests, à une transcription indépendante.
 
 Maquette validée du panneau : `docs/design/mockups/2026-11-09-refonte.html` (onglets, options, verre clair et sombre) ; captures
 `docs/design/captures/refonte-*.webp`.
